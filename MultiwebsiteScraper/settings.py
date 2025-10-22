@@ -14,20 +14,39 @@ NEWSPIDER_MODULE = "MultiwebsiteScraper.spiders"
 
 ADDONS = {}
 
+DOWNLOAD_HANDLERS = { #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
+    "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+    "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+}
 
-# Crawl responsibly by identifying yourself (and your website) on the user-agent
-#USER_AGENT = "MultiwebsiteScraper (+http://www.yourdomain.com)"
+PLAYWRIGHT_BROWSER_TYPE = "firefox"
+
+TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
+
+PLAYWRIGHT_LAUNCH_OPTIONS = { #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
+    "headless": False,
+    "args": [
+        "--disable-blink-features=AutomationControlled",
+        "--disable-dev-shm-usage",
+        "--no-sandbox",
+        "--disable-web-security",
+        "--disable-features=VizDisplayCompositor",
+    ]
+}
 
 # Obey robots.txt rules
-ROBOTSTXT_OBEY = True
+ROBOTSTXT_OBEY = False
 
 # Concurrency and throttling settings
-#CONCURRENT_REQUESTS = 16
-CONCURRENT_REQUESTS_PER_DOMAIN = 1
-DOWNLOAD_DELAY = 1
+PLAYWRIGHT_MAX_PAGES_PER_CONTEXT = 3  
+PLAYWRIGHT_MAX_CONTEXTS = 2 
+
+CONCURRENT_REQUESTS = 3
+CONCURRENT_REQUESTS_PER_DOMAIN = 1 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
+DOWNLOAD_DELAY = random.uniform(2, 5) #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
 
 # Disable cookies (enabled by default)
-#COOKIES_ENABLED = False
+COOKIES_ENABLED = False
 
 # Disable Telnet Console (enabled by default)
 #TELNETCONSOLE_ENABLED = False

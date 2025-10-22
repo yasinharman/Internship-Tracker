@@ -1,4 +1,7 @@
 import scrapy
+from scrapy_playwright.page import PageMethod
+from scrapy.loader import ItemLoader
+from random import *
 
 
 class KariyernetSpider(scrapy.Spider):
