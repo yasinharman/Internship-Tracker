@@ -58,5 +58,14 @@ class KariyernetSpider(scrapy.Spider):
         )
 
     def parse(self, response):
-        ...
+        all_links = []
+
+        container = response.css("div.list-items-wrapper")
+        links = container.css("div[data-test='ad-card'] a[data-test='ad-card-item']::attr(href)")
+
+        for link in links:
+            all_links.append(link)
+
+        for i in all_links:
+            print(i)
         
