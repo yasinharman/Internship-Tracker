@@ -1,3 +1,4 @@
+import random
 # Scrapy settings for MultiwebsiteScraper project
 #
 # For simplicity, this file contains only settings considered important or
@@ -19,7 +20,7 @@ DOWNLOAD_HANDLERS = { #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
     "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
 }
 
-PLAYWRIGHT_BROWSER_TYPE = "firefox"
+PLAYWRIGHT_BROWSER_TYPE = "chromium"
 
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 

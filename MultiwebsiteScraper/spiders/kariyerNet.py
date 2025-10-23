@@ -6,8 +6,49 @@ from random import *
 
 class KariyernetSpider(scrapy.Spider):
     name = "kariyerNet"
-    allowed_domains = ["asd.com"]
-    start_urls = ["https://asd.com"]
 
-    def parse(self, response):
-        pass
+    def start_requests(self):
+        yield scrapy.Request(
+            url = "https://www.kariyer.net/is-ilanlari/istanbul-bilisim?ct=34,82&cs=001000000&wa=22,78",
+            meta={
+                "playwright": True,
+                "playwright_context_kwargs": {
+                    "viewport": {"width": 1920, "height": 1080},
+                },
+                "playwright_include_page": True,
+
+                "playwright_page_methods": [
+
+                    PageMethod("wait_for_load_state", "networkidle"),
+
+                    PageMethod("wait_for_selector", "div.list-items-wrapper"),
+
+                    PageMethod(
+                        "evaluate",
+                        """async () => {
+                            const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+                            let previousHeight = 0;
+                            let sameHeightCounter = 0;
+                            const maxSameHeight = 3;
+                            while (sameHeightCounter < maxSameHeight) {
+                                window.scrollTo(0, document.body.scrollHeight);
+                                await delay(1000);
+                                const newHeight = document.body.scrollHeight;
+                                if (newHeight === previousHeight) {
+                                    sameHeightCounter += 1;
+                                } else {
+                                    sameHeightCounter = 0;
+                                    previousHeight = newHeight;
+                                }
+                                }
+                        }"""
+                    ),
+
+                    PageMethod("screenshot", path="example.png", full_page=True)
+
+                    # PageMethod("wait_for_timeout", randint(2000, 3000))
+
+                ]            
+                }
+        )
+        
