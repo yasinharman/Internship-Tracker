@@ -12,14 +12,18 @@ class KariyernetSpider(scrapy.Spider):
             url = "https://www.kariyer.net/is-ilanlari/istanbul-bilisim?ct=34,82&cs=001000000&wa=22,78",
             meta={
                 "playwright": True,
+                
                 "playwright_context_kwargs": {
-                    "viewport": {"width": 1920, "height": 1080},
+                    "has_touch": False,
+                    "is_mobile": False,
+                    "device_scale_factor": 1.0,
                 },
+
                 "playwright_include_page": True,
 
                 "playwright_page_methods": [
 
-                    PageMethod("wait_for_load_state", "networkidle"),
+                    PageMethod("wait_for_load_state", "domcontentloaded"),
 
                     PageMethod("wait_for_selector", "div.list-items-wrapper"),
 

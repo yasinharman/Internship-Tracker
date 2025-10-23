@@ -21,6 +21,7 @@ DOWNLOAD_HANDLERS = { #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
 }
 
 PLAYWRIGHT_BROWSER_TYPE = "chromium"
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "/opt/google/chrome/google-chrome"
 
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 
@@ -32,7 +33,11 @@ PLAYWRIGHT_LAUNCH_OPTIONS = { #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
         "--no-sandbox",
         "--disable-web-security",
         "--disable-features=VizDisplayCompositor",
+        "--disable-infobars",  # ← otomasyon bannerını kaldırır
+        "--start-maximized",   # ← gerçek kullanıcı gibi tam ekran aç
+        "--disable-extensions" # ← extension yokmuş gibi davran
     ]
+
 }
 
 # Obey robots.txt rules
