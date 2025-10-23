@@ -53,6 +53,10 @@ class KariyernetSpider(scrapy.Spider):
                     # PageMethod("wait_for_timeout", randint(2000, 3000))
 
                 ]            
-                }
+                },
+                callback=self.parse
         )
+
+    def parse(self, response):
+        ...
         
