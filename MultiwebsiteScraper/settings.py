@@ -10,6 +10,8 @@ import random
 
 BOT_NAME = "MultiwebsiteScraper"
 
+USER_AGENT = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:141.0) Gecko/20100101 Firefox/141.0"
+
 SPIDER_MODULES = ["MultiwebsiteScraper.spiders"]
 NEWSPIDER_MODULE = "MultiwebsiteScraper.spiders"
 
@@ -49,6 +51,7 @@ PLAYWRIGHT_MAX_CONTEXTS = 2
 
 CONCURRENT_REQUESTS = 3
 CONCURRENT_REQUESTS_PER_DOMAIN = 1 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
+CONCURRENT_REQUESTS_PER_IP = 0
 DOWNLOAD_DELAY = random.uniform(2, 5) #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
 
 # Disable cookies (enabled by default)
