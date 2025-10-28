@@ -10,10 +10,18 @@ import random
 
 BOT_NAME = "MultiwebsiteScraper"
 
+USER_AGENT = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:141.0) Gecko/20100101 Firefox/141.0"
+
 SPIDER_MODULES = ["MultiwebsiteScraper.spiders"]
 NEWSPIDER_MODULE = "MultiwebsiteScraper.spiders"
 
 ADDONS = {}
+
+USER_AGENT_LIST = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/119.0",
+]
 
 DOWNLOAD_HANDLERS = { #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
     "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
@@ -49,6 +57,7 @@ PLAYWRIGHT_MAX_CONTEXTS = 2
 
 CONCURRENT_REQUESTS = 3
 CONCURRENT_REQUESTS_PER_DOMAIN = 1 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
+CONCURRENT_REQUESTS_PER_IP = 0
 DOWNLOAD_DELAY = random.uniform(2, 5) #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
 
 # Disable cookies (enabled by default)
@@ -71,9 +80,10 @@ COOKIES_ENABLED = True
 
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
-#DOWNLOADER_MIDDLEWARES = {
-#    "MultiwebsiteScraper.middlewares.MultiwebsitescraperDownloaderMiddleware": 543,
-#}
+DOWNLOADER_MIDDLEWARES = {
+    'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
+    'scrapy_user_agents.middlewares.RandomUserAgentMiddleware': 400,
+}
 
 # Enable or disable extensions
 # See https://docs.scrapy.org/en/latest/topics/extensions.html
