@@ -55,37 +55,40 @@ class KariyernetSpider(scrapy.Spider):
                 callback=self.parse
         )
 
-    def parse(self, response):
-        all_links = []
+    async def parse(self, response):
+        # Orijinal sayfayı (arama sonuçları sayfası) al
+        page = response.meta["playwright_page"]
 
         container = response.css("div.list-items-wrapper")
         links = container.css("div[data-test='ad-card'] a[data-test='ad-card-item']::attr(href)").getall()
 
         for link in links:
-            all_links.append(link)
-
-        for i in all_links:
             yield scrapy.Request(
-                url = response.urljoin(i),
+                url = response.urljoin(link), # 'i' yerine 'link' kullandım
                 meta={
-                "playwright": True,
-                
-                "playwright_context_kwargs": {
-                    "has_touch": False,
-                    "is_mobile": False,
-                    "device_scale_factor": 1.0,
+                    "playwright": True,
+                    # BU İKİ SATIRI KALDIRDIK:
+                    # "playwright_include_page": True, 
+                    # "playwright_page": page,
+                    # Artık scrapy-playwright her istek için havuzdan yeni/temiz bir sayfa yönetecek.
+                    
+                    "playwright_page_methods": [
+                        # "goto" metoduna gerek yok, Scrapy 'url' parametresiyle zaten bunu yapıyor.
+                        PageMethod("wait_for_load_state", "domcontentloaded"),
+                        PageMethod("wait_for_selector", "div.details-container"),
+                        
+                        # İnsan davranışı taklidi için küçük bir scroll ekleyelim
+                        PageMethod("evaluate", "window.scrollBy(0, Math.floor(Math.random() * 400) + 200)"), 
+                        
+                        PageMethod("wait_for_timeout", randint(2500, 4000)) # Süreyi biraz artırabiliriz
+                    ],
                 },
-
-                # "playwright_include_page": True,
-
-                "playwright_page_methods": [
-
-                    PageMethod("wait_for_load_state", "domcontentloaded"),
-                    PageMethod("wait_for_selector", "div.details-container"),
-                    PageMethod("wait_for_timeout", randint(2000, 3000))
-                ]
-                }
+                callback=self.parse_detail
             )
+        
+        # DİKKAT: Tüm linkler için istekleri yield ettikten sonra,
+        # 'start_requests' tarafından açılan o İLK sayfayı ARTIK KAPATIYORUZ.
+        await page.close()
     
     def parse_detail(self, response):
         container = response.css("div.main-container")
