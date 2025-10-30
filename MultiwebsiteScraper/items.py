@@ -13,13 +13,13 @@ class MultiwebsitescraperItem(scrapy.Item):
 
 def clean_up_n(txt):
     try:
-        txt.replace("\n", "")
-        txt.strip(),
-        return txt,
+        txt = txt.replace("\n", "")
+        txt = txt.strip()
+        return txt
     except:
-        pass
+        return txt
 
-class KariyerNetItem(scrapy.item):
+class KariyerNetItem(scrapy.Item):
 
     job_title = scrapy.Field(
         input_processor=MapCompose(clean_up_n),

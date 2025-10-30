@@ -1,7 +1,7 @@
 import scrapy
 from scrapy_playwright.page import PageMethod
 from scrapy.loader import ItemLoader
-# from MultiwebsiteScraper.items import KariyerNetItem ITEM AYARLAMASI YAPILACAK
+from MultiwebsiteScraper.items import KariyerNetItem # ITEM AYARLAMASI YAPILACAK
 from random import randint
 
 class KariyernetSpider(scrapy.Spider):
@@ -74,7 +74,7 @@ class KariyernetSpider(scrapy.Spider):
                     "device_scale_factor": 1.0,
                 },
 
-                "playwright_include_page": True,
+                # "playwright_include_page": True,
 
                 "playwright_page_methods": [
 
@@ -113,28 +113,20 @@ class KariyernetSpider(scrapy.Spider):
         container = response.css("div.main-container")
 
         DEFAULT_VALUE = "N/A"
+        loader = ItemLoader(item=KariyerNetItem())
 
         try:
-            job_title = container.css("div[data-test='job-title']::text").get(DEFAULT_VALUE)
-            company = container.css("a[data-test='company-name']::text").get(DEFAULT_VALUE)
-            location = container.css("span[data-test='company-location']::text").get(DEFAULT_VALUE)
-            wfh = container.css("p.[data-test='detail-work-type']").get(DEFAULT_VALUE)
-            work_method = container.css('p[data-test="detail-work-type"]::text').get(DEFAULT_VALUE)
-            experience = container.css('p[data-test="detail-experience-level"]::text').get(DEFAULT_VALUE)
-            department = container.css('p[data-test="detail-department-info"]::text').get(DEFAULT_VALUE)
-            appoinment_count = container.css('div.detail:nth-child(4) p::text').get(DEFAULT_VALUE)
+            loader.add_css("job_title", "div[data-test='job-title']::text").get(DEFAULT_VALUE)
+            loader.add_css("company", "a[data-test='company-name']::text").get(DEFAULT_VALUE)
+            loader.add_css("location", "span[data-test='company-location']::text").get(DEFAULT_VALUE)
+            loader.add_css("wfh", "p.[data-test='detail-work-type']").get(DEFAULT_VALUE)
+            loader.add_css("work_method", 'p[data-test="detail-work-type"]::text').get(DEFAULT_VALUE)
+            loader.add_css("experience", 'p[data-test="detail-experience-level"]::text').get(DEFAULT_VALUE)
+            loader.add_css("department", 'p[data-test="detail-department-info"]::text').get(DEFAULT_VALUE)
+            loader.add_css("appoinment_count", 'div.detail:nth-child(4) p::text').get(DEFAULT_VALUE)
         except Exception as e:
             self.logger.error(f"Unexpected error: {e}")
 
 
-        yield {
-            "Job Title": job_title,
-            "Company Name": company,
-            "Location": location,
-            "Work Place": wfh,
-            "Work Method": work_method,
-            "Experience": experience,
-            "Department": department,
-            "Appointment Number": appoinment_count,
-        }
+        yield loader.load_item()
 
