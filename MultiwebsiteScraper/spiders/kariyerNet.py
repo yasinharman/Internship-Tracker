@@ -1,6 +1,7 @@
 import scrapy
 from scrapy_playwright.page import PageMethod
 from scrapy.loader import ItemLoader
+# from MultiwebsiteScraper.items import KariyerNetItem ITEM AYARLAMASI YAPILACAK
 from random import randint
 
 class KariyernetSpider(scrapy.Spider):
@@ -64,7 +65,7 @@ class KariyernetSpider(scrapy.Spider):
         for link in links:
             yield scrapy.Request(
                 url = response.urljoin(link), 
-            meta={
+                meta={
                 "playwright": True,
                 
                 "playwright_context_kwargs": {
@@ -73,7 +74,7 @@ class KariyernetSpider(scrapy.Spider):
                     "device_scale_factor": 1.0,
                 },
 
-                # "playwright_include_page": True,
+                "playwright_include_page": True,
 
                 "playwright_page_methods": [
 
@@ -117,11 +118,11 @@ class KariyernetSpider(scrapy.Spider):
             job_title = container.css("div[data-test='job-title']::text").get(DEFAULT_VALUE)
             company = container.css("a[data-test='company-name']::text").get(DEFAULT_VALUE)
             location = container.css("span[data-test='company-location']::text").get(DEFAULT_VALUE)
-            wfh = container.css("p.mb-0").get(DEFAULT_VALUE)
+            wfh = container.css("p.[data-test='detail-work-type']").get(DEFAULT_VALUE)
             work_method = container.css('p[data-test="detail-work-type"]::text').get(DEFAULT_VALUE)
             experience = container.css('p[data-test="detail-experience-level"]::text').get(DEFAULT_VALUE)
             department = container.css('p[data-test="detail-department-info"]::text').get(DEFAULT_VALUE)
-            appoinment_number = container.css('div.detail:nth-child(4) p::text').get(DEFAULT_VALUE)
+            appoinment_count = container.css('div.detail:nth-child(4) p::text').get(DEFAULT_VALUE)
         except Exception as e:
             self.logger.error(f"Unexpected error: {e}")
 
@@ -134,6 +135,6 @@ class KariyernetSpider(scrapy.Spider):
             "Work Method": work_method,
             "Experience": experience,
             "Department": department,
-            "Appointment Number": appoinment_number,
+            "Appointment Number": appoinment_count,
         }
 
