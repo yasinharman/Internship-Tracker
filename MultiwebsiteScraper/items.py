@@ -33,10 +33,6 @@ class KariyerNetItem(scrapy.Item):
         input_processor=MapCompose(clean_up_n),
         output_processor=TakeFirst()
     )
-    wfh = scrapy.Field(
-        input_processor=MapCompose(clean_up_n),
-        output_processor=TakeFirst()
-    )
     work_method = scrapy.Field(
         input_processor=MapCompose(clean_up_n),
         output_processor=TakeFirst()

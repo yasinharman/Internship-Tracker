@@ -113,20 +113,15 @@ class KariyernetSpider(scrapy.Spider):
         container = response.css("div.main-container")
 
         DEFAULT_VALUE = "N/A"
-        loader = ItemLoader(item=KariyerNetItem())
+        loader = ItemLoader(item=KariyerNetItem(), selector=container)
 
-        try:
-            loader.add_css("job_title", "div[data-test='job-title']::text").get(DEFAULT_VALUE)
-            loader.add_css("company", "a[data-test='company-name']::text").get(DEFAULT_VALUE)
-            loader.add_css("location", "span[data-test='company-location']::text").get(DEFAULT_VALUE)
-            loader.add_css("wfh", "p.[data-test='detail-work-type']").get(DEFAULT_VALUE)
-            loader.add_css("work_method", 'p[data-test="detail-work-type"]::text').get(DEFAULT_VALUE)
-            loader.add_css("experience", 'p[data-test="detail-experience-level"]::text').get(DEFAULT_VALUE)
-            loader.add_css("department", 'p[data-test="detail-department-info"]::text').get(DEFAULT_VALUE)
-            loader.add_css("appoinment_count", 'div.detail:nth-child(4) p::text').get(DEFAULT_VALUE)
-        except Exception as e:
-            self.logger.error(f"Unexpected error: {e}")
-
+        loader.add_css("job_title", "div[data-test='job-title']::text", default=DEFAULT_VALUE)
+        loader.add_css("company", "a[data-test='company-name']::text", default=DEFAULT_VALUE)
+        loader.add_css("location", "span[data-test='company-location']::text", default=DEFAULT_VALUE)
+        loader.add_css("work_method", 'p[data-test="detail-work-type"]::text', default=DEFAULT_VALUE)
+        loader.add_css("experience", 'p[data-test="detail-experience-level"]::text', default=DEFAULT_VALUE)
+        loader.add_css("department", 'p[data-test="detail-department-info"]::text', default=DEFAULT_VALUE)
+        loader.add_css("appointment_count", 'div.detail:nth-child(4) p::text', default=DEFAULT_VALUE)
 
         yield loader.load_item()
 
