@@ -49,10 +49,11 @@ ROBOTSTXT_OBEY = False
 PLAYWRIGHT_MAX_PAGES_PER_CONTEXT = 3  
 PLAYWRIGHT_MAX_CONTEXTS = 2 
 
-CONCURRENT_REQUESTS = 3
-CONCURRENT_REQUESTS_PER_DOMAIN = 1 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
+CONCURRENT_REQUESTS = 5
+CONCURRENT_REQUESTS_PER_DOMAIN = 2 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
 CONCURRENT_REQUESTS_PER_IP = 0
-DOWNLOAD_DELAY = 3 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
+DOWNLOAD_DELAY = 2 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
+RANDOMIZE_DOWNLOAD_DELAY = True
 
 # Disable cookies (enabled by default)
 COOKIES_ENABLED = True
