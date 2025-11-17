@@ -36,7 +36,7 @@ DOWNLOAD_HANDLERS = { #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
 }
 
 PLAYWRIGHT_BROWSER_TYPE = "chromium"
-PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "/opt/google/chrome/google-chrome"
+# PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "/opt/google/chrome/google-chrome"
 
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 
@@ -65,7 +65,7 @@ PLAYWRIGHT_MAX_CONTEXTS = 2
 CONCURRENT_REQUESTS = 3
 CONCURRENT_REQUESTS_PER_DOMAIN = 1 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
 CONCURRENT_REQUESTS_PER_IP = 0
-DOWNLOAD_DELAY = random.uniform(2, 5) #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
+DOWNLOAD_DELAY = 3 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
 
 # Disable cookies (enabled by default)
 COOKIES_ENABLED = True
@@ -88,8 +88,8 @@ COOKIES_ENABLED = True
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 DOWNLOADER_MIDDLEWARES = {
-    'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
-    'scrapy_user_agents.middlewares.RandomUserAgentMiddleware': 400,
+    # 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
+    # 'scrapy_user_agents.middlewares.RandomUserAgentMiddleware': 400,
 }
 
 # Enable or disable extensions
