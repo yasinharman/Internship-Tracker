@@ -10,6 +10,7 @@ Playwright settings for the first tab we are opening
  this from zero with a function for every request because i want to keep
  it same for every request.
 """
+
 def meta_for_first_tabs():
     return {
             "playwright": True,
@@ -81,6 +82,9 @@ def meta_for_first_tabs():
                     }
                     """
                 ),
+
+                # PageMethod("wait_for_timeout", randint(2000, 3000))
+
             ]
         }
 
@@ -92,6 +96,7 @@ This function is creating the meta dict for the requests
  the playiwright include page because i dont want to open a new tab
  for every job application. 
 """
+
 def meta_for_back_to_back_pages(): 
     return {
             "playwright": True,
@@ -102,7 +107,7 @@ def meta_for_back_to_back_pages():
                 "device_scale_factor": 1.0,
             },
 
-            "playwright_include_page": False,
+            # "playwright_include_page": True,
 
             "playwright_page_methods": [
 
@@ -117,6 +122,7 @@ def meta_for_back_to_back_pages():
 """
 Scraper starts from here
 """
+
 class KariyernetSpider(scrapy.Spider):
     name = "kariyerNet"
 
@@ -129,9 +135,11 @@ class KariyernetSpider(scrapy.Spider):
                 callback=self.parse_all_links
         )
 
+
     """
     Helper function to parse all the links from the main tab.
     """
+
     def get_all_links(self, response):
         container = response.css("div.list-items-wrapper")
         links = container.css("div[data-test='ad-card'] a[data-test='ad-card-item']::attr(href)").getall()
@@ -141,6 +149,7 @@ class KariyernetSpider(scrapy.Spider):
     """
     This function is for the pagination
     """
+
     def parse_all_links(self, response):
         links = self.get_all_links(response)
         
@@ -163,6 +172,7 @@ class KariyernetSpider(scrapy.Spider):
     """
     This function is for parsing the job info from the job application tabs.
     """
+
     def parse_detail(self, response):
         container = response.css("div.main-container")
 

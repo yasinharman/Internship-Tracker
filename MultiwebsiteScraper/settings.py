@@ -33,11 +33,11 @@ PLAYWRIGHT_LAUNCH_OPTIONS = { #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
         "--disable-blink-features=AutomationControlled",
         "--disable-dev-shm-usage",
         "--no-sandbox",
-        "--disable-web-security",
-        "--disable-features=VizDisplayCompositor",
-        "--disable-infobars",  # ← otomasyon bannerını kaldırır
-        "--start-maximized",   # ← gerçek kullanıcı gibi tam ekran aç
-        "--disable-extensions" # ← extension yokmuş gibi davran
+        # "--disable-web-security",
+        # "--disable-features=VizDisplayCompositor",
+        # "--disable-infobars",  # ← otomasyon bannerını kaldırır
+        # "--start-maximized",   # ← gerçek kullanıcı gibi tam ekran aç
+        # "--disable-extensions" # ← extension yokmuş gibi davran
     ]
 
 }
