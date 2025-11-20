@@ -3,6 +3,7 @@ from scrapy_playwright.page import PageMethod
 from scrapy.loader import ItemLoader
 from MultiwebsiteScraper.items import KariyerNetItem # ITEM AYARLAMASI YAPILACAK
 from random import randint
+from pathlib import Path
 
 """ 
 Playwright settings for the first tab we are opening
@@ -15,11 +16,7 @@ def meta_for_first_tabs():
     return {
             "playwright": True,
             
-            "playwright_context_kwargs": {
-                "has_touch": False,
-                "is_mobile": False,
-                "device_scale_factor": 1.0,
-            },
+            "playwright_context": "kariyer_proxy_context",
 
             "playwright_include_page": True,
 
@@ -101,11 +98,7 @@ def meta_for_back_to_back_pages():
     return {
             "playwright": True,
             
-            "playwright_context_kwargs": {
-                "has_touch": False,
-                "is_mobile": False,
-                "device_scale_factor": 1.0,
-            },
+            "playwright_context": "kariyer_proxy_context",
 
             # "playwright_include_page": True,
 
@@ -122,6 +115,7 @@ def meta_for_back_to_back_pages():
 """
 Scraper starts from here
 """
+STATE_FILE = Path("storage/kariyer_state.json")
 
 class KariyernetSpider(scrapy.Spider):
     name = "kariyerNet"
