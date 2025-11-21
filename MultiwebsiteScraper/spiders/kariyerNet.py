@@ -15,8 +15,16 @@ Playwright settings for the first tab we are opening
 def meta_for_first_tabs():
     return {
             "playwright": True,
-            
-            "playwright_context": "kariyer_proxy_context",
+
+            "playwright_context_kwargs": {
+                "is_mobile": False,
+                "has_touch": False,
+                "device_scale_factor": 1.25,
+                "viewport": {"width": 1536, "height": 864},
+                "locale": "tr-TR",
+                "timezone_id": "Europe/Istanbul"
+
+            },
 
             "playwright_include_page": True,
 
@@ -97,8 +105,16 @@ This function is creating the meta dict for the requests
 def meta_for_back_to_back_pages(): 
     return {
             "playwright": True,
-            
-            "playwright_context": "kariyer_proxy_context",
+
+            "playwright_context_kwargs": {
+                "is_mobile": False,
+                "has_touch": False,
+                "device_scale_factor": 1.25,
+                "viewport": {"width": 1536, "height": 864},
+                "locale": "tr-TR",
+                "timezone_id": "Europe/Istanbul"
+
+            },
 
             # "playwright_include_page": True,
 

@@ -27,27 +27,6 @@ PLAYWRIGHT_BROWSER_TYPE = "chromium"
 
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 
-PLAYWRIGHT_CONTEXTS = {
-    "kariyer_proxy_context": {
-
-        "viewport": {"width": 1366, "height": 768},
-        "user_agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "is_mobile": False,
-        "java_script_enabled": True,
-
-        # >>> BURASI SENİN TABLODAN GELEN KISIM <<<
-        # "proxy": {
-        #     "server": "http://31.59.20.176:6754",
-        #     "username": "qtwgdexh",
-        #     "password": "y9oxbq2grej6",
-        # },
-    }
-}
-
 PLAYWRIGHT_LAUNCH_OPTIONS = { #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
     "headless": False,
     "args": [
