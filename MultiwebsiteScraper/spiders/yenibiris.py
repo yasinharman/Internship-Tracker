@@ -3,8 +3,7 @@ import scrapy
 
 class YenibirisSpider(scrapy.Spider):
     name = "yenibiris"
-    allowed_domains = ["asd.com"]
-    start_urls = ["https://asd.com"]
+    start_url = "https://www.yenibiris.com/is-ilanlari/istanbul-avrupa-yakasi+bilisim-internet"
 
     def parse(self, response):
         pass
