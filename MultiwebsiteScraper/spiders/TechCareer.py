@@ -114,10 +114,6 @@ def meta_for_back_to_back_pages():
 
 class TechcareerSpider(scrapy.Spider):
     name = "TechCareer"
-    
-    def __init__(self):
-        all_job_links = []
-        self.all_job_links = all_job_links
 
     def start_requests(self):
         start_url = "https://www.techcareer.net/jobs?jobs[search][select]=position&jobs[search][location]=%C4%B0stanbul%28Avr.%29%20%2F%20T%C3%BCrkiye&jobs[isCompleted]=false&jobs[page]=1"
@@ -132,26 +128,22 @@ class TechcareerSpider(scrapy.Spider):
 
         main_container = response.css("div[data-test='jobs-list']")
         all_jobs = main_container.css("a[data-test='single-job-item']::attr(href)").getall()
-
-        self.all_job_links.extend(all_jobs)
         
-        next_page_check = response.css("a[aria-disabled='true'][aria-label='Go to next page']")
-        
-        if not next_page_check:
-            next_page_url = response.css("a[aria-label='Go to next page']::attr(href)").get()
-
+        for job in all_jobs:
             yield scrapy.Request(
-                url = response.urljoin(next_page_url),
-                meta = meta_for_first_tabs(),
+                url = response.urljoin(job),
+                meta = meta_for_back_to_back_pages(),
+                callback = self.parse_detail
+            )
+        
+        page_count = 2
+        while page_count < 4:
+            yield scrapy.Request(
+                url = f"https://www.techcareer.net/jobs?jobs[search][select]=position&jobs[search][location]=%C4%B0stanbul%28Avr.%29%20%2F%20T%C3%BCrkiye&jobs[isCompleted]=false&jobs[page]={page_count}",
+                meta = meta_for_first_tabs,
                 callback = self.parse_all_links
             )
-        else:
-            for job in self.all_job_links:
-                yield scrapy.Request(
-                    url = response.urljoin(job),
-                    meta = meta_for_back_to_back_pages(),
-                    callback = self.parse_detail
-                )
+        
 
     def parse_detail(self, response):
 

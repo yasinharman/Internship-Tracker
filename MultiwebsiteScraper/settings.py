@@ -28,7 +28,7 @@ PLAYWRIGHT_BROWSER_TYPE = "chromium"
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 
 PLAYWRIGHT_LAUNCH_OPTIONS = { #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
-    "headless": False,
+    "headless": True,
     "args": [
         "--disable-blink-features=AutomationControlled",
         "--disable-dev-shm-usage",
