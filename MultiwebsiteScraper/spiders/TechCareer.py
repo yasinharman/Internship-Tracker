@@ -5,8 +5,8 @@ from MultiwebsiteScraper.items import TechCareerItem # ITEM AYARLAMASI YAPILACAK
 from random import randint
 from pathlib import Path
 
-def meta_for_first_tabs():
-    return {
+def meta_for_first_tabs(context_id=None):
+    meta = {
             "playwright": True,
             
             "playwright_context_kwargs": {
@@ -88,9 +88,14 @@ def meta_for_first_tabs():
 
             ]
         }
+    if context_id:
+        # Context ID varsa meta'ya ekle
+        meta["playwright_context_id"] = context_id 
+        
+    return meta
 
-def meta_for_back_to_back_pages(): 
-    return {
+def meta_for_back_to_back_pages(context_id=None): 
+    meta = {
             "playwright": True,
 
             "playwright_context_kwargs": {
@@ -111,39 +116,49 @@ def meta_for_back_to_back_pages():
                 PageMethod("wait_for_timeout", randint(1500, 2500))
             ]
         }
+    if context_id:
+        # Context ID varsa meta'ya ekle
+        meta["playwright_context_id"] = context_id 
+        
+    return meta
 
 class TechcareerSpider(scrapy.Spider):
     name = "TechCareer"
 
     def start_requests(self):
-        start_url = "https://www.techcareer.net/jobs?jobs[search][select]=position&jobs[search][location]=%C4%B0stanbul%28Avr.%29%20%2F%20T%C3%BCrkiye&jobs[isCompleted]=false&jobs[page]=1"
+        PLAYWRIGHT_CONTEXT_ID = "persisted_context"
 
-        yield scrapy.Request(
-            url = start_url,
-            meta = meta_for_first_tabs(),
-            callback = self.parse_all_links,
-        )
+        for i in range(1, 4):
+            start_url = f"https://www.techcareer.net/jobs?jobs[search][select]=position&jobs[search][location]=%C4%B0stanbul%28Avr.%29%20%2F%20T%C3%BCrkiye&jobs[isCompleted]=false&jobs[page]={i}"
+
+            yield scrapy.Request(
+                url = start_url,
+                meta = meta_for_first_tabs(context_id=PLAYWRIGHT_CONTEXT_ID),
+                callback = self.parse_all_links,
+            )
     
-    def parse_all_links(self, response):
+    async def parse_all_links(self, response):
+        # Oluşturulan context_id'yi response.meta'dan alıp takip eden isteklere aktarıyoruz.
+        current_context_id = response.meta.get("playwright_context_id")
+        
+        # Sayfa nesnesini alıyoruz (çünkü include_page=True dedik)
+        page = response.meta["playwright_page"]
 
-        main_container = response.css("div[data-test='jobs-list']")
-        all_jobs = main_container.css("a[data-test='single-job-item']::attr(href)").getall()
-        
-        for job in all_jobs:
-            yield scrapy.Request(
-                url = response.urljoin(job),
-                meta = meta_for_back_to_back_pages(),
-                callback = self.parse_detail
-            )
-        
-        page_count = 2
-        while page_count < 4:
-            yield scrapy.Request(
-                url = f"https://www.techcareer.net/jobs?jobs[search][select]=position&jobs[search][location]=%C4%B0stanbul%28Avr.%29%20%2F%20T%C3%BCrkiye&jobs[isCompleted]=false&jobs[page]={page_count}",
-                meta = meta_for_first_tabs,
-                callback = self.parse_all_links
-            )
-            page += 1
+        try:
+            main_container = response.css("div[data-test='jobs-list']")
+            all_jobs = main_container.css("a[data-test='single-job-item']::attr(href)").getall()
+            
+            for job in all_jobs:
+                yield scrapy.Request(
+                    url = response.urljoin(job),
+                    # Detay sayfaları için aynı context ID'yi kullanarak tarayıcının yeniden açılmasını önlüyoruz.
+                    meta = meta_for_back_to_back_pages(context_id=current_context_id),
+                    callback = self.parse_detail
+                )
+        finally:
+            # KRİTİK NOKTA: İşimiz bitince listeleme sayfasını kapatıyoruz.
+            # Bu yapılmazsa persistent context içinde sekmeler birikir ve bot tıkanır.
+            await page.close()
 
 
     def parse_detail(self, response):
@@ -151,7 +166,7 @@ class TechcareerSpider(scrapy.Spider):
         container = response.css("div.css-suqyto")
         
         DEFAULT_VALUE = "N/A"
-        loader = ItemLoader(item=TechCareerItem, selector=container)
+        loader = ItemLoader(item=TechCareerItem(), selector=container)
 
         loader.add_css("job_title", "h1[data-test='job-detail-title']::text", default=DEFAULT_VALUE)
         loader.add_css("company", "h2[data-test='job-detail-company-name']::text", default=DEFAULT_VALUE)

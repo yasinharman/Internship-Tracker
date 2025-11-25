@@ -1,4 +1,10 @@
 import random
+import sys
+import asyncio
+
+# Windows kullanıyorsan Event Loop politikasını değiştir
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 # Scrapy settings for MultiwebsiteScraper project
 #
 # For simplicity, this file contains only settings considered important or
