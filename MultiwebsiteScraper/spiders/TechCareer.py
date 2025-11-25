@@ -153,11 +153,11 @@ class TechcareerSpider(scrapy.Spider):
         DEFAULT_VALUE = "N/A"
         loader = ItemLoader(item=TechCareerItem, selector=container)
 
-        loader.add_css("h1[data-test='job-detail-title']::text", default=DEFAULT_VALUE)
-        loader.add_css("h2[data-test='job-detail-company-name']::text", default=DEFAULT_VALUE)
-        loader.add_css("h3.css-1ywrvz7::text", default=DEFAULT_VALUE)
-        loader.add_css("h3.css-hpmb9t strong::text", default=DEFAULT_VALUE)
-        loader.add_css("h3.css-1ywrvz7::text", default=DEFAULT_VALUE)
+        loader.add_css("job_title", "h1[data-test='job-detail-title']::text", default=DEFAULT_VALUE)
+        loader.add_css("company", "h2[data-test='job-detail-company-name']::text", default=DEFAULT_VALUE)
+        loader.add_css("location", "h3.css-1ywrvz7::text", default=DEFAULT_VALUE)
+        loader.add_css("work_method", "h3.css-hpmb9t strong::text", default=DEFAULT_VALUE)
+        loader.add_css("experience", "h3.css-1ywrvz7::text", default=DEFAULT_VALUE)
 
         yield loader.load_item()
 
