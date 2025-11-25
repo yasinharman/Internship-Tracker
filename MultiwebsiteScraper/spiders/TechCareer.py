@@ -1,7 +1,7 @@
 import scrapy
 from scrapy_playwright.page import PageMethod
 from scrapy.loader import ItemLoader
-from MultiwebsiteScraper.items import KariyerNetItem # ITEM AYARLAMASI YAPILACAK
+from MultiwebsiteScraper.items import TechCareerItem # ITEM AYARLAMASI YAPILACAK
 from random import randint
 from pathlib import Path
 
@@ -143,25 +143,23 @@ class TechcareerSpider(scrapy.Spider):
                 meta = meta_for_first_tabs,
                 callback = self.parse_all_links
             )
-        
+            page += 1
+
 
     def parse_detail(self, response):
 
         container = response.css("div.css-suqyto")
+        
+        DEFAULT_VALUE = "N/A"
+        loader = ItemLoader(item=TechCareerItem, selector=container)
 
-        job_title = container.css("h1[data-test='job-detail-title']::text").get()
-        company = container.css("h2[data-test='job-detail-company-name']::text").get()
-        location = container.css("h3.css-1ywrvz7::text").get()
-        work_method = container.css("h3.css-hpmb9t strong::text").get()
-        experience = container.css("h3.css-1ywrvz7::text").get()
+        loader.add_css("h1[data-test='job-detail-title']::text", default=DEFAULT_VALUE)
+        loader.add_css("h2[data-test='job-detail-company-name']::text", default=DEFAULT_VALUE)
+        loader.add_css("h3.css-1ywrvz7::text", default=DEFAULT_VALUE)
+        loader.add_css("h3.css-hpmb9t strong::text", default=DEFAULT_VALUE)
+        loader.add_css("h3.css-1ywrvz7::text", default=DEFAULT_VALUE)
 
-        yield{
-            "job_title": job_title,
-            "company": company,
-            "location": location,
-            "work_method": work_method,
-            "experience": experience
-        }
+        yield loader.load_item()
 
 
 

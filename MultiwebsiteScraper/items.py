@@ -49,3 +49,21 @@ class KariyerNetItem(scrapy.Item):
         input_processor=MapCompose(clean_up_n),
         output_processor=TakeFirst()
     )
+
+class TechCareerItem(scrapy.Item):
+
+    job_title = scrapy.Field(
+        output_processor = TakeFirst()
+    )
+    company = scrapy.Field(
+        output_processor = TakeFirst()
+    )
+    location = scrapy.Field(
+        output_processor = TakeFirst()
+    )
+    work_method = scrapy.Field(
+        output_processor = TakeFirst()
+    )
+    experience = scrapy.Field(
+        output_processor = TakeFirst()
+    )
