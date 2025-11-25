@@ -15,7 +15,20 @@ def meta_for_first_tabs():
                 "device_scale_factor": 1.25,
                 "viewport": {"width": 1536, "height": 864},
                 "locale": "tr-TR",
-                "timezone_id": "Europe/Istanbul"
+                "timezone_id": "Europe/Istanbul",
+
+                "ignore_https_errors": True,
+                "args": [
+                    "--disable-blink-features=AutomationControlled", # En kritik flag
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-infobars",
+                    "--window-position=0,0",
+                    "--ignore-certifcate-errors",
+                    "--ignore-certifcate-errors-spki-list",
+                    # Gerçek bir Chrome gibi görünmesini sağlar
+                    "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36" 
+                ]
 
             },
 
@@ -116,7 +129,7 @@ class IndeedSpider(scrapy.Spider):
     name = "indeed"
         
     def start_requests(self):
-        start_url = "https://tr.indeed.com/jobs?q=python&l=%C4%B1stanbul&from=searchOnDesktopSerp%2Cwhereautocomplete&cf-turnstile-response=0.9UvMZs1AdlXR99nnM3zCmujFj93lmr6qtWr9aXl9SCFOsgTkhYKY5vL6Mo-zMZvDdj_hYSyNAK1UDXDDgjJkpJ6tyIj08NWbpfJVum_m5fWjtw8AI7fr8rxqrIJHlBtN6On03FPo1wlWtgWPn6_QTEJtHT1-oUYMgfEv_7cGxHUPSVCaRmNXirKRlC1yrEjLOBbpYGE2pik441GqsTRloIaOmQQ8iCK98fyc7gqoq8Ma_ONTkyQ0UrZW7aErqMMtZTUY7kNUgqgW7W9rZqbOA1oHMsiG4QrY2f-0aeX7inqpiCllEUpspD7i9cnZORKoqpT0lNO_Ml8ozIRuIsYg4S_8dybnu8JR4ri0XI553Bo_dSdMYZqtyqFXzhkG_jI6kj61rOBFcZVNRXPOsavGn_UbDosszYgV7vP0UlfVCXWHnCf_NHuU0O1seTaAqccZ1uPSTD7fWiGronBLPlln8rOVdk9imw53AvBdjR-Vo3PuC7Xj09qU97OwVlUecEDQiimqkJpLVuKobGlvhV_pgvMk5Kc81eSkvKzgOeCgzx1kn3xSEt7cr4cQ1gzxKAkVVVZDn56erNM5UK2RqSH1f4DVMPMGUqoL2RQsRYzlNzWV3JVgK-qrSilBc6HrOOO6A6IQ64bZn0hCvBvjS8-tqkDTJIpZcQWPPP2JgbDKPkraZYRuvs77pcNr2ICBIaI_qg6HN0qT3BNvMqO9y82BwYGBzeAOgyrqpvf8c1tYfYHpWgHdtTwfiXGQEOa8OsScWyIGuYUU8bU8cFIIIhBAtWuXyeZxFxYyzI5DuSOb1oRIGPVRc5YM85D2DCxdPnUiMnXF-9PBgOW2PZW_439oy0sQrFOpj_87R29mlmAzLjoVUwA7X_k_GVzTjkYiJaf9142RkMRv0i4ZJH4LjkwEUw.lSGo3XIz1VFS7PBXkLlfWw.e42c98b57049e3b01589f9243b24a831e3f0a5365a5908a4deaa383821187dfd&vjk=7cfa99b0592955b2"
+        start_url = "https://tr.indeed.com/jobs?q=python&l=%C4%B1stanbul"
 
         yield scrapy.Request(
             url = start_url,
