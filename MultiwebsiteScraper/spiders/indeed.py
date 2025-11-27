@@ -1,141 +1,76 @@
+import re
+import json
 import scrapy
-from scrapy_playwright.page import PageMethod
-from scrapy.loader import ItemLoader
-from MultiwebsiteScraper.items import TechCareerItem # ITEM AYARLAMASI YAPILACAK
-from random import randint
-from pathlib import Path
+from urllib.parse import urlencode
 
-def meta_for_first_tabs():
-    return {
-            "playwright": True,
-            
-            "playwright_context_kwargs": {
-                "is_mobile": False,
-                "has_touch": False,
-                "device_scale_factor": 1.25,
-                "viewport": {"width": 1536, "height": 864},
-                "locale": "tr-TR",
-                "timezone_id": "Europe/Istanbul",
-
-                "ignore_https_errors": True,
-                "args": [
-                    "--disable-blink-features=AutomationControlled", # En kritik flag
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-infobars",
-                    "--window-position=0,0",
-                    "--ignore-certifcate-errors",
-                    "--ignore-certifcate-errors-spki-list",
-                    # Gerçek bir Chrome gibi görünmesini sağlar
-                    "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36" 
-                ]
-
-            },
-
-            "playwright_include_page": True,
-
-            "playwright_page_methods": [
-
-                PageMethod("wait_for_load_state", "domcontentloaded"),
-                
-                PageMethod("wait_for_selector", "div.customScrollBar"),
-
-                PageMethod(
-                        "evaluate",
-                        """
-                            async () => {
-                            const selector = ".customScrollBar";
-                            const delay = (ms) => new Promise(res => setTimeout(res, ms));
-                            const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
-
-                            const container = document.querySelector(selector);
-                            if (!container) return; // Element yoksa hemen çık
-
-                            let totalHeight = 0;
-                            let distance = 300; // Her seferinde kaydırılacak piksel
-                            let stable_counter = 0; // Değişiklik olmama sayacı
-                            let total_loops = 0; // Toplam döngü sayacı (SONSUZ DÖNGÜ ENGELLEYİCİ)
-                            
-                            // AYARLAR
-                            const max_stable_checks = 5; // Yükseklik 5 kere değişmezse dur.
-                            const max_loops = 100; // Ne olursa olsun 100 kaydırmadan sonra dur (Emniyet sübabı).
-
-                            while (total_loops < max_loops) {
-                                const scrollHeight = container.scrollHeight;
-                                const currentScroll = container.scrollTop + container.clientHeight;
-
-                                // En alta kadar kaydır
-                                container.scrollBy({ top: distance, behavior: 'smooth' });
-                                
-                                // Rastgele bekle (İnsansı davranış ve yükleme süresi)
-                                await delay(rand(400, 800));
-
-                                // Yeni yüksekliği kontrol et
-                                const newScrollHeight = container.scrollHeight;
-
-                                if (newScrollHeight === scrollHeight && currentScroll >= newScrollHeight - 50) {
-                                    // Eğer yükseklik değişmediyse VE zaten en alttaysak
-                                    stable_counter++;
-                                } else {
-                                    // Yükseklik arttıysa veya daha yolumuz varsa sayacı sıfırla
-                                    stable_counter = 0;
-                                }
-
-                                // Eğer X defadır yükseklik değişmiyorsa, sonuna gelmişizdir.
-                                if (stable_counter >= max_stable_checks) {
-                                    console.log("Sayfa sonuna ulaşıldı (Stable count limit).");
-                                    break; 
-                                }
-
-                                total_loops++;
-                            }
-                            
-                            if (total_loops >= max_loops) {
-                                console.log("Maksimum döngü sınırına takıldı, işlem zorla bitiriliyor.");
-                            }
-                        }
-                        """
-                ),
-
-                # PageMethod("wait_for_timeout", randint(2000, 3000))
-
-            ]
-        }
-
-def meta_for_back_to_back_pages(): 
-    return {
-            "playwright": True,
-
-            "playwright_context_kwargs": {
-                "is_mobile": False,
-                "has_touch": False,
-                "device_scale_factor": 1.25,
-                "viewport": {"width": 1536, "height": 864},
-                "locale": "tr-TR",
-                "timezone_id": "Europe/Istanbul"
-            },
-
-            "playwright_page_methods": [
-
-                PageMethod("wait_for_load_state", "domcontentloaded"),
-
-                PageMethod("wait_for_selector", "div.css-suqyto"),
-                
-                PageMethod("wait_for_timeout", randint(1500, 2500))
-            ]
-        }
-
-class IndeedSpider(scrapy.Spider):
+class IndeedJobSpider(scrapy.Spider):
     name = "indeed"
-        
-    def start_requests(self):
-        start_url = "https://tr.indeed.com/jobs?q=python&l=%C4%B1stanbul"
 
-        yield scrapy.Request(
-            url = start_url,
-            meta = meta_for_first_tabs(),
-            callback = self.parse
-        )
+    def get_indeed_search_url(self, keyword, location, offset=0):
+        parameters = {"q": keyword, "l": location, "filter": 0, "start": offset}
+        return "https://www.indeed.com/jobs?" + urlencode(parameters)
+
+    def start_requests(self):
+        keyword_list = ['python']
+        location_list = ['istanbul']
+        for keyword in keyword_list:
+            for location in location_list:
+                indeed_jobs_url = self.get_indeed_search_url(keyword, location)
+                yield scrapy.Request(url=indeed_jobs_url, callback=self.parse_search_results, meta={'keyword': keyword, 'location': location, 'offset': 0})
+
+    def parse_search_results(self, response):
+        location = response.meta['location']
+        keyword = response.meta['keyword'] 
+        offset = response.meta['offset'] 
+        script_tag  = re.findall(r'window.mosaic.providerData\["mosaic-provider-jobcards"\]=(\{.+?\});', response.text)
+        if script_tag is not None:
+            json_blob = json.loads(script_tag[0])
+        
+            # Paginate Through Jobs Pages
+            if offset == 0:
+                meta_data = json_blob["metaData"]["mosaicProviderJobCardsModel"]["tierSummaries"]
+                num_results = sum(category["jobCount"] for category in meta_data)
+                if num_results > 1000:
+                    num_results = 50
+                
+                for offset in range(10, num_results + 10, 10):
+                    url = self.get_indeed_search_url(keyword, location, offset)
+                    yield scrapy.Request(url=url, callback=self.parse_search_results, meta={'keyword': keyword, 'location': location, 'offset': offset})
+
+             ## Extract Jobs From Search Page
+            jobs_list = json_blob['metaData']['mosaicProviderJobCardsModel']['results']
+            for index, job in enumerate(jobs_list):
+                if job.get('jobkey') is not None:
+                    job_url = 'https://www.indeed.com/m/basecamp/viewjob?viewtype=embedded&jk=' + job.get('jobkey')
+                    yield scrapy.Request(url=job_url, 
+                            callback=self.parse_job, 
+                            meta={
+                                'keyword': keyword, 
+                                'location': location, 
+                                'page': round(offset / 10) + 1 if offset > 0 else 1,
+                                'position': index,
+                                'jobKey': job.get('jobkey'),
+                            })
     
-    def parse():
-        ...
+    def parse_job(self, response):
+        location = response.meta['location']
+        keyword = response.meta['keyword']
+        page = response.meta['page']
+        position = response.meta['position']
+        script_tag = re.findall(r"_initialData=(\{.+?\});", response.text)
+        
+        if script_tag:
+            json_blob = json.loads(script_tag[0])
+            job = json_blob["jobInfoWrapperModel"]["jobInfoModel"]['jobInfoHeaderModel']
+            sanitizedJobDescription = json_blob["jobInfoWrapperModel"]["jobInfoModel"]['sanitizedJobDescription']
+            
+            yield {
+                'keyword': keyword,
+                'location': location,
+                'page': page,
+                'position': position,
+                'company': job.get('companyName'),
+                'jobkey': response.meta['jobKey'],
+                'jobTitle': job.get('jobTitle'),
+                'jobDescription': sanitizedJobDescription,
+            }
