@@ -96,7 +96,7 @@ DOWNLOADER_MIDDLEWARES = {
     'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
 }
 
-SCRAPEOPS_API_KEY = '5fc28f18-f7df-41bc-bc79-fc41d3d3ad82'
+SCRAPEOPS_API_KEY = ''
 SCRAPEOPS_PROXY_ENABLED = True
 
 # Enable or disable extensions
