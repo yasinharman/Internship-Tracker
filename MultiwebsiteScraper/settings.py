@@ -93,11 +93,7 @@ COOKIES_ENABLED = True
 DOWNLOADER_MIDDLEWARES = {
     # 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
     # 'scrapy_user_agents.middlewares.RandomUserAgentMiddleware': 400,
-    'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
 }
-
-SCRAPEOPS_API_KEY = ''
-SCRAPEOPS_PROXY_ENABLED = True
 
 # Enable or disable extensions
 # See https://docs.scrapy.org/en/latest/topics/extensions.html
