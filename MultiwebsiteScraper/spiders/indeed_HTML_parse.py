@@ -6,18 +6,31 @@ class IndeedJobSpider(scrapy.Spider):
 
     custom_settings = {
         # LÜTFEN API KEY'İNİ AŞAĞIYA YAPIŞTIR
-        'SCRAPEOPS_API_KEY': 'BURAYA_API_KEY_YAZMAYI_UNUTMA', 
+        'SCRAPEOPS_API_KEY': '', 
         'SCRAPEOPS_PROXY_ENABLED': True,
         'DOWNLOADER_MIDDLEWARES': {
             'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
         },
         'CONCURRENT_REQUESTS': 1, 
         'DOWNLOAD_DELAY': 2,
+        
+        'DEFAULT_REQUEST_HEADERS': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                    'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Referer': 'https://tr.indeed.com/',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'same-origin',
+                    'Sec-Fetch-User': '?1',
+                },
     }
 
     def get_indeed_search_url(self, keyword, location, offset=0):
         parameters = {"q": keyword, "l": location, "filter": 0, "start": offset}
-        return "https://www.indeed.com/jobs?" + urlencode(parameters)
+        return "https://tr.indeed.com/jobs?" + urlencode(parameters)
     
     def start_requests(self):
         keyword_list = ['python']
@@ -40,7 +53,8 @@ class IndeedJobSpider(scrapy.Spider):
                             'keyword': keyword,
                             'location': location,
                             'offset': offset,
-                            'page_num': page + 1
+                            'page_num': page + 1,
+                            'sops_render_js': True, #####
                         }
                     )
     
@@ -55,7 +69,11 @@ class IndeedJobSpider(scrapy.Spider):
             if link:
                 yield scrapy.Request(
                     url = response.urljoin(link),
-                    callback = self.parse_job_detail
+                    callback = self.parse_job_detail,
+                    meta = {
+                        # 'sops_render_js': True,
+                        'keyword': response.meta.get('keyword') # Keyword verisini taşımaya devam et
+                    }
                 )
 
     def parse_job_detail(self, response):
