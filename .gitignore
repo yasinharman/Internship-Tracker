@@ -4,3 +4,6 @@
 __pycache__
 #session profiles
 playwright_browser_profiles
+#local test files
+httpcache/
+.scrapy/
