@@ -1,5 +1,7 @@
 import scrapy
 from urllib.parse import urlencode
+from scrapy.loader import ItemLoader
+from MultiwebsiteScraper.items import IndeedItem
 
 class IndeedJobSpider(scrapy.Spider):
     name = "indeed_html"
@@ -63,7 +65,7 @@ class IndeedJobSpider(scrapy.Spider):
                     callback = self.parse_job_detail,
                     meta = {
                         'sops_render_js': False, # İlan detaylarının olduğu sayfada antibot koruması çok yoğun olmadığından API kredisi tasarrufu ve hız için bu sayfalarda js render yapmıyoruz.
-                        'sops_residential': False,
+                        'sops_residential': True,
                         'sops_country': 'tr',
                     }
                 )
@@ -71,33 +73,22 @@ class IndeedJobSpider(scrapy.Spider):
     def parse_job_detail(self, response):
         container = response.css("div.jobsearch-JobComponent")
 
+        DEFAULT_VALUE = "N/A"
+        loader = ItemLoader(item=IndeedItem(), selector=container)
+
+        loader.add_css("job_title", "h1[data-testid='jobsearch-JobInfoHeader-title'] span::text", default=DEFAULT_VALUE)
         
-        job_title = container.css("h1[data-testid='jobsearch-JobInfoHeader-title'] span::text").get()
+        loader.add_css("company", "div[data-testid='inlineHeader-companyName'] a::text", default=DEFAULT_VALUE)
+        loader.add_css("company", "div[data-testid='inlineHeader-companyName']::text", default=DEFAULT_VALUE)
         
-        company = container.css("div[data-testid='inlineHeader-companyName'] a::text").get()
-        if not company:
-            company = container.css("div[data-testid='inlineHeader-companyName']::text").get()
+        loader.add_css("location", "div[data-testid='jobsearch-JobInfoHeader-companyLocation'] span::text", default=DEFAULT_VALUE)
+        loader.add_css("location", "div[data-testid='jobsearch-JobInfoHeader-companyLocation']::text", default=DEFAULT_VALUE)
         
-        location = container.css("div[data-testid='jobsearch-JobInfoHeader-companyLocation'] span::text").get()
-        if not location:
-             location = container.css("div[data-testid='jobsearch-JobInfoHeader-companyLocation']::text").get()
+        loader.add_css("job_type", "div#jobDetailsSection div[aria-label='İş türü'] span::text", default=DEFAULT_VALUE)
         
-        text_nodes = response.xpath('//div[@id="jobDescriptionText"]//text()').getall()
-        job_description = " ".join([text.strip() for text in text_nodes if text.strip()])
+        loader.add_xpath('job_description', '//div[@id="jobDescriptionText"]//text()')
 
-        source_site = "linkedin"
+        loader.add_value('source_site', 'linkedin')
 
-
-
-
-
-        yield {
-            'job_title': job_title,
-            'company': company,
-            'location': location,
-            "job_description": job_description,
-            'url': response.url,
-            "source_site": source_site,
-
-        }
+        yield loader.load_item()
 

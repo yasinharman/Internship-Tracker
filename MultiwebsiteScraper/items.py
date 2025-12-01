@@ -4,12 +4,7 @@
 # https://docs.scrapy.org/en/latest/topics/items.html
 
 import scrapy
-from itemloaders.processors import MapCompose, TakeFirst
-
-class MultiwebsitescraperItem(scrapy.Item):
-    # define the fields for your item here like:
-    # name = scrapy.Field()
-    pass
+from itemloaders.processors import MapCompose, TakeFirst, Join
 
 def clean_up_n(txt):
     try:
@@ -18,6 +13,12 @@ def clean_up_n(txt):
         return txt
     except:
         return txt
+
+# Metinlerdeki gereksiz boşlukları temizlemek için yardımcı fonksiyon
+def compress_whitespace(text):
+    if text:
+        return ' '.join(text.split())
+    return text
 
 class KariyerNetItem(scrapy.Item):
 
@@ -65,5 +66,29 @@ class TechCareerItem(scrapy.Item):
         output_processor = TakeFirst()
     )
     experience = scrapy.Field(
+        output_processor = TakeFirst()
+    )
+
+class IndeedItem(scrapy.Item):
+    job_title = scrapy.Field(
+        output_processor = TakeFirst()
+    )
+    company = scrapy.Field(
+        output_processor = TakeFirst()
+    )
+    location = scrapy.Field(
+        output_processor = TakeFirst()
+    )
+    job_type = scrapy.Field(
+        output_processor = TakeFirst()
+    )
+    job_description = scrapy.Field(
+        input_processor=MapCompose(compress_whitespace),
+        output_processor=Join(' ')
+    )
+    url = scrapy.Field(
+        output_processor = TakeFirst()
+    )
+    source_site = scrapy.Field(
         output_processor = TakeFirst()
     )
