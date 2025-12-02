@@ -130,24 +130,3 @@ DOWNLOADER_MIDDLEWARES = {
 
 # Set settings whose default value is deprecated to a future-proof value
 FEED_EXPORT_ENCODING = "utf-8"
-
-# --- DEBUG VE CACHE AYARLARI ---
-
-# 1. Cache'i aktif hale getirir
-HTTPCACHE_ENABLED = True
-
-# 2. Cache süresi (Saniye cinsinden). 
-# '0' yaparsan sonsuza kadar saklar (silene kadar).
-HTTPCACHE_EXPIRATION_SECS = 0
-
-# 3. Cache dosyalarının saklanacağı klasör adı.
-# Proje ana dizininde 'httpcache' adında bir klasör oluşacak.
-HTTPCACHE_DIR = 'httpcache'
-
-# 4. Hata kodlarını cache'leme!
-# Eğer site sana 403 (Ban), 404 veya 500 hatası verirse bunu kaydetmesin.
-# Kaydederse, hatayı düzeltip tekrar çalıştırdığında bile yine o hatayı okursun.
-HTTPCACHE_IGNORE_HTTP_CODES = [400, 401, 403, 404, 429, 500, 503]
-
-# 5. Standart dosya sistemi depolamasını kullan (Varsayılan budur ama yazmakta fayda var)
-HTTPCACHE_STORAGE = 'scrapy.extensions.httpcache.FilesystemCacheStorage'
