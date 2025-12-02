@@ -98,7 +98,7 @@ DOWNLOADER_MIDDLEWARES = {
 # Enable or disable extensions
 # See https://docs.scrapy.org/en/latest/topics/extensions.html
 # EXTENSIONS = {
-#     'scrapeops_scrapy.extension.ScrapeOpsMonitor': 500, #IMPORTANT FOR REQUEST MONITORING
+#     'scrapeops_scrapy.extension.ScrapeOpsMonitor': 500, #IMPORTANT FOR REQUEST MONITORINGo
 # }
 
 # Configure item pipelines
@@ -130,7 +130,6 @@ DOWNLOADER_MIDDLEWARES = {
 
 # Set settings whose default value is deprecated to a future-proof value
 FEED_EXPORT_ENCODING = "utf-8"
-
 
 # --- DEBUG VE CACHE AYARLARI ---
 

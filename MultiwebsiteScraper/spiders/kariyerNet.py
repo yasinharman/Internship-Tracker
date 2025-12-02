@@ -1,187 +1,54 @@
 import scrapy
-from scrapy_playwright.page import PageMethod
+from urllib.parse import urlencode
 from scrapy.loader import ItemLoader
 from MultiwebsiteScraper.items import KariyerNetItem # ITEM AYARLAMASI YAPILACAK
 from random import randint
 from pathlib import Path
 
-""" 
-Playwright settings for the first tab we are opening
- to get all the job application links. I am creating
- this from zero with a function for every request because i want to keep
- it same for every request.
-"""
-
-def meta_for_first_tabs():
-    return {
-            "playwright": True,
-
-            "playwright_context_kwargs": {
-                "is_mobile": False,
-                "has_touch": False,
-                "device_scale_factor": 1.25,
-                "viewport": {"width": 1536, "height": 864},
-                "locale": "tr-TR",
-                "timezone_id": "Europe/Istanbul"
-
-            },
-
-            "playwright_include_page": True,
-
-            "playwright_page_methods": [
-
-                PageMethod("wait_for_load_state", "domcontentloaded"),
-
-                PageMethod("wait_for_selector", "div.list-items-wrapper"),
-
-                PageMethod(
-                        "evaluate",
-                        """
-                    async () => {
-                        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-                        const randomInt = (min, max) =>
-                            Math.floor(Math.random() * (max - min + 1)) + min;
-
-                        let previousHeight = 0;
-                        let sameHeightCounter = 0;
-                        const maxSameHeight = 3;
-
-                        while (sameHeightCounter < maxSameHeight) {
-                            const currentY = window.scrollY;
-                            const maxY = Math.max(0, document.body.scrollHeight - window.innerHeight);
-                            const distanceToBottom = maxY - currentY;
-
-                            let targetY = currentY;
-
-                            if (distanceToBottom < 400) {
-                                // Alta çok yaklaştıysan: biraz etrafta takıl, hafif yukarı/aşağı
-                                if (Math.random() < 0.5) {
-                                    // Küçük yukarı scroll
-                                    targetY = Math.max(0, currentY - randomInt(100, 400));
-                                } else {
-                                    // Alta yakın küçük aşağı / yerinde gezinme
-                                    targetY = Math.min(maxY, currentY + randomInt(50, 200));
-                                }
-                            } else {
-                                // Normal durumda aşağı doğru daha büyük rastgele adım
-                                targetY = Math.min(maxY, currentY + randomInt(300, 800));
-                            }
-
-                            window.scrollTo({
-                                top: targetY,
-                                behavior: "smooth",
-                            });
-
-                            // Ortalama ~1 sn bekleme (800–1200 ms arası)
-                            await delay(randomInt(800, 1200));
-
-                            const newHeight = document.body.scrollHeight;
-
-                            if (newHeight === previousHeight) {
-                                sameHeightCounter += 1;
-                            } else {
-                                sameHeightCounter = 0;
-                                previousHeight = newHeight;
-                            }
-                        }
-                    }
-                    """
-                ),
-
-                # PageMethod("wait_for_timeout", randint(2000, 3000))
-
-            ]
-        }
-
-"""
-This function is creating the meta dict for the requests
- that we send to the links that we get from the first page.
- I did not add the scrolling method because it is creating an
- unnecessary slowness on the scraping operation. I also deactivated
- the playiwright include page because i dont want to open a new tab
- for every job application. 
-"""
-
-def meta_for_back_to_back_pages(): 
-    return {
-            "playwright": True,
-
-            "playwright_context_kwargs": {
-                "is_mobile": False,
-                "has_touch": False,
-                "device_scale_factor": 1.25,
-                "viewport": {"width": 1536, "height": 864},
-                "locale": "tr-TR",
-                "timezone_id": "Europe/Istanbul"
-
-            },
-
-            # "playwright_include_page": True,
-
-            "playwright_page_methods": [
-
-                PageMethod("wait_for_load_state", "domcontentloaded"),
-
-                PageMethod("wait_for_selector", "div.main-container"),
-                
-                PageMethod("wait_for_timeout", randint(2000, 3000))
-            ]
-        }
-
-"""
-Scraper starts from here
-"""
-STATE_FILE = Path("storage/kariyer_state.json")
-
 class KariyernetSpider(scrapy.Spider):
     name = "kariyerNet"
 
-    def start_requests(self):
-        start_url = "https://www.kariyer.net/is-ilanlari/istanbul-bilisim?ct=34,82&cs=001000000&wa=22,78"
-
-        yield scrapy.Request(
-            url = start_url,
-            meta = meta_for_first_tabs(),
-                callback=self.parse_all_links
-        )
-
-
-    """
-    Helper function to parse all the links from the main tab.
-    """
-
-    def get_all_links(self, response):
-        container = response.css("div.list-items-wrapper")
-        links = container.css("div[data-test='ad-card'] a[data-test='ad-card-item']::attr(href)").getall()
-
-        return links
-
-    """
-    This function is for the pagination
-    """
-
-    def parse_all_links(self, response):
-        links = self.get_all_links(response)
-        
-        for link in links:
-            yield scrapy.Request(
-                url = response.urljoin(link), 
-                meta = meta_for_back_to_back_pages(),
-                callback=self.parse_detail
-            )
-
-        next_page_url = response.css("a[aria-label='Go to next page']::attr(href)").get()
-        
-        if next_page_url:
-            yield scrapy.Request(
-                url = response.urljoin(next_page_url),
-                meta=meta_for_first_tabs(),
-                callback=self.parse_all_links
-            )
+    custom_settings = {
+    'SCRAPEOPS_API_KEY': '', 
+    'SCRAPEOPS_PROXY_ENABLED': True,
+    'DOWNLOADER_MIDDLEWARES': {
+        'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
+    },
+    'CONCURRENT_REQUESTS': 1, 
+    'DOWNLOAD_DELAY': 2,
     
-    """
-    This function is for parsing the job info from the job application tabs.
-    """
+    'DEFAULT_REQUEST_HEADERS': {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+            },
+    }
+
+    def get_kariyer_search_url(self, city_plate_number, keyword, page_num):
+        parameters = {"ct": city_plate_number, "kw": keyword, "cp":page_num}
+        return "https://www.kariyer.net/is-ilanlari/istanbul+avrupa?" + urlencode(parameters)
+
+
+    def start_requests(self):
+        city_plate_list = ["34"]
+        keyword_list = ["python"]
+        
+        page_limit = 3
+        
+        for city_plate_number in city_plate_list:
+            for keyword in keyword_list:
+                for page in range(page_limit):
+                    page_num = page + 1
+
+                    kariyer_url = self.get_kariyer_search_url(city_plate_number, keyword, page_num)
+
+                    yield scrapy.Request(
+                        url=kariyer_url, 
+                        callback=self.parse_job_links, 
+                        meta={
+                            'sops_render_js': True, # İş ilanlarının listelendiği ilk sayfada bot korumasını bypass edebilmek için js render yapıyoruz.
+                        })
+    def parse_job_links():
+        ...
 
     def parse_detail(self, response):
         container = response.css("div.main-container")
