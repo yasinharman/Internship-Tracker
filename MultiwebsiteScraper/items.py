@@ -34,19 +34,19 @@ class KariyerNetItem(scrapy.Item):
         input_processor=MapCompose(clean_up_n),
         output_processor=TakeFirst()
     )
-    work_method = scrapy.Field(
+    job_type = scrapy.Field(
         input_processor=MapCompose(clean_up_n),
         output_processor=TakeFirst()
     )
-    experience = scrapy.Field(
+    job_description = scrapy.Field(
         input_processor=MapCompose(clean_up_n),
         output_processor=TakeFirst()
     )
-    department = scrapy.Field(
+    url = scrapy.Field(
         input_processor=MapCompose(clean_up_n),
         output_processor=TakeFirst()
     )
-    appointment_count = scrapy.Field(
+    source_site = scrapy.Field(
         input_processor=MapCompose(clean_up_n),
         output_processor=TakeFirst()
     )

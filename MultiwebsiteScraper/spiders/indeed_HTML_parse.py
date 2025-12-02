@@ -86,7 +86,7 @@ class IndeedJobSpider(scrapy.Spider):
                     callback = self.parse_job_detail,
                     meta = {
                         'sops_render_js': False, # İlan detaylarının olduğu sayfada antibot koruması çok yoğun olmadığından API kredisi tasarrufu ve hız için bu sayfalarda js render yapmıyoruz.
-                        'sops_residential': True,
+                        'sops_residential': False,
                         'sops_country': 'tr',
                     }
                 )
@@ -108,6 +108,8 @@ class IndeedJobSpider(scrapy.Spider):
         loader.add_css("job_type", "div#jobDetailsSection div[aria-label='İş türü'] span::text", default=DEFAULT_VALUE)
         
         loader.add_xpath('job_description', '//div[@id="jobDescriptionText"]//text()')
+
+        loader.add_value("url", response.url)
 
         loader.add_value('source_site', 'linkedin')
 
