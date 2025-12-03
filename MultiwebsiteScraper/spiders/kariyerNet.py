@@ -9,7 +9,7 @@ class KariyernetSpider(scrapy.Spider):
     name = "kariyerNet"
 
     custom_settings = {
-    'SCRAPEOPS_API_KEY': '9978eae2-0811-40b7-908d-28c38d5f4e3b', 
+    'SCRAPEOPS_API_KEY': '', 
     'SCRAPEOPS_PROXY_ENABLED': True,
     'DOWNLOADER_MIDDLEWARES': {
         'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
@@ -93,11 +93,17 @@ class KariyernetSpider(scrapy.Spider):
         loader = ItemLoader(item=KariyerNetItem(), selector=container)
 
         loader.add_css("job_title", "div[data-test='job-title']::text", default=DEFAULT_VALUE)
+        
         loader.add_css("company", "a[data-test='company-name']::text", default=DEFAULT_VALUE)
+        
         loader.add_css("location", "span[data-test='company-location']::text", default=DEFAULT_VALUE)
+        
         loader.add_css("job_type", 'p[data-test="detail-work-type"]::text', default=DEFAULT_VALUE)
+        
         loader.add_xpath('job_description', '//div[@data-test="qualifications-and-job-description"]//text()')
+        
         loader.add_value("url", response.url)
+        
         loader.add_css("source_site", 'kariyernet')
 
         yield loader.load_item()
