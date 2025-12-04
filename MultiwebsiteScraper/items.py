@@ -39,8 +39,8 @@ class KariyerNetItem(scrapy.Item):
         output_processor=TakeFirst()
     )
     job_description = scrapy.Field(
-        input_processor=MapCompose(clean_up_n),
-        output_processor=TakeFirst()
+        input_processor=MapCompose(clean_up_n, str.strip), # Boşlukları temizle
+        output_processor=Join(' ')
     )
     url = scrapy.Field(
         input_processor=MapCompose(clean_up_n),
@@ -62,10 +62,17 @@ class TechCareerItem(scrapy.Item):
     location = scrapy.Field(
         output_processor = TakeFirst()
     )
-    work_method = scrapy.Field(
+    job_type = scrapy.Field(
         output_processor = TakeFirst()
     )
-    experience = scrapy.Field(
+    job_description = scrapy.Field(
+        input_processor=MapCompose(str.strip, clean_up_n), # Boşlukları temizle
+        output_processor=Join(' ')
+    )
+    url = scrapy.Field(
+        output_processor = TakeFirst()
+    )
+    source_site = scrapy.Field(
         output_processor = TakeFirst()
     )
 
@@ -83,7 +90,7 @@ class IndeedItem(scrapy.Item):
         output_processor = TakeFirst()
     )
     job_description = scrapy.Field(
-        input_processor=MapCompose(compress_whitespace),
+        input_processor=MapCompose(compress_whitespace, clean_up_n),
         output_processor=Join(' ')
     )
     url = scrapy.Field(

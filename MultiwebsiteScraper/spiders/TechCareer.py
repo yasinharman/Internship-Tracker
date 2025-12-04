@@ -125,6 +125,26 @@ def meta_for_back_to_back_pages(context_id=None):
 class TechcareerSpider(scrapy.Spider):
     name = "TechCareer"
 
+    custom_settings = {
+        # Sadece bu spider için Playwright handler'larını aktif ediyoruz
+        "DOWNLOAD_HANDLERS": {
+            "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+            "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+        },
+
+        "TWISTED_REACTOR": "twisted.internet.asyncioreactor.AsyncioSelectorReactor",
+
+        "PLAYWRIGHT_LAUNCH_OPTIONS": {
+            "headless": True, # Hata ayıklarken False yapın, görebilmek için
+            "args": [
+                "--disable-blink-features=AutomationControlled", # Bot olduğunuzu gizler
+                "--no-sandbox",
+            ]
+        },
+        # Bu site JavaScript ile yüklendiği için biraz beklemesi gerekebilir
+        "PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT": 30000,
+    }
+
     def start_requests(self):
         PLAYWRIGHT_CONTEXT_ID = "persisted_context"
 
@@ -168,11 +188,21 @@ class TechcareerSpider(scrapy.Spider):
         DEFAULT_VALUE = "N/A"
         loader = ItemLoader(item=TechCareerItem(), selector=container)
 
+        
         loader.add_css("job_title", "h1[data-test='job-detail-title']::text", default=DEFAULT_VALUE)
+        
         loader.add_css("company", "h2[data-test='job-detail-company-name']::text", default=DEFAULT_VALUE)
-        loader.add_css("location", "h3.css-1ywrvz7::text", default=DEFAULT_VALUE)
-        loader.add_css("work_method", "h3.css-hpmb9t strong::text", default=DEFAULT_VALUE)
-        loader.add_css("experience", "h3.css-1ywrvz7::text", default=DEFAULT_VALUE)
+        loader.add_css("company", "h2[data-test='job-detail-company-name'] a::text", default=DEFAULT_VALUE)
+        
+        loader.add_css("location", "div[data-test='job-detail-location'] h3.css-1ywrvz7::text", default=DEFAULT_VALUE)
+        
+        loader.add_css("job_type", "h3.css-hpmb9t strong::text", default=DEFAULT_VALUE)
+        
+        loader.add_css('job_description', 'div[data-test="job-detail-desc-content"] *::text')
+
+        loader.add_value("url", response.url)
+
+        loader.add_value("source_site", "techcareer")
 
         yield loader.load_item()
 

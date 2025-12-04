@@ -23,13 +23,6 @@ NEWSPIDER_MODULE = "MultiwebsiteScraper.spiders"
 
 ADDONS = {}
 
-# DOWNLOAD_HANDLERS = { #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
-#     "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
-#     "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
-# }
-
-# TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
-
 DOWNLOAD_HANDLERS = {
     'file': 'scrapy.core.downloader.handlers.file.FileDownloadHandler',
     'http': 'scrapy.core.downloader.handlers.http.HTTPDownloadHandler',
