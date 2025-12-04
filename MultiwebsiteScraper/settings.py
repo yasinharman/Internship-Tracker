@@ -32,23 +32,23 @@ DOWNLOAD_HANDLERS = {
     'data': 'scrapy.core.downloader.handlers.datauri.DataURIDownloadHandler',
 }
 
-PLAYWRIGHT_BROWSER_TYPE = "chromium"
-# PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "/opt/google/chrome/google-chrome"
+# PLAYWRIGHT_BROWSER_TYPE = "chromium"
+# # PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "/opt/google/chrome/google-chrome"
 
-PLAYWRIGHT_LAUNCH_OPTIONS = { #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
-    "headless": False,
-    "args": [
-        "--disable-blink-features=AutomationControlled",
-        "--disable-dev-shm-usage",
-        "--no-sandbox",
-        # "--disable-web-security",
-        # "--disable-features=VizDisplayCompositor",
-        # "--disable-infobars",  # ← otomasyon bannerını kaldırır
-        # "--start-maximized",   # ← gerçek kullanıcı gibi tam ekran aç
-        # "--disable-extensions" # ← extension yokmuş gibi davran
-    ]
+# PLAYWRIGHT_LAUNCH_OPTIONS = { #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
+#     "headless": False,
+#     "args": [
+#         "--disable-blink-features=AutomationControlled",
+#         "--disable-dev-shm-usage",
+#         "--no-sandbox",
+#         # "--disable-web-security",
+#         # "--disable-features=VizDisplayCompositor",
+#         # "--disable-infobars",  # ← otomasyon bannerını kaldırır
+#         # "--start-maximized",   # ← gerçek kullanıcı gibi tam ekran aç
+#         # "--disable-extensions" # ← extension yokmuş gibi davran
+#     ]
 
-}
+# }
 
 # Obey robots.txt rules
 ROBOTSTXT_OBEY = False

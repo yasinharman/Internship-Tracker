@@ -99,3 +99,29 @@ class IndeedItem(scrapy.Item):
     source_site = scrapy.Field(
         output_processor = TakeFirst()
     )
+
+class LinkedInItem(scrapy.Item):
+    job_title = scrapy.Field(
+        output_processor = TakeFirst()
+    )
+    company = scrapy.Field(
+        input_processor=MapCompose(compress_whitespace, clean_up_n),
+        output_processor = TakeFirst()
+    )
+    location = scrapy.Field(
+        input_processor=MapCompose(clean_up_n),
+        output_processor = TakeFirst()
+    )
+    job_type = scrapy.Field(
+        output_processor = TakeFirst()
+    )
+    job_description = scrapy.Field(
+        input_processor=MapCompose(clean_up_n),
+        output_processor=Join(' ')
+    )
+    url = scrapy.Field(
+        output_processor = TakeFirst()
+    )
+    source_site = scrapy.Field(
+        output_processor = TakeFirst()
+    )
