@@ -1,10 +1,5 @@
 import scrapy
-from scrapy.loader import ItemLoader
-from MultiwebsiteScraper.items import LinkedInItem
-
-import scrapy
-from scrapy.loader import ItemLoader
-from MultiwebsiteScraper.items import LinkedInItem
+from ..loaders import LinkedInLoader
 
 # --- BU KISMI EKLE ---
 import scrapy.utils.misc
@@ -97,10 +92,9 @@ class LinkedinSpider(scrapy.Spider):
             )
 
     def parse_detail(self, response):
-        container = response.css("div.details")
 
         DEFAULT_VALUE = "N/A"
-        loader = ItemLoader(item=LinkedInItem(), selector=container)
+        loader = LinkedInLoader(response=response)
 
         loader.add_css("job_title", "h1.top-card-layout__title::text", default=DEFAULT_VALUE)
 

@@ -1,9 +1,7 @@
 import scrapy
 from scrapy_playwright.page import PageMethod
-from scrapy.loader import ItemLoader
-from MultiwebsiteScraper.items import TechCareerItem # ITEM AYARLAMASI YAPILACAK
+from ..loaders import TechCareerLoader
 from random import randint
-from pathlib import Path
 
 def meta_for_first_tabs(context_id=None):
     meta = {
@@ -182,11 +180,9 @@ class TechcareerSpider(scrapy.Spider):
 
 
     def parse_detail(self, response):
-
-        container = response.css("div.css-suqyto")
         
         DEFAULT_VALUE = "N/A"
-        loader = ItemLoader(item=TechCareerItem(), selector=container)
+        loader = TechCareerLoader(response=response)
 
         
         loader.add_css("job_title", "h1[data-test='job-detail-title']::text", default=DEFAULT_VALUE)

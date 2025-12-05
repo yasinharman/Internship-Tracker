@@ -1,7 +1,6 @@
 import scrapy
 from urllib.parse import urlencode
-from scrapy.loader import ItemLoader
-from MultiwebsiteScraper.items import IndeedItem
+from ..loaders import IndeedLoader
 
 class IndeedJobSpider(scrapy.Spider):
     name = "indeed_html"
@@ -92,10 +91,9 @@ class IndeedJobSpider(scrapy.Spider):
                 )
 
     def parse_job_detail(self, response):
-        container = response.css("div.jobsearch-JobComponent")
 
         DEFAULT_VALUE = "N/A"
-        loader = ItemLoader(item=IndeedItem(), selector=container)
+        loader = IndeedLoader(response=response)
 
         loader.add_css("job_title", "h1[data-testid='jobsearch-JobInfoHeader-title'] span::text", default=DEFAULT_VALUE)
         

@@ -1,9 +1,6 @@
 import scrapy
 from urllib.parse import urlencode
-from scrapy.loader import ItemLoader
-from MultiwebsiteScraper.items import KariyerNetItem # ITEM AYARLAMASI YAPILACAK
-from random import randint
-from pathlib import Path
+from ..loaders import KariyerNetLoader
 
 class KariyernetSpider(scrapy.Spider):
     name = "kariyerNet"
@@ -87,10 +84,9 @@ class KariyernetSpider(scrapy.Spider):
             )
 
     def parse_detail(self, response):
-        container = response.css("div.main-container")
 
         DEFAULT_VALUE = "N/A"
-        loader = ItemLoader(item=KariyerNetItem(), selector=container)
+        loader = KariyerNetLoader(response=response)
 
         loader.add_css("job_title", "div[data-test='job-title']::text", default=DEFAULT_VALUE)
         
