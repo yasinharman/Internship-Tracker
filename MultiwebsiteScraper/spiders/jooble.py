@@ -1,129 +1,130 @@
 import scrapy
-from scrapy_playwright.page import PageMethod
-from scrapy.loader import ItemLoader
-from MultiwebsiteScraper.items import TechCareerItem # ITEM AYARLAMASI YAPILACAK
-from random import randint
-from pathlib import Path
-
-def meta_for_first_tabs():
-    return {
-            "playwright": True,
-            
-            "playwright_context_kwargs": {
-                "is_mobile": False,
-                "has_touch": False,
-                "device_scale_factor": 1.25,
-                "viewport": {"width": 1536, "height": 864},
-                "locale": "tr-TR",
-                "timezone_id": "Europe/Istanbul"
-
-            },
-
-            "playwright_include_page": True,
-
-            "playwright_page_methods": [
-
-                PageMethod("wait_for_load_state", "domcontentloaded"),
-                
-                PageMethod("wait_for_selector", "div.customScrollBar"),
-
-                PageMethod(
-                        "evaluate",
-                        """
-                            async () => {
-                            const selector = ".customScrollBar";
-                            const delay = (ms) => new Promise(res => setTimeout(res, ms));
-                            const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
-
-                            const container = document.querySelector(selector);
-                            if (!container) return; // Element yoksa hemen çık
-
-                            let totalHeight = 0;
-                            let distance = 300; // Her seferinde kaydırılacak piksel
-                            let stable_counter = 0; // Değişiklik olmama sayacı
-                            let total_loops = 0; // Toplam döngü sayacı (SONSUZ DÖNGÜ ENGELLEYİCİ)
-                            
-                            // AYARLAR
-                            const max_stable_checks = 5; // Yükseklik 5 kere değişmezse dur.
-                            const max_loops = 100; // Ne olursa olsun 100 kaydırmadan sonra dur (Emniyet sübabı).
-
-                            while (total_loops < max_loops) {
-                                const scrollHeight = container.scrollHeight;
-                                const currentScroll = container.scrollTop + container.clientHeight;
-
-                                // En alta kadar kaydır
-                                container.scrollBy({ top: distance, behavior: 'smooth' });
-                                
-                                // Rastgele bekle (İnsansı davranış ve yükleme süresi)
-                                await delay(rand(400, 800));
-
-                                // Yeni yüksekliği kontrol et
-                                const newScrollHeight = container.scrollHeight;
-
-                                if (newScrollHeight === scrollHeight && currentScroll >= newScrollHeight - 50) {
-                                    // Eğer yükseklik değişmediyse VE zaten en alttaysak
-                                    stable_counter++;
-                                } else {
-                                    // Yükseklik arttıysa veya daha yolumuz varsa sayacı sıfırla
-                                    stable_counter = 0;
-                                }
-
-                                // Eğer X defadır yükseklik değişmiyorsa, sonuna gelmişizdir.
-                                if (stable_counter >= max_stable_checks) {
-                                    console.log("Sayfa sonuna ulaşıldı (Stable count limit).");
-                                    break; 
-                                }
-
-                                total_loops++;
-                            }
-                            
-                            if (total_loops >= max_loops) {
-                                console.log("Maksimum döngü sınırına takıldı, işlem zorla bitiriliyor.");
-                            }
-                        }
-                        """
-                ),
-
-                # PageMethod("wait_for_timeout", randint(2000, 3000))
-
-            ]
-        }
-
-def meta_for_back_to_back_pages(): 
-    return {
-            "playwright": True,
-
-            "playwright_context_kwargs": {
-                "is_mobile": False,
-                "has_touch": False,
-                "device_scale_factor": 1.25,
-                "viewport": {"width": 1536, "height": 864},
-                "locale": "tr-TR",
-                "timezone_id": "Europe/Istanbul"
-            },
-
-            "playwright_page_methods": [
-
-                PageMethod("wait_for_load_state", "domcontentloaded"),
-
-                PageMethod("wait_for_selector", "div.css-suqyto"),
-                
-                PageMethod("wait_for_timeout", randint(1500, 2500))
-            ]
-        }
-
+import json
 
 class JoobleSpider(scrapy.Spider):
     name = "jooble"
+    api_url = "https://tr.jooble.org/api/serp/jobs"
+
+    custom_settings = {
+        'SCRAPEOPS_API_KEY': '', 
+        'SCRAPEOPS_PROXY_ENABLED': True,
+        'DOWNLOADER_MIDDLEWARES': {
+            'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
+        },
+        'CONCURRENT_REQUESTS': 1, 
+        'DOWNLOAD_DELAY': 2,
+        
+        'DEFAULT_REQUEST_HEADERS': {
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                    'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+                },
+        
+        # --- DEBUG VE CACHE AYARLARI ---
+
+        # 1. Cache'i aktif hale getirir
+        'HTTPCACHE_ENABLED' : True,
+
+        # 2. Cache süresi (Saniye cinsinden). 
+        # '0' yaparsan sonsuza kadar saklar (silene kadar).
+        'HTTPCACHE_EXPIRATION_SECS' : 0,
+
+        # 3. Cache dosyalarının saklanacağı klasör adı.
+        # Proje ana dizininde 'httpcache' adında bir klasör oluşacak.
+        'HTTPCACHE_DIR' : 'httpcache_linkedin',
+
+        # 4. Hata kodlarını cache'leme!
+        # Eğer site sana 403 (Ban), 404 veya 500 hatası verirse bunu kaydetmesin.
+        # Kaydederse, hatayı düzeltip tekrar çalıştırdığında bile yine o hatayı okursun.
+        'HTTPCACHE_IGNORE_HTTP_CODES' : [400, 401, 403, 404, 429, 500, 503],
+
+        # 5. Standart dosya sistemi depolamasını kullan (Varsayılan budur ama yazmakta fayda var)
+        'HTTPCACHE_STORAGE' : 'scrapy.extensions.httpcache.FilesystemCacheStorage'
+    }
 
     def start_requests(self):
-        start_url = "https://tr.jooble.org/SearchResult?p=4&rgns=%C4%B0stanbul&ukw=python"
 
-        yield scrapy.Request(
-            url = start_url,
-            meta = meta_for_first_tabs(),
-            callback = self.parse 
+        headers = {
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "page": 1,
+            "region": "İstanbul",
+            "search": "python",
+            "regionId": 56560
+        }
+
+        yield scrapy.http.JsonRequest(
+            url=self.api_url,
+            data=payload,
+            headers=headers,
+            callback=self.parse
         )
 
     def parse(self, response):
-        pass
+            try:
+                data = json.loads(response.text)
+            except json.JSONDecodeError:
+                self.logger.error("JSON parse edilemedi!")
+                return
+
+            jobs = data.get('jobs', [])
+            
+            if not jobs:
+                self.logger.info("No more job applications.")
+                return 
+
+            for job in jobs:
+                yield {'url': job.get('url')}
+
+            current_page = response.meta['page_num']
+            
+            next_page = current_page + 1
+            
+            new_payload = {
+                "page": next_page,
+                "region": "İstanbul",
+                "search": "python",
+                "regionId": 56560
+            }
+
+            yield scrapy.http.JsonRequest(
+                url=self.api_url,
+                data=new_payload,
+                callback=self.parse,
+                meta={'page_num': next_page}
+            )
+
+
+class DetailWorkerSpider(scrapy.Spider):
+    name = "detail_worker"
+
+    def start_requests(self):
+        # Dosya yolu
+        file_path = 'urller.jsonl'
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                
+                for line_number, line in enumerate(f):
+                    
+                    if not line.strip():
+                        continue
+                        
+                    try:
+                        item = json.loads(line)
+                        url = item.get('url')
+                        
+                        if url:
+                            yield scrapy.Request(url=url, callback=self.parse_detail)
+                            
+                    except json.JSONDecodeError:
+                        self.logger.warning(f"{line_number}. satırda bozuk JSON verisi var, atlanıyor.")
+                        
+        except FileNotFoundError:
+            self.logger.error("Dosya bulunamadı! Lütfen önce collector'ı çalıştır.")
+
+    def parse_detail(self, response):
+        yield {
+            'baslik': response.css('h1::text').get(),
+            'url': response.url
+        }
