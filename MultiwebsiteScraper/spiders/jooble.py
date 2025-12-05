@@ -15,7 +15,7 @@ class JoobleSpider(scrapy.Spider):
         'DOWNLOAD_DELAY': 2,
         
         'DEFAULT_REQUEST_HEADERS': {
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                    'Accept': 'application/json',
                     'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
                 },
         
@@ -56,8 +56,10 @@ class JoobleSpider(scrapy.Spider):
         yield scrapy.http.JsonRequest(
             url=self.api_url,
             data=payload,
+            method='POST',
             headers=headers,
-            callback=self.parse
+            callback=self.parse,
+            meta={'page_num': 1}
         )
 
     def parse(self, response):
@@ -74,11 +76,16 @@ class JoobleSpider(scrapy.Spider):
                 return 
 
             for job in jobs:
-                yield {'url': job.get('url')}
+                job_url = job.get('url')
+                if job_url:
+                    yield {'url': job_url}
 
             current_page = response.meta['page_num']
             
             next_page = current_page + 1
+
+            if next_page > 20:
+                return
             
             new_payload = {
                 "page": next_page,
