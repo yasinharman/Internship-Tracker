@@ -108,9 +108,9 @@ class LinkedinSpider(scrapy.Spider):
 
         loader.add_css("location", "span.topcard__flavor--bullet::text", default = DEFAULT_VALUE)
 
-        loader.add_xpath("job_type", "//h3[contains(text(), 'İstihdam türü')]/following-sibling::span[@class='description__job-criteria-text']/text()", default=DEFAULT_VALUE)
+        loader.add_xpath("job_type", "//h3[contains(text(), 'İstihdam türü')]/following-sibling::span[contains(@class, 'description__job-criteria-text')]/text()", default=DEFAULT_VALUE)
 
-        loader.add_xpath('job_description', '//div[@class="description__text"]//text()', default=DEFAULT_VALUE)
+        loader.add_xpath('job_description', '//div[contains(@class="description__text")]//text()', default=DEFAULT_VALUE)
 
         loader.add_value("url", response.url)
 
