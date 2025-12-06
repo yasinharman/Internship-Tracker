@@ -1,12 +1,13 @@
 import scrapy
 import json
+from ..loaders import JoobleLoader
 
-class JoobleSpider(scrapy.Spider):
+class JoobleUrlCrawler(scrapy.Spider):
     name = "jooble"
     api_url = "https://tr.jooble.org/api/serp/jobs"
 
     custom_settings = {
-        'SCRAPEOPS_API_KEY': '', 
+        'SCRAPEOPS_API_KEY': '238c365d-873a-492a-bd8a-d9ecd11e6772', 
         'SCRAPEOPS_PROXY_ENABLED': True,
         'DOWNLOADER_MIDDLEWARES': {
             'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
@@ -43,9 +44,6 @@ class JoobleSpider(scrapy.Spider):
 
     def start_requests(self):
 
-        headers = {
-            "Content-Type": "application/json",
-        }
         payload = {
             "page": 1,
             "region": "İstanbul",
@@ -53,11 +51,14 @@ class JoobleSpider(scrapy.Spider):
             "regionId": 56560
         }
 
-        yield scrapy.http.JsonRequest(
+        yield scrapy.Request(
             url=self.api_url,
-            data=payload,
             method='POST',
-            headers=headers,
+            body=json.dumps(payload), # data yerine body kullanıyoruz ve manuel string'e çeviriyoruz
+            headers={
+                "Content-Type": "application/json", # Bunu eklemek zorundasın
+                # Diğer headerların varsa buraya ekle
+            },
             callback=self.parse,
             meta={'page_num': 1}
         )
@@ -94,9 +95,11 @@ class JoobleSpider(scrapy.Spider):
                 "regionId": 56560
             }
 
-            yield scrapy.http.JsonRequest(
+            yield scrapy.Request(
                 url=self.api_url,
-                data=new_payload,
+                method='POST',
+                body=json.dumps(new_payload), # new_payload'u json string'e çevir
+                headers={"Content-Type": "application/json"},
                 callback=self.parse,
                 meta={'page_num': next_page}
             )
@@ -104,6 +107,42 @@ class JoobleSpider(scrapy.Spider):
 
 class DetailWorkerSpider(scrapy.Spider):
     name = "detail_worker"
+
+    custom_settings = {
+        'SCRAPEOPS_API_KEY': '238c365d-873a-492a-bd8a-d9ecd11e6772', 
+        'SCRAPEOPS_PROXY_ENABLED': True,
+        'DOWNLOADER_MIDDLEWARES': {
+            'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
+        },
+        'CONCURRENT_REQUESTS': 1, 
+        'DOWNLOAD_DELAY': 2,
+        
+        'DEFAULT_REQUEST_HEADERS': {
+                    'Accept': 'application/json',
+                    'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+                },
+        
+        # --- DEBUG VE CACHE AYARLARI ---
+
+        # 1. Cache'i aktif hale getirir
+        'HTTPCACHE_ENABLED' : False,
+
+        # 2. Cache süresi (Saniye cinsinden). 
+        # '0' yaparsan sonsuza kadar saklar (silene kadar).
+        'HTTPCACHE_EXPIRATION_SECS' : 0,
+
+        # 3. Cache dosyalarının saklanacağı klasör adı.
+        # Proje ana dizininde 'httpcache' adında bir klasör oluşacak.
+        'HTTPCACHE_DIR' : 'httpcache_linkedin',
+
+        # 4. Hata kodlarını cache'leme!
+        # Eğer site sana 403 (Ban), 404 veya 500 hatası verirse bunu kaydetmesin.
+        # Kaydederse, hatayı düzeltip tekrar çalıştırdığında bile yine o hatayı okursun.
+        'HTTPCACHE_IGNORE_HTTP_CODES' : [400, 401, 403, 404, 429, 500, 503],
+
+        # 5. Standart dosya sistemi depolamasını kullan (Varsayılan budur ama yazmakta fayda var)
+        'HTTPCACHE_STORAGE' : 'scrapy.extensions.httpcache.FilesystemCacheStorage'
+    }
 
     def start_requests(self):
         # Dosya yolu
@@ -122,7 +161,10 @@ class DetailWorkerSpider(scrapy.Spider):
                         url = item.get('url')
                         
                         if url:
-                            yield scrapy.Request(url=url, callback=self.parse_detail)
+                            yield scrapy.Request(
+                                        url=url, 
+                                        callback=self.parse_detail
+                                        )
                             
                     except json.JSONDecodeError:
                         self.logger.warning(f"{line_number}. satırda bozuk JSON verisi var, atlanıyor.")
@@ -131,7 +173,24 @@ class DetailWorkerSpider(scrapy.Spider):
             self.logger.error("Dosya bulunamadı! Lütfen önce collector'ı çalıştır.")
 
     def parse_detail(self, response):
-        yield {
-            'baslik': response.css('h1::text').get(),
-            'url': response.url
-        }
+        
+        DEFAULT_VALUE = "N/A"
+        loader = JoobleLoader(response=response)
+
+        
+        loader.add_css("job_title", "div[data-test-name='_jdpHeaderBlock'] h1::text", default=DEFAULT_VALUE)
+        
+        loader.add_css("company", "p[data-test-name='_companyName']::text", default=DEFAULT_VALUE)
+        
+        loader.add_css("location", "a[data-test-name='_regionLink'] span::text", default=DEFAULT_VALUE)
+        
+        loader.add_xpath("job_type", "//div[@class='caption']/text()", default=DEFAULT_VALUE)
+
+        loader.add_css("job_description", "div[data-test-name='_jobDescriptionBlock'] *::text", default=DEFAULT_VALUE)
+
+        loader.add_value("url", response.url)
+
+        loader.add_value("source_site", "jooble.com")
+
+        yield loader.load_item()       
+
