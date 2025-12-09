@@ -27,7 +27,7 @@ class JobPost(Base):
     job_type = Column(String)
 
 def db_connect():
-    return create_engine("postgresql+psycopg2://postgres:Mehperya16@localhost:5432/job_applications_db")
+    return create_engine("postgresql+psycopg2://postgres:PASSWORD@localhost:5432/job_applications_db")
 
 def create_table(engine):
     Base.metadata.create_all(engine)

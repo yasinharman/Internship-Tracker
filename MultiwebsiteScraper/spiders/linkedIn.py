@@ -17,7 +17,7 @@ class LinkedinSpider(scrapy.Spider):
     name = "linkedin"
 
     custom_settings = {
-        'SCRAPEOPS_API_KEY': '238c365d-873a-492a-bd8a-d9ecd11e6772', 
+        'SCRAPEOPS_API_KEY': '', 
         'SCRAPEOPS_PROXY_ENABLED': True,
         'DOWNLOADER_MIDDLEWARES': {
             'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
