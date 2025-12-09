@@ -1,0 +1,11 @@
+Content-Length: 171
+Server: nginx
+Date: Sat, 06 Dec 2025 06:52:49 GMT
+Content-Type: application/problem+json; charset=utf-8
+Content-Encoding: gzip
+Sops_Api_Credits: 1
+Vary: Accept-Encoding
+X-Request-Id: 0c024da3-c2e1-4c80-be32-f4adc4941c8c
+X-Frame-Options: SAMEORIGIN
+X-Xss-Protection: 1; mode=block
+X-Content-Type-Options: nosniff

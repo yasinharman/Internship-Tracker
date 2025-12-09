@@ -1,0 +1,5 @@
+Referer: https://tr.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=python&location=istanbul&position=1&pageNum=0&start=100
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8
+Accept-Language: tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7
+User-Agent: Scrapy/2.13.3 (+https://scrapy.org)
+Accept-Encoding: gzip, deflate
