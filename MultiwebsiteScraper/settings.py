@@ -96,9 +96,9 @@ DOWNLOADER_MIDDLEWARES = {
 
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
-#ITEM_PIPELINES = {
-#    "MultiwebsiteScraper.pipelines.MultiwebsitescraperPipeline": 300,
-#}
+ITEM_PIPELINES = {
+   "MultiwebsiteScraper.pipelines.JobScraperPipeline": 300,
+}
 
 # Enable and configure the AutoThrottle extension (disabled by default)
 # See https://docs.scrapy.org/en/latest/topics/autothrottle.html
