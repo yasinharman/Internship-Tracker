@@ -108,7 +108,7 @@ class LinkedinSpider(scrapy.Spider):
 
         loader.add_value("url", response.url)
 
-        loader.add_value('source_site', 'linkedin')
+        loader.add_value('source_site', 'linkedin.com')
 
         yield loader.load_item()
         

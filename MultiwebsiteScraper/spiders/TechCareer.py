@@ -198,7 +198,7 @@ class TechcareerSpider(scrapy.Spider):
 
         loader.add_value("url", response.url)
 
-        loader.add_value("source_site", "techcareer")
+        loader.add_value("source_site", "techcareer.com")
 
         yield loader.load_item()
 

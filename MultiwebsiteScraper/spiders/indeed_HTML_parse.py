@@ -109,7 +109,7 @@ class IndeedJobSpider(scrapy.Spider):
 
         loader.add_value("url", response.url)
 
-        loader.add_value('source_site', 'indeed')
+        loader.add_value('source_site', 'indeed.com')
 
         yield loader.load_item()
 

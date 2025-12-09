@@ -100,7 +100,7 @@ class KariyernetSpider(scrapy.Spider):
         
         loader.add_value("url", response.url)
         
-        loader.add_css("source_site", 'kariyernet')
+        loader.add_css("source_site", 'kariyernet.com')
 
         yield loader.load_item()
 
