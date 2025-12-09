@@ -7,3 +7,5 @@ playwright_browser_profiles
 #local test files
 httpcache/
 .scrapy/
+#scrapy automatic files
+scrapy.cfg
