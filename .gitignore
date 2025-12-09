@@ -1,0 +1,9 @@
+#Env
+.venv
+#__pycache__
+__pycache__
+#session profiles
+playwright_browser_profiles
+#local test files
+httpcache/
+.scrapy/
