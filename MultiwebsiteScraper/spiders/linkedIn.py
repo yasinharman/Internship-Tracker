@@ -17,7 +17,7 @@ class LinkedinSpider(scrapy.Spider):
     name = "linkedin"
 
     custom_settings = {
-        'SCRAPEOPS_API_KEY': 'd56d319d-3eb2-4532-b939-a166329c3dda', 
+        'SCRAPEOPS_API_KEY': '238c365d-873a-492a-bd8a-d9ecd11e6772', 
         'SCRAPEOPS_PROXY_ENABLED': True,
         'DOWNLOADER_MIDDLEWARES': {
             'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
@@ -104,7 +104,7 @@ class LinkedinSpider(scrapy.Spider):
 
         loader.add_xpath("job_type", "//h3[contains(text(), 'İstihdam türü')]/following-sibling::span[contains(@class, 'description__job-criteria-text')]/text()", default=DEFAULT_VALUE)
 
-        loader.add_xpath('job_description', '//div[contains(@class="description__text")]//text()', default=DEFAULT_VALUE)
+        loader.add_xpath('job_description', '//div[contains(@class, "description__text")]//text()', default=DEFAULT_VALUE)
 
         loader.add_value("url", response.url)
 

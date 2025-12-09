@@ -59,6 +59,8 @@ class LinkedInLoader(BaseJobLoader):
     
     location_in = MapCompose(clean_up_n)
     
+    job_type_in = MapCompose(compress_whitespace, clean_up_n)
+
     job_description_in = MapCompose(clean_up_n)
     job_description_out = Join(' ')
 

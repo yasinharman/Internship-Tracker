@@ -16,6 +16,7 @@ JOB_TYPE_MAPPING = {
     'ft': 'Full-Time',
     'permanent': 'Full-Time',
     'permanent job': 'Full-Time',
+    'sürekli': 'Full-Time',
     
     # Part-Time Aliases
     'part-time': 'Part-Time',
@@ -41,12 +42,16 @@ JOB_TYPE_MAPPING = {
     'temporary': 'Contract',
     'freelance': 'Freelance',
     'freelancer': 'Freelance',
+    'serbest zamanlı': 'Freelance',
+    'geçici': 'Temporary',
+    'proje bazlı': 'Contract',
     
     # Remote Work
     'remote': 'Remote',
     'remote work': 'Remote',
     'uzaktan çalışma': 'Remote',
     'uzaktan': 'Remote',
+    'uzaktan / remote': 'Remote',
 }
 
 def normalize_job_type(job_type):
