@@ -16,6 +16,11 @@ scrapy.core.scraper.warn_on_generator_with_return_value = warn_on_generator_with
 class LinkedinSpider(scrapy.Spider):
     name = "linkedin"
 
+    
+    ####################################################
+    # CUSTOM SETTINGS THAT ONLY ENABLED ON THIS SPIDER #
+    ####################################################
+
     custom_settings = {
         'SCRAPEOPS_API_KEY': '', 
         'SCRAPEOPS_PROXY_ENABLED': True,
@@ -28,33 +33,42 @@ class LinkedinSpider(scrapy.Spider):
         'DEFAULT_REQUEST_HEADERS': {
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
                     'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
-                },
+    },
         
-        # --- DEBUG VE CACHE AYARLARI ---
+    ##############################################
+    # DEBUG AND CACHE SETTINGS FOR THE TEST RUNS #
+    ##############################################
 
-        # 1. Cache'i aktif hale getirir
-        'HTTPCACHE_ENABLED' : True,
+    # ENABLES THE CACHE #
+    'HTTPCACHE_ENABLED' : True,
 
-        # 2. Cache süresi (Saniye cinsinden). 
-        # '0' yaparsan sonsuza kadar saklar (silene kadar).
-        'HTTPCACHE_EXPIRATION_SECS' : 0,
+    # CACHE TIME (Seconds) #
+    # '0' MEANS IT WILL BE STORED FOREVER #
+    'HTTPCACHE_EXPIRATION_SECS' : 0,
 
-        # 3. Cache dosyalarının saklanacağı klasör adı.
-        # Proje ana dizininde 'httpcache' adında bir klasör oluşacak.
-        'HTTPCACHE_DIR' : 'httpcache_linkedin',
+    # NAME OF THE STORAGE FILE FOR THE CACHE FILES #
+    'HTTPCACHE_DIR' : 'httpcache_indeed',
 
-        # 4. Hata kodlarını cache'leme!
-        # Eğer site sana 403 (Ban), 404 veya 500 hatası verirse bunu kaydetmesin.
-        # Kaydederse, hatayı düzeltip tekrar çalıştırdığında bile yine o hatayı okursun.
-        'HTTPCACHE_IGNORE_HTTP_CODES' : [400, 401, 403, 404, 429, 500, 503],
+    # WE ARE ONLY TAKING THE RESULTS OF THE SUCCESFUL REQUESTS #
+    'HTTPCACHE_IGNORE_HTTP_CODES' : [400, 401, 403, 404, 429, 500, 503],
 
-        # 5. Standart dosya sistemi depolamasını kullan (Varsayılan budur ama yazmakta fayda var)
-        'HTTPCACHE_STORAGE' : 'scrapy.extensions.httpcache.FilesystemCacheStorage'
+    # USE DEFAULT FILE SYSTEM STORAGE #
+    'HTTPCACHE_STORAGE' : 'scrapy.extensions.httpcache.FilesystemCacheStorage'
     }
 
+
+    #########################################
+    # CREATING A API URL TO SEND REQUEST #
+    #########################################
+
     def get_search_url(self, keyword, location, start):
-        url = f"https://tr.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={keyword}&location={location}&position=1&pageNum=0&start={start}"
-        return url
+        api_url = f"https://tr.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={keyword}&location={location}&position=1&pageNum=0&start={start}"
+        return api_url
+    
+
+    #########################################
+    # SENDING A REQUEST TO THE API ENDPOINT #
+    #########################################
     
     def start_requests(self):
         keyword_list = ["python"]
@@ -66,8 +80,6 @@ class LinkedinSpider(scrapy.Spider):
             for location in location_list:
                 jobs = 0
                 while jobs <= jobs_limit:
-                    start = jobs
-
                     yield scrapy.Request(
                         url = self.get_search_url(keyword, location, jobs),
                         callback = self.get_job_links,
@@ -77,6 +89,13 @@ class LinkedinSpider(scrapy.Spider):
                         }
                     )
                     jobs += 25
+
+
+    '''
+        Most of the time the api endpoint response is in JSON format 
+        but in linked in its in HTML format so 
+        we are taking the URLs by using the css selectors 
+    '''
 
     def get_job_links(self, response):
         all_links = response.css("div.job-search-card")
@@ -90,6 +109,11 @@ class LinkedinSpider(scrapy.Spider):
                     'sops_country': 'tr',
                 }
             )
+
+
+    ###########################################################
+    # PARSING THE JOB DETAILS FROM THE JOB APPLICATIONS PAGES #
+    ########################################################### 
 
     def parse_detail(self, response):
 

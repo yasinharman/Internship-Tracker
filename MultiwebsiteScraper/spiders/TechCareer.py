@@ -3,7 +3,17 @@ from scrapy_playwright.page import PageMethod
 from ..loaders import TechCareerLoader
 from random import randint
 
+'''
+    In this website antibot protection is not heavy 
+    so we are using playwright for the bypass protocol
+'''
+
 def meta_for_first_tabs(context_id=None):
+
+    ############################################################
+    # PLAYWRIGHT ACTIVATION AND PAGE METHODS FOR THE FIRST TAB #
+    ############################################################
+    
     meta = {
             "playwright": True,
             
@@ -82,17 +92,20 @@ def meta_for_first_tabs(context_id=None):
                         """
                 ),
 
-                # PageMethod("wait_for_timeout", randint(2000, 3000))
-
             ]
         }
     if context_id:
-        # Context ID varsa meta'ya ekle
+        # WE ARE RETURNING CONTEXT ID WITH META TO USE SAME CONTEXT ON EVERY REQUEST #
         meta["playwright_context_id"] = context_id 
         
     return meta
 
-def meta_for_back_to_back_pages(context_id=None): 
+def meta_for_back_to_back_pages(context_id=None):
+
+    #######################################################################
+    # PLAYWRIGHT ACTIVATION AND PAGE METHODS FOR THE JOB APPLICATION TABS #
+    #######################################################################
+
     meta = {
             "playwright": True,
 
@@ -115,7 +128,7 @@ def meta_for_back_to_back_pages(context_id=None):
             ]
         }
     if context_id:
-        # Context ID varsa meta'ya ekle
+        # WE ARE RETURNING CONTEXT ID WITH META TO USE SAME CONTEXT ON EVERY REQUEST #
         meta["playwright_context_id"] = context_id 
         
     return meta
@@ -123,8 +136,12 @@ def meta_for_back_to_back_pages(context_id=None):
 class TechcareerSpider(scrapy.Spider):
     name = "TechCareer"
 
+    
+    ####################################################
+    # CUSTOM SETTINGS THAT ONLY ENABLED ON THIS SPIDER #
+    ####################################################
+
     custom_settings = {
-        # Sadece bu spider için Playwright handler'larını aktif ediyoruz
         "DOWNLOAD_HANDLERS": {
             "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
             "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
@@ -139,15 +156,20 @@ class TechcareerSpider(scrapy.Spider):
                 "--no-sandbox",
             ]
         },
-        # Bu site JavaScript ile yüklendiği için biraz beklemesi gerekebilir
+        # WE ARE ADDING A TIMEOUT TO LOAD JAVASCRIPT BEFORE PARSING THE HTML WHEN WE OPEN THE FIRST TAB # 
         "PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT": 30000,
     }
+
+
+    ##########################################
+    # SENDING THE REQUEST TO THE WEBSITE URL #
+    ##########################################
 
     def start_requests(self):
         PLAYWRIGHT_CONTEXT_ID = "persisted_context"
 
         for i in range(1, 4):
-            start_url = f"https://www.techcareer.net/jobs?jobs[search][select]=position&jobs[search][location]=%C4%B0stanbul%28Avr.%29%20%2F%20T%C3%BCrkiye&jobs[isCompleted]=false&jobs[page]={i}"
+            start_url = f"https://www.techcareer.net/jobs?jobs[search][select]=position&jobs[search][keyword]=python&jobs[search][location]=%C4%B0stanbul%28Avr.%29%20%2F%20T%C3%BCrkiye&jobs[isCompleted]=false&jobs[page]={i}"
 
             yield scrapy.Request(
                 url = start_url,
@@ -156,10 +178,10 @@ class TechcareerSpider(scrapy.Spider):
             )
     
     async def parse_all_links(self, response):
-        # Oluşturulan context_id'yi response.meta'dan alıp takip eden isteklere aktarıyoruz.
+        # TAKING THE CONTEXT ID FROM THE META TO USE ON ALL REQUESTS #
         current_context_id = response.meta.get("playwright_context_id")
         
-        # Sayfa nesnesini alıyoruz (çünkü include_page=True dedik)
+        # GETTING THE PAGE OBJECT FROM THE META #
         page = response.meta["playwright_page"]
 
         try:
@@ -174,10 +196,13 @@ class TechcareerSpider(scrapy.Spider):
                     callback = self.parse_detail
                 )
         finally:
-            # KRİTİK NOKTA: İşimiz bitince listeleme sayfasını kapatıyoruz.
-            # Bu yapılmazsa persistent context içinde sekmeler birikir ve bot tıkanır.
+            # WE ARE CLOSING THE PAGE TO RESTART PERSISTENT CONTEXT #
             await page.close()
 
+
+    ######################################################
+    # PARSING THE DETAILS FROM THE JOB APPLICATION PAGES #
+    ######################################################
 
     def parse_detail(self, response):
         

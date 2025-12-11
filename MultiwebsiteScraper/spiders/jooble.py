@@ -2,9 +2,148 @@ import scrapy
 import json
 from ..loaders import JoobleLoader
 
+###############
+# MAIN SPIDER #
+###############
+
 class JoobleUrlCrawler(scrapy.Spider):
     name = "jooble"
     api_url = "https://tr.jooble.org/api/serp/jobs"
+
+
+    ####################################################
+    # CUSTOM SETTINGS THAT ONLY ENABLED ON THIS SPIDER #
+    ####################################################
+
+    custom_settings = {
+        'SCRAPEOPS_API_KEY': '', 
+        'SCRAPEOPS_PROXY_ENABLED': True,
+        'DOWNLOADER_MIDDLEWARES': {
+            'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
+        },
+        'CONCURRENT_REQUESTS': 1, 
+        'DOWNLOAD_DELAY': 2,
+        
+        'DEFAULT_REQUEST_HEADERS': {
+                    'Accept': 'application/json',
+                    'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+        },
+        
+        ##############################################
+        # DEBUG AND CACHE SETTINGS FOR THE TEST RUNS #
+        ##############################################
+
+        # ENABLES THE CACHE #
+        'HTTPCACHE_ENABLED' : True,
+
+        # CACHE TIME (Seconds) #
+        # '0' MEANS IT WILL BE STORED FOREVER #
+        'HTTPCACHE_EXPIRATION_SECS' : 0,
+
+        # NAME OF THE STORAGE FILE FOR THE CACHE FILES #
+        'HTTPCACHE_DIR' : 'httpcache_indeed',
+
+        # WE ARE ONLY TAKING THE RESULTS OF THE SUCCESFUL REQUESTS #
+        'HTTPCACHE_IGNORE_HTTP_CODES' : [400, 401, 403, 404, 429, 500, 503],
+
+        # USE DEFAULT FILE SYSTEM STORAGE #
+        'HTTPCACHE_STORAGE' : 'scrapy.extensions.httpcache.FilesystemCacheStorage'
+    }
+
+    ############################################
+    # SENDING THE FIRST REQUEST TO THE WEBSITE #
+    ############################################
+
+    def start_requests(self):
+
+        '''
+        In this website the api type is post api 
+        so we will need to use websites api payload 
+        to be able to do pagination
+        '''
+
+        payload = {
+            "page": 1,
+            "region": "İstanbul",
+            "search": "python",
+            "regionId": 56560
+        }
+
+        yield scrapy.Request(
+            url=self.api_url,
+            method='POST', # THIS SETTING IS IMPORTANT !!!!!!
+            body=json.dumps(payload),# THIS SETTING IS IMPORTANT !!!!!!
+            headers={
+                "Content-Type": "application/json", # THIS SETTING IS IMPORTANT !!!!!!
+            },
+            callback=self.parse,
+            meta={'page_num': 1}
+        )
+
+
+    ########################################################
+    # PARSING THE JOB APPLICATIONS URLS FROM THE JSON TEXT #
+    ########################################################
+
+    def parse(self, response):
+            
+            # PARSING THE URL FROM JSON #
+            ##########################################
+            try:
+                data = json.loads(response.text)
+            except json.JSONDecodeError:
+                self.logger.error("JSON could'nt parse")
+                return
+
+            jobs = data.get('jobs', [])
+            
+            if not jobs:
+                self.logger.info("No more job applications.")
+                return 
+
+            for job in jobs:
+                job_url = job.get('url')
+                if job_url:
+                    yield {'url': job_url}
+            ##########################################
+            
+            # PAGINATION #
+            ##########################################
+            current_page = response.meta['page_num']
+            
+            next_page = current_page + 1
+
+            if next_page > 20:
+                return
+            
+            new_payload = {
+                "page": next_page,
+                "region": "İstanbul",
+                "search": "python",
+                "regionId": 56560
+            }
+            ###########################################
+
+            yield scrapy.Request(
+                url=self.api_url,
+                method='POST',
+                body=json.dumps(new_payload), # new_payload'u json string'e çevir
+                headers={"Content-Type": "application/json"},
+                callback=self.parse,
+                meta={'page_num': next_page}
+            )
+
+'''
+    In the previous spider we parsed the urls from the json 
+    now in this spider we will parse the job details inside this urls
+'''
+class DetailWorkerSpider(scrapy.Spider):
+    name = "detail_worker"
+
+    
+    ####################################################
+    # CUSTOM SETTINGS THAT ONLY ENABLED ON THIS SPIDER #
+    ####################################################
 
     custom_settings = {
         'SCRAPEOPS_API_KEY': '', 
@@ -20,132 +159,34 @@ class JoobleUrlCrawler(scrapy.Spider):
                     'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
                 },
         
-        # --- DEBUG VE CACHE AYARLARI ---
+        ##############################################
+        # DEBUG AND CACHE SETTINGS FOR THE TEST RUNS #
+        ##############################################
 
-        # 1. Cache'i aktif hale getirir
+        # ENABLES THE CACHE #
         'HTTPCACHE_ENABLED' : True,
 
-        # 2. Cache süresi (Saniye cinsinden). 
-        # '0' yaparsan sonsuza kadar saklar (silene kadar).
+        # CACHE TIME (Seconds) #
+        # '0' MEANS IT WILL BE STORED FOREVER #
         'HTTPCACHE_EXPIRATION_SECS' : 0,
 
-        # 3. Cache dosyalarının saklanacağı klasör adı.
-        # Proje ana dizininde 'httpcache' adında bir klasör oluşacak.
-        'HTTPCACHE_DIR' : 'httpcache_linkedin',
+        # NAME OF THE STORAGE FILE FOR THE CACHE FILES #
+        'HTTPCACHE_DIR' : 'httpcache_indeed',
 
-        # 4. Hata kodlarını cache'leme!
-        # Eğer site sana 403 (Ban), 404 veya 500 hatası verirse bunu kaydetmesin.
-        # Kaydederse, hatayı düzeltip tekrar çalıştırdığında bile yine o hatayı okursun.
+        # WE ARE ONLY TAKING THE RESULTS OF THE SUCCESFUL REQUESTS #
         'HTTPCACHE_IGNORE_HTTP_CODES' : [400, 401, 403, 404, 429, 500, 503],
 
-        # 5. Standart dosya sistemi depolamasını kullan (Varsayılan budur ama yazmakta fayda var)
+        # USE DEFAULT FILE SYSTEM STORAGE #
         'HTTPCACHE_STORAGE' : 'scrapy.extensions.httpcache.FilesystemCacheStorage'
     }
 
-    def start_requests(self):
 
-        payload = {
-            "page": 1,
-            "region": "İstanbul",
-            "search": "python",
-            "regionId": 56560
-        }
-
-        yield scrapy.Request(
-            url=self.api_url,
-            method='POST',
-            body=json.dumps(payload), # data yerine body kullanıyoruz ve manuel string'e çeviriyoruz
-            headers={
-                "Content-Type": "application/json", # Bunu eklemek zorundasın
-                # Diğer headerların varsa buraya ekle
-            },
-            callback=self.parse,
-            meta={'page_num': 1}
-        )
-
-    def parse(self, response):
-            try:
-                data = json.loads(response.text)
-            except json.JSONDecodeError:
-                self.logger.error("JSON parse edilemedi!")
-                return
-
-            jobs = data.get('jobs', [])
-            
-            if not jobs:
-                self.logger.info("No more job applications.")
-                return 
-
-            for job in jobs:
-                job_url = job.get('url')
-                if job_url:
-                    yield {'url': job_url}
-
-            current_page = response.meta['page_num']
-            
-            next_page = current_page + 1
-
-            if next_page > 20:
-                return
-            
-            new_payload = {
-                "page": next_page,
-                "region": "İstanbul",
-                "search": "python",
-                "regionId": 56560
-            }
-
-            yield scrapy.Request(
-                url=self.api_url,
-                method='POST',
-                body=json.dumps(new_payload), # new_payload'u json string'e çevir
-                headers={"Content-Type": "application/json"},
-                callback=self.parse,
-                meta={'page_num': next_page}
-            )
-
-
-class DetailWorkerSpider(scrapy.Spider):
-    name = "detail_worker"
-
-    custom_settings = {
-        'SCRAPEOPS_API_KEY': '238c365d-873a-492a-bd8a-d9ecd11e6772', 
-        'SCRAPEOPS_PROXY_ENABLED': True,
-        'DOWNLOADER_MIDDLEWARES': {
-            'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
-        },
-        'CONCURRENT_REQUESTS': 1, 
-        'DOWNLOAD_DELAY': 2,
-        
-        'DEFAULT_REQUEST_HEADERS': {
-                    'Accept': 'application/json',
-                    'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
-                },
-        
-        # --- DEBUG VE CACHE AYARLARI ---
-
-        # 1. Cache'i aktif hale getirir
-        'HTTPCACHE_ENABLED' : False,
-
-        # 2. Cache süresi (Saniye cinsinden). 
-        # '0' yaparsan sonsuza kadar saklar (silene kadar).
-        'HTTPCACHE_EXPIRATION_SECS' : 0,
-
-        # 3. Cache dosyalarının saklanacağı klasör adı.
-        # Proje ana dizininde 'httpcache' adında bir klasör oluşacak.
-        'HTTPCACHE_DIR' : 'httpcache_linkedin',
-
-        # 4. Hata kodlarını cache'leme!
-        # Eğer site sana 403 (Ban), 404 veya 500 hatası verirse bunu kaydetmesin.
-        # Kaydederse, hatayı düzeltip tekrar çalıştırdığında bile yine o hatayı okursun.
-        'HTTPCACHE_IGNORE_HTTP_CODES' : [400, 401, 403, 404, 429, 500, 503],
-
-        # 5. Standart dosya sistemi depolamasını kullan (Varsayılan budur ama yazmakta fayda var)
-        'HTTPCACHE_STORAGE' : 'scrapy.extensions.httpcache.FilesystemCacheStorage'
-    }
+    ###################################################################
+    # SENDING REQUESTS TO THE URL LIST THAT WE GET FROM THE JSON TEXT #
+    ###################################################################
 
     def start_requests(self):
-        # Dosya yolu
+        # FILE PATH
         file_path = 'urller.jsonl'
         
         try:
@@ -167,10 +208,15 @@ class DetailWorkerSpider(scrapy.Spider):
                                         )
                             
                     except json.JSONDecodeError:
-                        self.logger.warning(f"{line_number}. satırda bozuk JSON verisi var, atlanıyor.")
+                        self.logger.warning(f"{line_number}. There is broken JSON data on the line, passing the line.")
                         
         except FileNotFoundError:
-            self.logger.error("Dosya bulunamadı! Lütfen önce collector'ı çalıştır.")
+            self.logger.error("File not found. Run the collector first.")
+
+    
+    #######################################
+    # PARSING THE JOB APPLICATION DETAILS #
+    #######################################
 
     def parse_detail(self, response):
         

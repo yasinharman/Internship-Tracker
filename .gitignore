@@ -1,11 +1,18 @@
 #Env
 .venv
+
 #__pycache__
 __pycache__
+
 #session profiles
 playwright_browser_profiles
+
 #local test files
 httpcache/
 .scrapy/
+
 #scrapy automatic files
 scrapy.cfg
+
+#__init__
+.__init__
