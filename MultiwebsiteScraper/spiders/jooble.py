@@ -159,25 +159,31 @@ class DetailWorkerSpider(scrapy.Spider):
                     'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
                 },
         
-        ##############################################
-        # DEBUG AND CACHE SETTINGS FOR THE TEST RUNS #
-        ##############################################
+    ##############################################
+    # DEBUG AND CACHE SETTINGS FOR THE TEST RUNS #
+    ##############################################
 
-        # ENABLES THE CACHE #
-        'HTTPCACHE_ENABLED' : True,
+    # ENABLES THE CACHE #
+    'HTTPCACHE_ENABLED' : True,
 
-        # CACHE TIME (Seconds) #
-        # '0' MEANS IT WILL BE STORED FOREVER #
-        'HTTPCACHE_EXPIRATION_SECS' : 0,
+    # CACHE TIME (Seconds) #
+    # '0' MEANS IT WILL BE STORED FOREVER #
+    'HTTPCACHE_EXPIRATION_SECS' : 0,
 
-        # NAME OF THE STORAGE FILE FOR THE CACHE FILES #
-        'HTTPCACHE_DIR' : 'httpcache_indeed',
+    # NAME OF THE STORAGE FILE FOR THE CACHE FILES #
+    'HTTPCACHE_DIR' : 'httpcache_linkedin',
 
-        # WE ARE ONLY TAKING THE RESULTS OF THE SUCCESFUL REQUESTS #
-        'HTTPCACHE_IGNORE_HTTP_CODES' : [400, 401, 403, 404, 429, 500, 503],
+    # WE ARE ONLY TAKING THE RESULTS OF THE SUCCESFUL REQUESTS #
+    'HTTPCACHE_IGNORE_HTTP_CODES' : [400, 401, 403, 404, 429, 500, 503],
 
-        # USE DEFAULT FILE SYSTEM STORAGE #
-        'HTTPCACHE_STORAGE' : 'scrapy.extensions.httpcache.FilesystemCacheStorage'
+    # USE DEFAULT FILE SYSTEM STORAGE #
+    'HTTPCACHE_STORAGE' : 'scrapy.extensions.httpcache.FilesystemCacheStorage',
+
+    # ENSURES THAT WE ARE NOT USING API CREDITS FOR THE SAME URL WITH DIFF. HEADERS.
+    'HTTPCACHE_IGNORE_HEADERS': ['Set-Cookie', 'X-Scrapeops-Id', 'X-Proxy-Id'],
+
+    #TO PREVENT SAME URL'S WITH DIFFERENT PARAMETERS
+    'HTTPCACHE_POLICY': 'scrapy.extensions.httpcache.DummyPolicy',
     }
 
 

@@ -47,13 +47,19 @@ class LinkedinSpider(scrapy.Spider):
     'HTTPCACHE_EXPIRATION_SECS' : 0,
 
     # NAME OF THE STORAGE FILE FOR THE CACHE FILES #
-    'HTTPCACHE_DIR' : 'httpcache_indeed',
+    'HTTPCACHE_DIR' : 'httpcache_linkedin',
 
     # WE ARE ONLY TAKING THE RESULTS OF THE SUCCESFUL REQUESTS #
     'HTTPCACHE_IGNORE_HTTP_CODES' : [400, 401, 403, 404, 429, 500, 503],
 
     # USE DEFAULT FILE SYSTEM STORAGE #
-    'HTTPCACHE_STORAGE' : 'scrapy.extensions.httpcache.FilesystemCacheStorage'
+    'HTTPCACHE_STORAGE' : 'scrapy.extensions.httpcache.FilesystemCacheStorage',
+
+    # ENSURES THAT WE ARE NOT USING API CREDITS FOR THE SAME URL WITH DIFF. HEADERS.
+    'HTTPCACHE_IGNORE_HEADERS': ['Set-Cookie', 'X-Scrapeops-Id', 'X-Proxy-Id'],
+
+    #TO PREVENT SAME URL'S WITH DIFFERENT PARAMETERS
+    'HTTPCACHE_POLICY': 'scrapy.extensions.httpcache.DummyPolicy',
     }
 
 
