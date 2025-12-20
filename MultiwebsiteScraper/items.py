@@ -6,7 +6,11 @@
 import scrapy
 
 class JobPostItem(scrapy.Item):
-    # Temizlik işlemleri (MapCompose vs) artık burada DEĞİL, loaders.py'da yapılacak.
+    
+    '''
+    Only created data fields in here,
+    data normalization process is done in loaders.py
+    '''
     job_title = scrapy.Field()
     company = scrapy.Field()
     location = scrapy.Field()

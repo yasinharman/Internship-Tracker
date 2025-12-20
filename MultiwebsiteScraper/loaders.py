@@ -1,9 +1,10 @@
-# loaders.py
 from scrapy.loader import ItemLoader
 from itemloaders.processors import MapCompose, TakeFirst, Join
 from .items import JobPostItem
 
-# --- Senin yazdığın Temizlik Fonksiyonları ---
+##########################################################
+# HELPER FUNCTION TO CLEAN '\n' OPERATORS AND WHITESPACE #
+##########################################################
 def clean_up_n(txt):
     if txt:
         try:
@@ -14,21 +15,26 @@ def clean_up_n(txt):
             return txt
     return txt
 
-
+#######################################
+# HELPER FUNCTION TO CLEAN WHITESPACE #
+#######################################
 def compress_whitespace(text):
     if text:
         return ' '.join(text.split())
     return text
 
-
-# --- BASE LOADER (Genel Ayarlar) ---
+##################################
+# BASE LOADER (GENERAL SETTINGS) #
+##################################
 class BaseJobLoader(ItemLoader):
     # Varsayılan olarak tüm veriler JobPostItem kutusuna gidecek
     default_item_class = JobPostItem
     # Varsayılan olarak çıktı alırken listeden ilk elemanı al (TakeFirst)
     default_output_processor = TakeFirst()
 
-
+################################################
+# DATA NORMALIZATION SETTINGS FOR 'kariyernet' #
+################################################
 class KariyerNetLoader(BaseJobLoader):
     job_title_in = MapCompose(clean_up_n)
     company_in = MapCompose(clean_up_n)
@@ -40,19 +46,25 @@ class KariyerNetLoader(BaseJobLoader):
     job_description_in = MapCompose(clean_up_n, str.strip)
     job_description_out = Join(' ')
 
-
+################################################
+# DATA NORMALIZATION SETTINGS FOR 'TechCareer' #
+################################################
 class TechCareerLoader(BaseJobLoader):
     
     job_description_in = MapCompose(str.strip, clean_up_n)
     job_description_out = Join(' ')
 
-
+################################################
+# DATA NORMALIZATION SETTINGS FOR 'Indeed' #
+################################################
 class IndeedLoader(BaseJobLoader):
     
     job_description_in = MapCompose(compress_whitespace, clean_up_n)
     job_description_out = Join(' ')
 
-
+################################################
+# DATA NORMALIZATION SETTINGS FOR 'LinkedIn' #
+################################################
 class LinkedInLoader(BaseJobLoader):
     
     company_in = MapCompose(compress_whitespace, clean_up_n)
@@ -64,6 +76,9 @@ class LinkedInLoader(BaseJobLoader):
     job_description_in = MapCompose(clean_up_n)
     job_description_out = Join(' ')
 
+################################################
+# DATA NORMALIZATION SETTINGS FOR 'Jooble' #
+################################################
 class JoobleLoader(BaseJobLoader):
     
     job_description_in = MapCompose(compress_whitespace, clean_up_n)

@@ -1,7 +1,6 @@
-# Define here the models for your spider middleware
-#
-# See documentation in:
-# https://docs.scrapy.org/en/latest/topics/spider-middleware.html
+############################################
+# ALL DEFAULT (WE ARE NOT USING THIS FILE) #
+############################################
 
 from scrapy import signals
 
