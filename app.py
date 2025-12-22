@@ -3,8 +3,12 @@ import pandas as pd
 from sqlalchemy import create_engine
 from datetime import datetime, timedelta
 
+# PAGE TITLE
 st.set_page_config(page_title="Job Applications Dasboard", layout="wide")
 
+#######################
+# DATABASE CONNECTION #
+#######################
 @st.cache_data(ttl=600)
 def load_data():
     db_connection_str = 'postgresql+psycopg2://postgres:Mehperya16@localhost:5432/job_applications_db'
@@ -23,7 +27,9 @@ except Exception as e:
     st.error(f"An error occured while connecting to database: {e}")
     st.stop()
 
-
+###########
+# SIDEBAR #
+###########
 st.sidebar.header("Filter")
 
 site_list = df["source_site"].unique().tolist()
@@ -34,6 +40,9 @@ selected_job_types = st.sidebar.multiselect("Job type", job_type_list, default=j
 
 filtered_df = df[df['source_site'].isin(selected_sites) & df['job_type'].isin(selected_job_types)]
 
+########################
+# CURRENT JOB POSTINGS #
+########################
 st.title("Current Job Postings")
 
 col1, col2, col3, = st.columns(3)
@@ -50,6 +59,9 @@ col3.metric("Different Company Count", total_companies)
 
 st.markdown("---")
 
+###########################################
+# DISTRIBUTION BY SITES & JOB TYPE CHARTS #
+###########################################
 col_chart1, col_chart2 = st.columns(2)
 
 with col_chart1:
@@ -65,7 +77,10 @@ with col_chart2:
     
     else:
         st.info("There isn't any job applications with the selected job type.")
-    
+
+###########################
+# RECENT JOB APPLICATIONS #
+###########################
 st.subheader("Recent Applications")
 
 display_columns = ["job_title", "company", "location", "source_site", "created_at", "job_type","url"]

@@ -1,10 +1,11 @@
 from itemadapter import ItemAdapter
-
 from sqlalchemy.orm import sessionmaker
 from .models import JobPost, db_connect, create_table
 import re
 
-# Job Type Normalization Mapping Tablosu
+########################################
+# JOB TYPE NORMALIZATION MAPPING TABLE #
+########################################
 JOB_TYPE_MAPPING = {
     # Full-Time Aliases
     'full-time': 'Full-Time',
@@ -54,35 +55,29 @@ JOB_TYPE_MAPPING = {
     'uzaktan / remote': 'Remote',
 }
 
+###################################################
+# NORMALIZING THE JOB TYPE BY USING THIS FUNCTION #
+###################################################
 def normalize_job_type(job_type):
-    """
-    Job type'ı standart formata dönüştürür.
-    
-    Örneğin:
-    - "FULL-TIME" -> "Full-Time"
-    - "tam zamanlı" -> "Full-Time"
-    - "Fulltime" -> "Full-Time"
-    - Tanımlanmayan değerler -> "Other"
-    """
+
     if not job_type or not isinstance(job_type, str):
         return "Other"
     
-    # Boşlukları ve başı-sonunu temizle, küçük harfe dönüştür
     cleaned = job_type.strip().lower()
     
-    # Mapping tablosunda varsa döndür
     if cleaned in JOB_TYPE_MAPPING:
         return JOB_TYPE_MAPPING[cleaned]
     
-    # Eğer hiçbir alias eşleşmezse "Other" döndür
     return "Other"
 
+#################################
+# PIPELINE TO POSTGRES DATABASE #
+#################################
 class JobScraperPipeline:
     def __init__(self):
         engine = db_connect()
 
         create_table(engine)
-
         self.Session = sessionmaker(bind=engine)
 
     def process_item(self, item, spider):
@@ -93,6 +88,7 @@ class JobScraperPipeline:
             # Job type normalization
             normalized_job_type = normalize_job_type(item.get('job_type'))
             
+            # If the job application is already in the database we are updating its data if there is any difference
             existing_job = session.query(JobPost).filter_by(url=item.get('url')).first()
 
             if existing_job:
@@ -106,6 +102,7 @@ class JobScraperPipeline:
 
                 spider.logger.info(f"Existing job post updated: {item.get('url')}")
             
+            # If the job application is not in the database we are adding its data to database
             else:
                 new_job = JobPost(
                     job_title = item.get('job_title'),
@@ -122,12 +119,15 @@ class JobScraperPipeline:
             
             session.commit()
         
+        # Error handling
         except Exception as e:
             session.rollback()
             spider.logger.error(f"Some error occured while job application was being added to database: {e}")
         
+        # We are ending the session to not keep our database busy
         finally:
             session.close()
         
+        # We are returning the item to see the data on the terminal
         return item
                 

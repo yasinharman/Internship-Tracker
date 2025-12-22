@@ -1,11 +1,3 @@
-import random
-import sys
-import asyncio
-
-# Windows kullanıyorsan Event Loop politikasını değiştir
-if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
 BOT_NAME = "MultiwebsiteScraper"
 
 # USER_AGENT = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:141.0) Gecko/20100101 Firefox/141.0"
