@@ -34,7 +34,7 @@ class JobPost(Base):
 # CONNECTION TO THE DATABASE #
 ##############################
 def db_connect():
-    return create_engine("postgresql+psycopg2://postgres:PASSWORD@localhost:5432/job_applications_db")
+    return create_engine("postgresql+psycopg2://postgres:Password@localhost:5432/job_applications_db")
 
 # FUNCTION TO CREATE TABLE
 def create_table(engine):

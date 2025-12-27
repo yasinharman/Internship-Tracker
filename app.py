@@ -11,7 +11,7 @@ st.set_page_config(page_title="Job Applications Dasboard", layout="wide")
 #######################
 @st.cache_data(ttl=600)
 def load_data():
-    db_connection_str = 'postgresql+psycopg2://postgres:Mehperya16@localhost:5432/job_applications_db'
+    db_connection_str = 'postgresql+psycopg2://postgres:Password@localhost:5432/job_applications_db'
     db_connection = create_engine(db_connection_str)
 
     query = "SELECT * FROM job_posts ORDER BY created_at DESC"

@@ -169,7 +169,7 @@ class TechcareerSpider(scrapy.Spider):
         PLAYWRIGHT_CONTEXT_ID = "persisted_context"
 
         for i in range(1, 4):
-            start_url = f"https://www.techcareer.net/jobs?jobs[search][select]=position&jobs[search][keyword]=python&jobs[search][location]=%C4%B0stanbul%28Avr.%29%20%2F%20T%C3%BCrkiye&jobs[isCompleted]=false&jobs[page]={i}"
+            start_url = f"https://www.techcareer.net/jobs?jobs[isCompleted]=false&jobs[page]={i}"
 
             yield scrapy.Request(
                 url = start_url,
