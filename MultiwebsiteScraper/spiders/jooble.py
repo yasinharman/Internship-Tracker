@@ -1,3 +1,7 @@
+###############
+# ADD API KEY #
+###############
+
 import scrapy
 import json
 from ..loaders import JoobleLoader
@@ -34,7 +38,7 @@ class JoobleUrlCrawler(scrapy.Spider):
         ##############################################
 
         # ENABLES THE CACHE #
-        'HTTPCACHE_ENABLED' : True,
+        'HTTPCACHE_ENABLED' : False,
 
         # CACHE TIME (Seconds) #
         # '0' MEANS IT WILL BE STORED FOREVER #
@@ -164,7 +168,7 @@ class DetailWorkerSpider(scrapy.Spider):
     ##############################################
 
     # ENABLES THE CACHE #
-    'HTTPCACHE_ENABLED' : True,
+    'HTTPCACHE_ENABLED' : False,
 
     # CACHE TIME (Seconds) #
     # '0' MEANS IT WILL BE STORED FOREVER #

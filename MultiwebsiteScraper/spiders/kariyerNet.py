@@ -1,3 +1,7 @@
+###############
+# ADD API KEY #
+###############
+
 import scrapy
 from urllib.parse import urlencode
 from ..loaders import KariyerNetLoader
@@ -29,7 +33,7 @@ class KariyernetSpider(scrapy.Spider):
     ##############################################
 
     # ENABLES THE CACHE #
-    'HTTPCACHE_ENABLED' : True,
+    'HTTPCACHE_ENABLED' : False,
 
     # CACHE TIME (Seconds) #
     # '0' MEANS IT WILL BE STORED FOREVER #

@@ -4,7 +4,7 @@ from .models import JobPost, db_connect, create_table
 import re
 
 ########################################
-# JOB TYPE NORMALIZATION MAPPING TABLE #
+# JOB TYPE DATA NORMALIZATION MAPPING TABLE #
 ########################################
 JOB_TYPE_MAPPING = {
     # Full-Time Aliases
@@ -33,6 +33,7 @@ JOB_TYPE_MAPPING = {
     'intern': 'Internship',
     'staj': 'Internship',
     'stajyerlik': 'Internship',
+    'stajyer': 'Internship',
     
     # Contract Aliases
     'contract': 'Contract',

@@ -1,3 +1,7 @@
+###############
+# ADD API KEY #
+###############
+
 import scrapy
 from urllib.parse import urlencode
 from ..loaders import IndeedLoader
@@ -22,17 +26,17 @@ class IndeedJobSpider(scrapy.Spider):
         'CONCURRENT_REQUESTS': 1, 
         'DOWNLOAD_DELAY': 2,
         
-        'DEFAULT_REQUEST_HEADERS': {
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                    'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
-    },
+    #     'DEFAULT_REQUEST_HEADERS': {
+    #                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    #                 'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+    # },
         
     ##############################################
     # DEBUG AND CACHE SETTINGS FOR THE TEST RUNS #
     ##############################################
 
     # ENABLES THE CACHE #
-    'HTTPCACHE_ENABLED' : True,
+    'HTTPCACHE_ENABLED' : False,
 
     # CACHE TIME (Seconds) #
     # '0' MEANS IT WILL BE STORED FOREVER #
@@ -81,6 +85,8 @@ class IndeedJobSpider(scrapy.Spider):
                     offset = page * 10
                     
                     indeed_jobs_url = self.get_indeed_search_url(keyword, location, offset)
+
+                    self.logger.info(f"REQUEST IS SENT: {indeed_jobs_url}")
                     
                     yield scrapy.Request(
                         url=indeed_jobs_url, 
@@ -90,7 +96,9 @@ class IndeedJobSpider(scrapy.Spider):
                             'location': location,
                             'offset': offset,
                             'page_num': page + 1,
-                            'sops_render_js': True # WE ARE ENABLING THE JS RENDER OPTION ON THE SOPS SERVICE TO BYPASS ANTIBOT SYSTEM ON THE LINKS PAGE
+                            'sops_render_js': True, # WE ARE ENABLING THE JS RENDER OPTION ON THE SOPS SERVICE TO BYPASS ANTIBOT SYSTEM ON THE LINKS PAGE
+                            'sops_country': 'tr',
+                            'sops_residential': True,
                         }
                     )
     
