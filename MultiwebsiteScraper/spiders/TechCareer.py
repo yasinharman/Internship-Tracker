@@ -150,7 +150,7 @@ class TechcareerSpider(scrapy.Spider):
         "TWISTED_REACTOR": "twisted.internet.asyncioreactor.AsyncioSelectorReactor",
 
         "PLAYWRIGHT_LAUNCH_OPTIONS": {
-            "headless": False, # Hata ayıklarken False yapın, görebilmek için
+            "headless": True, # Hata ayıklarken False yapın, görebilmek için
             "args": [
                 "--disable-blink-features=AutomationControlled", # Bot olduğunuzu gizler
                 "--no-sandbox",
