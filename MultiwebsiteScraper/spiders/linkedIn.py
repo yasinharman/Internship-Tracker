@@ -8,6 +8,7 @@ from ..loaders import LinkedInLoader
 # --- BU KISMI EKLE ---
 import scrapy.utils.misc
 import scrapy.core.scraper
+import os
 
 # Scrapy'nin hata veren uyarı fonksiyonunu boş bir fonksiyonla eziyoruz
 def warn_on_generator_with_return_value_stub(spider, callable):
@@ -26,12 +27,12 @@ class LinkedinSpider(scrapy.Spider):
     ####################################################
 
     custom_settings = {
-        'SCRAPEOPS_API_KEY': '', 
+        'SCRAPEOPS_API_KEY': os.getenv("SCRAPEOPS_API_KEY"), 
         'SCRAPEOPS_PROXY_ENABLED': True,
         'DOWNLOADER_MIDDLEWARES': {
             'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
         },
-        'CONCURRENT_REQUESTS': 1, 
+        'CONCURRENT_REQUESTS': 5, 
         'DOWNLOAD_DELAY': 2,
         
         'DEFAULT_REQUEST_HEADERS': {

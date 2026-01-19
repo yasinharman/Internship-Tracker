@@ -5,6 +5,7 @@
 import scrapy
 import json
 from ..loaders import JoobleLoader
+import os
 
 ###############
 # MAIN SPIDER #
@@ -20,7 +21,7 @@ class JoobleUrlCrawler(scrapy.Spider):
     ####################################################
 
     custom_settings = {
-        'SCRAPEOPS_API_KEY': '', 
+        'SCRAPEOPS_API_KEY': os.getenv("SCRAPEOPS_API_KEY"), 
         'SCRAPEOPS_PROXY_ENABLED': True,
         'DOWNLOADER_MIDDLEWARES': {
             'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
@@ -150,7 +151,7 @@ class DetailWorkerSpider(scrapy.Spider):
     ####################################################
 
     custom_settings = {
-        'SCRAPEOPS_API_KEY': '', 
+        'SCRAPEOPS_API_KEY': os.getenv("SCRAPEOPS_API_KEY"), 
         'SCRAPEOPS_PROXY_ENABLED': True,
         'DOWNLOADER_MIDDLEWARES': {
             'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,

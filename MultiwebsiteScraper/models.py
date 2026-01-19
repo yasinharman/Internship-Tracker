@@ -5,6 +5,7 @@
 from sqlalchemy import create_engine, Integer, String, Boolean, Column, Text, DateTime, ForeignKey
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
+import os
 
 # WE ARE USING 'Base' INSIDE OF OUR CLASSES TO INDICATE THAT WE ARE CREATING A SQL TABLE INSIDE THE CLASS
 Base = declarative_base()
@@ -38,7 +39,13 @@ class JobPost(Base):
 # CONNECTION TO THE DATABASE #
 ##############################
 def db_connect():
-    return create_engine("postgresql+psycopg2://postgres:PASSWORD@localhost:5432/job_applications_db")
+    # Öncelik: Docker ortam değişkeni (DATABASE_URL)
+    # Eğer o yoksa (Localdeysen): Standart localhost bağlantısını kullan
+    db_url = os.getenv(
+        "DATABASE_URL", 
+        "postgresql+psycopg2://postgres:Mehperya16@localhost:5432/job_applications_db"
+    )
+    return create_engine(db_url)
 
 # FUNCTION TO CREATE TABLE
 def create_table(engine):

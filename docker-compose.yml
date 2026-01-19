@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # 1. VERİTABANI SERVİSİ
+  db:
+    image: postgres:15-alpine
+    container_name: job_db_container
+    environment:
+      POSTGRES_USER: ${DB_USER}      # .env'den okur
+      POSTGRES_PASSWORD: ${DB_PASSWORD} # .env'den okur
+      POSTGRES_DB: ${DB_NAME}        # .env'den okur
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT}:${DB_PORT}"
+
+  # 2. OTOMASYON SERVİSİ (main.py)
+  scraper:
+    build: .
+    container_name: job_scraper_container
+    command: python main.py
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      # Docker içinde 'localhost' yerine servis adı olan 'db' kullanılır!
+      DATABASE_URL: postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME}
+    volumes:
+      - .:/app
+
+  # 3. DASHBOARD SERVİSİ (Streamlit)
+  dashboard:
+    build: .
+    container_name: job_dashboard_container
+    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+    depends_on:
+      - db
+    ports:
+      - "8501:8501"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME}
+    volumes:
+      - .:/app
+
+volumes:
+  pg_data:

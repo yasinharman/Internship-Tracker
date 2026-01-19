@@ -16,3 +16,6 @@ scrapy.cfg
 
 #__init__
 .__init__
+
+#Passwords
+.env

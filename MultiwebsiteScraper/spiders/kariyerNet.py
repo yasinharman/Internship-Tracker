@@ -5,6 +5,7 @@
 import scrapy
 from urllib.parse import urlencode
 from ..loaders import KariyerNetLoader
+import os
 
 class KariyernetSpider(scrapy.Spider):
     name = "kariyerNet"
@@ -15,7 +16,7 @@ class KariyernetSpider(scrapy.Spider):
     ####################################################
 
     custom_settings = {
-        'SCRAPEOPS_API_KEY': '', 
+        'SCRAPEOPS_API_KEY': os.getenv("SCRAPEOPS_API_KEY"), 
         'SCRAPEOPS_PROXY_ENABLED': True,
         'DOWNLOADER_MIDDLEWARES': {
             'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,

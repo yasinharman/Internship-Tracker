@@ -3,7 +3,7 @@ import sys
 from apscheduler.schedulers.blocking import BlockingScheduler
 from datetime import datetime
 
-SCRAPY_PROJECT_FOLDER = 'job_scraper'
+SCRAPY_PROJECT_FOLDER = 'MultiwebsiteScraper'
 SPIDERS = ["linkedin", "kariyerNet", "TechCareer", "indeed_html", "jooble"]
 
 def run_spiders():
@@ -27,7 +27,7 @@ def run_spiders():
 if __name__ == '__main__':
     scheduler = BlockingScheduler()
     
-    scheduler.add_job(run_spiders, 'cron', hour=9, minute=0)
+    scheduler.add_job(run_spiders, 'cron', day='*/2', hour=9, minute=0)
 
     print("Automation system is ready. Waiting for APScheduler...")
 
