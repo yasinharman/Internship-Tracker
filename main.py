@@ -3,6 +3,11 @@ import sys
 from apscheduler.schedulers.blocking import BlockingScheduler
 from datetime import datetime
 
+from dotenv import load_dotenv
+
+# .env dosyasını yükle
+load_dotenv()
+
 SCRAPY_PROJECT_FOLDER = 'MultiwebsiteScraper'
 SPIDERS = ["linkedin", "kariyerNet", "TechCareer", "indeed_html", "jooble"]
 
