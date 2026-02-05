@@ -6,138 +6,71 @@ import scrapy
 import json
 from ..loaders import JoobleLoader
 import os
-
+from scrapy.http import JsonRequest
 ###############
 # MAIN SPIDER #
 ###############
 
 class JoobleUrlCrawler(scrapy.Spider):
     name = "jooble"
-    api_url = "https://tr.jooble.org/api/serp/jobs"
-
-
-    ####################################################
-    # CUSTOM SETTINGS THAT ONLY ENABLED ON THIS SPIDER #
-    ####################################################
+    # API URL yerine normal arama URL'si kullanıyoruz
+    base_url = "https://tr.jooble.org/SearchResult?rgns=İstanbul&ukw=python"
 
     custom_settings = {
-        'SCRAPEOPS_API_KEY': os.getenv("SCRAPEOPS_API_KEY"), 
+        'FEEDS': {
+            'urller.jsonl': {
+                'format': 'jsonlines',
+                'encoding': 'utf8',
+                'overwrite': True,
+            }
+        },
+        'SCRAPEOPS_API_KEY': "ba7852f0-91f8-4d4b-b1bc-dcccd26e2368",
         'SCRAPEOPS_PROXY_ENABLED': True,
         'DOWNLOADER_MIDDLEWARES': {
             'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
         },
-        'CONCURRENT_REQUESTS': 1, 
-        'DOWNLOAD_DELAY': 2,
-        
-        'DEFAULT_REQUEST_HEADERS': {
-                    'Accept': 'application/json',
-                    'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
-        },
-        
-        ##############################################
-        # DEBUG AND CACHE SETTINGS FOR THE TEST RUNS #
-        ##############################################
-
-        # ENABLES THE CACHE #
-        'HTTPCACHE_ENABLED' : False,
-
-        # CACHE TIME (Seconds) #
-        # '0' MEANS IT WILL BE STORED FOREVER #
-        'HTTPCACHE_EXPIRATION_SECS' : 0,
-
-        # NAME OF THE STORAGE FILE FOR THE CACHE FILES #
-        'HTTPCACHE_DIR' : 'httpcache_indeed',
-
-        # WE ARE ONLY TAKING THE RESULTS OF THE SUCCESFUL REQUESTS #
-        'HTTPCACHE_IGNORE_HTTP_CODES' : [400, 401, 403, 404, 429, 500, 503],
-
-        # USE DEFAULT FILE SYSTEM STORAGE #
-        'HTTPCACHE_STORAGE' : 'scrapy.extensions.httpcache.FilesystemCacheStorage'
+        'CONCURRENT_REQUESTS': 1,
+        'DOWNLOAD_DELAY': 3,
     }
 
-    ############################################
-    # SENDING THE FIRST REQUEST TO THE WEBSITE #
-    ############################################
-
     def start_requests(self):
-
-        '''
-        In this website the api type is post api 
-        so we will need to use websites api payload 
-        to be able to do pagination
-        '''
-
-        payload = {
-            "page": 1,
-            "region": "İstanbul",
-            "search": "python",
-            "regionId": 56560
-        }
-
+        # POST yerine GET isteği atıyoruz
         yield scrapy.Request(
-            url=self.api_url,
-            method='POST', # THIS SETTING IS IMPORTANT !!!!!!
-            body=json.dumps(payload),# THIS SETTING IS IMPORTANT !!!!!!
-            headers={
-                "Content-Type": "application/json", # THIS SETTING IS IMPORTANT !!!!!!
-            },
+            url=self.base_url,
             callback=self.parse,
             meta={'page_num': 1}
         )
 
-
-    ########################################################
-    # PARSING THE JOB APPLICATIONS URLS FROM THE JSON TEXT #
-    ########################################################
-
     def parse(self, response):
-            
-            # PARSING THE URL FROM JSON #
-            ##########################################
-            try:
-                data = json.loads(response.text)
-            except json.JSONDecodeError:
-                self.logger.error("JSON could'nt parse")
-                return
+        # 1. Yöntem: data-test-name özniteliği üzerinden (En güveniliri)
+        job_links = response.css('a[data-test-name="job-link"]::attr(href)').getall()
+        
+        # 2. Yöntem: Eğer yukarıdaki boş dönerse (Alternatif)
+        if not job_links:
+            self.logger.info("First selector failed, trying alternative...")
+            job_links = response.css('section[data-test-name="job-card"] a::attr(href)').getall()
 
-            jobs = data.get('jobs', [])
-            
-            if not jobs:
-                self.logger.info("No more job applications.")
-                return 
+        # 3. Yöntem: En geniş kapsamlı (Her ihtimale karşı)
+        if not job_links:
+            job_links = response.xpath('//a[contains(@href, "/desc/")]/@href').getall()
 
-            for job in jobs:
-                job_url = job.get('url')
-                if job_url:
-                    yield {'url': job_url}
-            ##########################################
-            
-            # PAGINATION #
-            ##########################################
-            current_page = response.meta['page_num']
-            
+        self.logger.info(f"Found {len(job_links)} job links on this page.")
+
+        for link in job_links:
+            # Linki tam URL haline getir
+            full_url = response.urljoin(link)
+            yield {'url': full_url}
+
+        # PAGINATION (Sayfalandırma)
+        current_page = response.meta['page_num']
+        if current_page < 5:  # Test için ilk 5 sayfa
             next_page = current_page + 1
-
-            if next_page > 20:
-                return
-            
-            new_payload = {
-                "page": next_page,
-                "region": "İstanbul",
-                "search": "python",
-                "regionId": 56560
-            }
-            ###########################################
-
+            next_url = f"{self.base_url}&p={next_page}"
             yield scrapy.Request(
-                url=self.api_url,
-                method='POST',
-                body=json.dumps(new_payload), # new_payload'u json string'e çevir
-                headers={"Content-Type": "application/json"},
+                url=next_url,
                 callback=self.parse,
                 meta={'page_num': next_page}
             )
-
 '''
     In the previous spider we parsed the urls from the json 
     now in this spider we will parse the job details inside this urls
@@ -151,7 +84,7 @@ class DetailWorkerSpider(scrapy.Spider):
     ####################################################
 
     custom_settings = {
-        'SCRAPEOPS_API_KEY': os.getenv("SCRAPEOPS_API_KEY"), 
+        'SCRAPEOPS_API_KEY': "ba7852f0-91f8-4d4b-b1bc-dcccd26e2368", 
         'SCRAPEOPS_PROXY_ENABLED': True,
         'DOWNLOADER_MIDDLEWARES': {
             'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,

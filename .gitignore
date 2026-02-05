@@ -19,3 +19,6 @@ scrapy.cfg
 
 #Passwords
 .env
+
+#json files
+.jsonl
