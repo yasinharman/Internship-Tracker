@@ -6,7 +6,9 @@ import scrapy
 from urllib.parse import urlencode
 from ..loaders import IndeedLoader
 import os
+from dotenv import load_dotenv
 
+load_dotenv()
 ###############
 # MAIN SPIDER #
 ###############

@@ -21,4 +21,4 @@ scrapy.cfg
 .env
 
 #json files
-.jsonl
+urller.jsonl
