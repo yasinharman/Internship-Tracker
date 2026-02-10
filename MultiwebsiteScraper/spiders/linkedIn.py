@@ -32,8 +32,8 @@ class LinkedinSpider(scrapy.Spider):
         'DOWNLOADER_MIDDLEWARES': {
             'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
         },
-        'CONCURRENT_REQUESTS': 5, 
-        'DOWNLOAD_DELAY': 2,
+        'CONCURRENT_REQUESTS': 4, 
+        # 'DOWNLOAD_DELAY': 2,
         
         'DEFAULT_REQUEST_HEADERS': {
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',

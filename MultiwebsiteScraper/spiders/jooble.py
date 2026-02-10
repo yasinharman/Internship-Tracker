@@ -29,8 +29,8 @@ class JoobleUrlCrawler(scrapy.Spider):
         'DOWNLOADER_MIDDLEWARES': {
             'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
         },
-        'CONCURRENT_REQUESTS': 1,
-        'DOWNLOAD_DELAY': 3,
+        'CONCURRENT_REQUESTS': 2,
+        # 'DOWNLOAD_DELAY': 3,
     }
 
     def start_requests(self):
