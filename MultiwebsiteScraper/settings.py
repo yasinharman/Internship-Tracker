@@ -1,6 +1,6 @@
 import os
 
-SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY")
+SCRAPEOPS_API_KEY = os.getenv("SCRAPEOPS_API_KEY")
 
 BOT_NAME = "MultiwebsiteScraper"
 
@@ -69,8 +69,14 @@ COOKIES_ENABLED = False
 #    "MultiwebsiteScraper.middlewares.MultiwebsitescraperSpiderMiddleware": 543,
 #}
 
-# Enable or disable downloader middlewares
-# See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
+from dotenv import load_dotenv
+import os
+
+# Load environment variables from .env file (if present)
+load_dotenv()
+
+SCRAPEOPS_API_KEY = os.getenv("SCRAPEOPS_API_KEY")
+BOT_NAME = "MultiwebsiteScraper"
 DOWNLOADER_MIDDLEWARES = {
     # 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
     # 'scrapy_user_agents.middlewares.RandomUserAgentMiddleware': 400,
