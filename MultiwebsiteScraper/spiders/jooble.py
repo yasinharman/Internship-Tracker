@@ -24,7 +24,7 @@ class JoobleUrlCrawler(scrapy.Spider):
                 'overwrite': True,
             }
         },
-        'SCRAPEOPS_API_KEY': "ba7852f0-91f8-4d4b-b1bc-dcccd26e2368",
+        'SCRAPEOPS_API_KEY': os.getenv("SCRAPEOPS_API_KEY"),
         'SCRAPEOPS_PROXY_ENABLED': True,
         'DOWNLOADER_MIDDLEWARES': {
             'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
@@ -84,7 +84,7 @@ class DetailWorkerSpider(scrapy.Spider):
     ####################################################
 
     custom_settings = {
-        'SCRAPEOPS_API_KEY': "ba7852f0-91f8-4d4b-b1bc-dcccd26e2368", 
+        'SCRAPEOPS_API_KEY': os.getenv("SCRAPEOPS_API_KEY"), 
         'SCRAPEOPS_PROXY_ENABLED': True,
         'DOWNLOADER_MIDDLEWARES': {
             'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
