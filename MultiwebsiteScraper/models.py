@@ -29,8 +29,8 @@ class JobPost(Base):
     
     source_site = Column(String, nullable=False)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.utcnow())
+    updated_at = Column(DateTime, default=lambda: datetime.utcnow(), onupdate=lambda: datetime.utcnow())
     is_active = Column(Boolean, default=True)
     
     job_type = Column(String)
