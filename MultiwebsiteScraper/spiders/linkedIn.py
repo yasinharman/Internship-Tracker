@@ -1,7 +1,3 @@
-###############
-# ADD API KEY #
-###############
-
 import scrapy
 from ..loaders import LinkedInLoader
 

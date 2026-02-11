@@ -1,20 +1,20 @@
 version: '3.8'
 
 services:
-  # 1. VERİTABANI SERVİSİ
+  # 1. START THE DATABASE SERVICE
   db:
     image: postgres:15-alpine
     container_name: job_db_container
     environment:
-      POSTGRES_USER: ${DB_USER}      # .env'den okur
-      POSTGRES_PASSWORD: ${DB_PASSWORD} # .env'den okur
-      POSTGRES_DB: ${DB_NAME}        # .env'den okur
-    volumes:
+      POSTGRES_USER: ${DB_USER}      # .env
+      POSTGRES_PASSWORD: ${DB_PASSWORD} # .env
+      POSTGRES_DB: ${DB_NAME}        # .env
+    volumes: # We created a volume to not lose our data when the container is deleted.
       - pg_data:/var/lib/postgresql/data
     ports:
       - "${DB_PORT}:${DB_PORT}"
 
-  # 2. OTOMASYON SERVİSİ (main.py)
+  # 2. START THE AUTOMATION SERVICE (main.py)
   scraper:
     build: .
     container_name: job_scraper_container
@@ -24,12 +24,12 @@ services:
     env_file:
       - .env
     environment:
-      # Docker içinde 'localhost' yerine servis adı olan 'db' kullanılır!
+      # In Docker 'db' is used instead of 'localhost'
       DATABASE_URL: postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME}
     volumes:
       - .:/app
 
-  # 3. DASHBOARD SERVİSİ (Streamlit)
+  # 3. START THE DASHBOARD SERVICE
   dashboard:
     build: .
     container_name: job_dashboard_container

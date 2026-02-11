@@ -1,7 +1,3 @@
-###############
-# ADD API KEY #
-###############
-
 import scrapy
 from urllib.parse import urlencode
 from ..loaders import IndeedLoader
@@ -123,7 +119,7 @@ class IndeedJobSpider(scrapy.Spider):
                     url = response.urljoin(link),
                     callback = self.parse_job_detail,
                     meta = {
-                        'sops_render_js': False, # İlan detaylarının olduğu sayfada antibot koruması çok yoğun olmadığından API kredisi tasarrufu ve hız için bu sayfalarda js render yapmıyoruz.
+                        'sops_render_js': False, # In the application detail page website is not using a heavy antibot protection so we are not rendering js on these pages to save api credit
                         'sops_residential': False,
                         'sops_country': 'tr',
                     }

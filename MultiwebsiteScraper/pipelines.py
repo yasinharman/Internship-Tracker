@@ -122,12 +122,12 @@ class JobScraperPipeline:
         
         # Error handling
         except Exception as e:
-            session.rollback()
+            session.rollback() # If any error occurs while data was going through pipeline program rolls back the changes to not mess up the database.
             spider.logger.error(f"Some error occured while job application was being added to database: {e}")
         
         # We are ending the session to not keep our database busy
         finally:
-            session.close()
+            session.close() # To prevent "Too many connections error"
         
         # We are returning the item to see the data on the terminal
         return item

@@ -1,7 +1,3 @@
-###############
-# ADD API KEY #
-###############
-
 import scrapy
 from urllib.parse import urlencode
 from ..loaders import KariyerNetLoader

@@ -5,7 +5,6 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 
-# .env dosyasını yükle
 load_dotenv()
 
 SCRAPY_PROJECT_FOLDER = 'MultiwebsiteScraper'

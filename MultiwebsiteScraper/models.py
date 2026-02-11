@@ -1,7 +1,3 @@
-################
-# ADD PASSWORD #
-################
-
 from sqlalchemy import create_engine, Integer, String, Boolean, Column, Text, DateTime, ForeignKey
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
@@ -39,12 +35,7 @@ class JobPost(Base):
 # CONNECTION TO THE DATABASE #
 ##############################
 def db_connect():
-    # Öncelik: Docker ortam değişkeni (DATABASE_URL)
-    # Eğer o yoksa (Localdeysen): Standart localhost bağlantısını kullan
-    db_url = os.getenv(
-        "DATABASE_URL", 
-        "postgresql+psycopg2://postgres:Mehperya16@localhost:5432/job_applications_db"
-    )
+    db_url = os.getenv("DATABASE_URL")
     return create_engine(db_url)
 
 # FUNCTION TO CREATE TABLE

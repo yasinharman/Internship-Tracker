@@ -1,7 +1,3 @@
-################
-# ADD PASSWORD #
-################
-
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine

@@ -17,6 +17,7 @@ def meta_for_first_tabs(context_id=None):
     meta = {
             "playwright": True,
             
+            # ASKED AI FOR THE BEST PLAYWRIGHT KEYWORD ARGUMENTS #
             "playwright_context_kwargs": {
                 "is_mobile": False,
                 "has_touch": False,
@@ -168,7 +169,7 @@ class TechcareerSpider(scrapy.Spider):
     def start_requests(self):
         PLAYWRIGHT_CONTEXT_ID = "persisted_context"
 
-        for i in range(1, 4):
+        for i in range(1, 4): # In here we are controlling how many pages we want to scrape.
             start_url = f"https://www.techcareer.net/jobs?jobs[isCompleted]=false&jobs[page]={i}"
 
             yield scrapy.Request(
@@ -191,7 +192,7 @@ class TechcareerSpider(scrapy.Spider):
             for job in all_jobs:
                 yield scrapy.Request(
                     url = response.urljoin(job),
-                    # Detay sayfaları için aynı context ID'yi kullanarak tarayıcının yeniden açılmasını önlüyoruz.
+                    # We are using the same context ID to prevent our program from opening a new browser for every request.
                     meta = meta_for_back_to_back_pages(context_id=current_context_id),
                     callback = self.parse_detail
                 )

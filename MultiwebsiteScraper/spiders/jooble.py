@@ -1,7 +1,3 @@
-###############
-# ADD API KEY #
-###############
-
 import scrapy
 import json
 from ..loaders import JoobleLoader
@@ -13,7 +9,6 @@ from scrapy.http import JsonRequest
 
 class JoobleUrlCrawler(scrapy.Spider):
     name = "jooble"
-    # API URL yerine normal arama URL'si kullanıyoruz
     base_url = "https://tr.jooble.org/SearchResult?rgns=İstanbul&ukw=python"
 
     custom_settings = {
@@ -34,34 +29,30 @@ class JoobleUrlCrawler(scrapy.Spider):
     }
 
     def start_requests(self):
-        # POST yerine GET isteği atıyoruz
         yield scrapy.Request(
             url=self.base_url,
             callback=self.parse,
             meta={'page_num': 1}
         )
 
+    # SEARCHING FOR THE JOB APPLICATION LINKS #
     def parse(self, response):
-        # 1. Yöntem: data-test-name özniteliği üzerinden (En güveniliri)
         job_links = response.css('a[data-test-name="job-link"]::attr(href)').getall()
         
-        # 2. Yöntem: Eğer yukarıdaki boş dönerse (Alternatif)
         if not job_links:
             self.logger.info("First selector failed, trying alternative...")
             job_links = response.css('section[data-test-name="job-card"] a::attr(href)').getall()
 
-        # 3. Yöntem: En geniş kapsamlı (Her ihtimale karşı)
         if not job_links:
             job_links = response.xpath('//a[contains(@href, "/desc/")]/@href').getall()
 
         self.logger.info(f"Found {len(job_links)} job links on this page.")
 
         for link in job_links:
-            # Linki tam URL haline getir
             full_url = response.urljoin(link)
             yield {'url': full_url}
 
-        # PAGINATION (Sayfalandırma)
+        # PAGINATION #
         current_page = response.meta['page_num']
         if current_page < 5:  # Test için ilk 5 sayfa
             next_page = current_page + 1
@@ -72,12 +63,11 @@ class JoobleUrlCrawler(scrapy.Spider):
                 meta={'page_num': next_page}
             )
 '''
-    In the previous spider we parsed the urls from the json 
+    In the previous spider we parsed the urls from the html 
     now in this spider we will parse the job details inside this urls
 '''
 class DetailWorkerSpider(scrapy.Spider):
     name = "detail_worker"
-
     
     ####################################################
     # CUSTOM SETTINGS THAT ONLY ENABLED ON THIS SPIDER #
@@ -152,7 +142,7 @@ class DetailWorkerSpider(scrapy.Spider):
                                         )
                             
                     except json.JSONDecodeError:
-                        self.logger.warning(f"{line_number}. There is broken JSON data on the line, passing the line.")
+                        self.logger.warning(f"{line_number}. There is broken data on the line, passing the line.")
                         
         except FileNotFoundError:
             self.logger.error("File not found. Run the collector first.")
