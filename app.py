@@ -78,7 +78,7 @@ with col_chart2:
     if 'job_type' in filtered_df.columns and not filtered_df["job_type"].isnull().all():
         type_counts = filtered_df['job_type'].value_counts()
         st.bar_chart(type_counts)
-    
+
     else:
         st.info("There isn't any job applications with the selected job type.")
 

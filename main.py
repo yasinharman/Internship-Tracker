@@ -25,12 +25,12 @@ def run_spiders():
             print(f"{spider} is now finished its job...")
         else:
             print(f"An error occured while {spider} is working (Exit Code: {exit_code})")
-    
+
     print("Scraping process is finished. Waiting until next run...")
 
 if __name__ == '__main__':
     scheduler = BlockingScheduler()
-    
+
     scheduler.add_job(run_spiders, 'cron', day='*/2', hour=3, minute=0)
 
     print("Automation system is ready. Waiting for APScheduler...")
@@ -39,6 +39,6 @@ if __name__ == '__main__':
 
     try:
         scheduler.start()
-    
+
     except (KeyboardInterrupt, SystemExit):
         print("Automation is stopped!")

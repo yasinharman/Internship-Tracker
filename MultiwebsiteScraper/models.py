@@ -12,30 +12,30 @@ Base = declarative_base()
 class JobPost(Base):
     __tablename__ = "job_posts"
     id = Column(Integer, primary_key=True)
-    
+
     job_title = Column(String, nullable=False)
-    
+
     company = Column(String)
-    
+
     location = Column(String)
-    
+
     job_description = Column(Text)
-    
+
     url = Column(String, unique=True, nullable=False)
-    
+
     source_site = Column(String, nullable=False)
-    
+
     created_at = Column(DateTime, default=lambda: datetime.utcnow())
     updated_at = Column(DateTime, default=lambda: datetime.utcnow(), onupdate=lambda: datetime.utcnow())
     is_active = Column(Boolean, default=True)
-    
+
     job_type = Column(String)
 
 ##############################
 # CONNECTION TO THE DATABASE #
 ##############################
 def db_connect():
-    db_url = os.getenv("DATABASE_URL")
+    db_url = os.getenv("DATABASE_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/job_posts")
     return create_engine(db_url)
 
 # FUNCTION TO CREATE TABLE
