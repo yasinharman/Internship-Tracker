@@ -11,9 +11,6 @@ playwright_browser_profiles
 httpcache/
 .scrapy/
 
-#scrapy automatic files
-scrapy.cfg
-
 #__init__
 .__init__
 
