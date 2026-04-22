@@ -4,24 +4,32 @@ from sqlalchemy import create_engine
 from datetime import datetime, timedelta
 import os
 
+from MultiwebsiteScraper.models import Base
+
 # PAGE TITLE
 st.set_page_config(page_title="Job Applications Dasboard", layout="wide")
 
 #######################
 # DATABASE CONNECTION #
 #######################
-@st.cache_data(ttl=600)
-def load_data():
+def get_engine():
     db_connection_str = os.getenv(
         "DATABASE_URL",
         "postgresql+psycopg2://postgres:Mehperya16@localhost:5432/job_applications_db"
     )
-    db_connection = create_engine(db_connection_str)
+    return create_engine(db_connection_str)
+
+@st.cache_data(ttl=600)
+def load_data():
+    engine = get_engine()
+
+    Base.metadata.create_all(engine)
 
     query = "SELECT * FROM job_posts ORDER BY created_at DESC"
-    df = pd.read_sql(query, db_connection)
+    df = pd.read_sql(query, engine)
 
-    df['created_at'] = pd.to_datetime(df["created_at"])
+    if not df.empty:
+        df['created_at'] = pd.to_datetime(df["created_at"])
     return df
 
 try:
@@ -29,6 +37,11 @@ try:
 
 except Exception as e:
     st.error(f"An error occured while connecting to database: {e}")
+    st.stop()
+
+if df.empty:
+    st.title("Current Job Postings")
+    st.info("Henüz veri yok. Scraper'ın ilk çalışmasını bekleyin; tamamlandığında bu sayfa otomatik dolar.")
     st.stop()
 
 ###########
