@@ -1,52 +1,43 @@
-version: '3.8'
-
 services:
   # 1. START THE DATABASE SERVICE
   db:
     image: postgres:15-alpine
-    container_name: job_db_container
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     volumes:
       - pg_data:/var/lib/postgresql/data
-    ports:
-      - "${DB_PORT}:${DB_PORT}"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   # 2. START THE AUTOMATION SERVICE (main.py)
   scraper:
     build: .
-    container_name: job_scraper_container
     command: python main.py
     depends_on:
       db:
         condition: service_healthy
     environment:
       # In Docker 'db' is used instead of 'localhost'
-      DATABASE_URL: postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME}
-    volumes:
-      - .:/app
+      DATABASE_URL: postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      SCRAPEOPS_API_KEY: ${SCRAPEOPS_API_KEY}
+    restart: unless-stopped
 
   # 3. START THE DASHBOARD SERVICE
   dashboard:
     build: .
-    container_name: job_dashboard_container
-    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0 --server.headless=true
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      - "8501:8501"
     environment:
-      DATABASE_URL: postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME}
-    volumes:
-      - .:/app
+      DATABASE_URL: postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+    restart: unless-stopped
 
 volumes:
   pg_data:

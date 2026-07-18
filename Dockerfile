@@ -21,3 +21,7 @@ COPY . .
 
 # To see the logs live when the program runs.
 ENV PYTHONUNBUFFERED=1
+
+# Default command (docker-compose overrides this per service).
+# Without a CMD the container starts an interactive python shell and exits immediately.
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
