@@ -7,7 +7,7 @@ import os
 from MultiwebsiteScraper.models import Base
 
 # PAGE TITLE
-st.set_page_config(page_title="Job Applications Dasboard", layout="wide")
+st.set_page_config(page_title="Job Applications Dasboard", layout="wide", page_icon="docs/logo.png")
 
 #######################
 # DATABASE CONNECTION #
