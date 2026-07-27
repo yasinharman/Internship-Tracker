@@ -35,7 +35,22 @@ class JobPost(Base):
 # CONNECTION TO THE DATABASE #
 ##############################
 def db_connect():
-    db_url = os.getenv("DATABASE_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/job_posts")
+    """
+    DATABASE_URL is required, and deliberately has no fallback.
+
+    The old default pointed at a `job_posts` database that does not exist,
+    while app.py defaulted to `job_applications_db` with a hardcoded password.
+    A misconfigured run therefore failed one item at a time inside the
+    pipeline's exception handler rather than saying what was wrong. Failing
+    here, immediately, is easier to diagnose.
+    """
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        raise RuntimeError(
+            "DATABASE_URL is not set. Put it in .env for local runs, or in the "
+            "service's environment variables in Coolify. Format: "
+            "postgresql+psycopg2://user:password@host:5432/dbname"
+        )
     return create_engine(db_url)
 
 # FUNCTION TO CREATE TABLE

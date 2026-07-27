@@ -11,10 +11,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Download necessary libraries for our program.
+# No browser install: every spider now makes plain HTTP requests, so the
+# ~500MB Chromium download and its system dependencies are gone.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-RUN playwright install chromium
-RUN playwright install-deps chromium
 
 # Copy all the files in the project to the container.
 COPY . .
@@ -22,6 +22,10 @@ COPY . .
 # To see the logs live when the program runs.
 ENV PYTHONUNBUFFERED=1
 
-# Default command (docker-compose overrides this per service).
-# Without a CMD the container starts an interactive python shell and exits immediately.
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# The container does nothing on its own: it just stays up so Coolify can run
+# scheduled tasks inside it (`python main.py`). Scheduling lives in Coolify,
+# not in this image.
+#
+# 'exec' form + sleep as PID 1 means SIGTERM stops the container immediately
+# instead of Docker waiting out the 10s kill timeout on every redeploy.
+CMD ["sleep", "infinity"]

@@ -1,16 +1,29 @@
 import os
 
+from dotenv import load_dotenv
+
+# Load environment variables from .env file (if present)
+load_dotenv()
+
 SCRAPEOPS_API_KEY = os.getenv("SCRAPEOPS_API_KEY")
 
 BOT_NAME = "MultiwebsiteScraper"
-
-# USER_AGENT = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:141.0) Gecko/20100101 Firefox/141.0"
 
 SPIDER_MODULES = ["MultiwebsiteScraper.spiders"]
 NEWSPIDER_MODULE = "MultiwebsiteScraper.spiders"
 
 ADDONS = {}
 
+'''
+    Playwright is gone. It was only ever used by the old TechCareer spider,
+    which rendered the page to reach data that turned out to be sitting in the
+    HTML as JSON all along. Removing it takes ~500MB and the slowest, most
+    failure-prone step out of the Docker build.
+
+    Every spider now makes plain HTTP requests: kariyer.net is parsed from
+    server-rendered markup, TechCareer from its Next.js data endpoint, Indeed
+    from the JSON embedded in its search page.
+'''
 DOWNLOAD_HANDLERS = {
     'file': 'scrapy.core.downloader.handlers.file.FileDownloadHandler',
     'http': 'scrapy.core.downloader.handlers.http.HTTPDownloadHandler',
@@ -20,39 +33,19 @@ DOWNLOAD_HANDLERS = {
     'data': 'scrapy.core.downloader.handlers.datauri.DataURIDownloadHandler',
 }
 
-# PLAYWRIGHT_BROWSER_TYPE = "chromium"
-# # PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "/opt/google/chrome/google-chrome"
-
-# PLAYWRIGHT_LAUNCH_OPTIONS = { #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
-#     "headless": False,
-#     "args": [
-#         "--disable-blink-features=AutomationControlled",
-#         "--disable-dev-shm-usage",
-#         "--no-sandbox",
-#         # "--disable-web-security",
-#         # "--disable-features=VizDisplayCompositor",
-#         # "--disable-infobars",  # ← otomasyon bannerını kaldırır
-#         # "--start-maximized",   # ← gerçek kullanıcı gibi tam ekran aç
-#         # "--disable-extensions" # ← extension yokmuş gibi davran
-#     ]
-
-# }
-
 # Obey robots.txt rules
 ROBOTSTXT_OBEY = False
 
 # Concurrency and throttling settings
-PLAYWRIGHT_MAX_PAGES_PER_CONTEXT = 3  
-PLAYWRIGHT_MAX_CONTEXTS = 1 
-
 CONCURRENT_REQUESTS = 1
 CONCURRENT_REQUESTS_PER_DOMAIN = 1 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
 CONCURRENT_REQUESTS_PER_IP = 0
 DOWNLOAD_DELAY = 3 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
 RANDOMIZE_DOWNLOAD_DELAY = True
 
-# Disable cookies (enabled by default)
-COOKIES_ENABLED = False
+# Cookies are REQUIRED by the JSON API spiders: they load a normal page first
+# and the session cookies it sets are what the API endpoints check for.
+COOKIES_ENABLED = True
 
 # Disable Telnet Console (enabled by default)
 #TELNETCONSOLE_ENABLED = False
@@ -69,18 +62,37 @@ COOKIES_ENABLED = False
 #    "MultiwebsiteScraper.middlewares.MultiwebsitescraperSpiderMiddleware": 543,
 #}
 
-from dotenv import load_dotenv
-import os
+##########################################################
+# DOWNLOADER MIDDLEWARES FOR THE JSON API SCRAPING MODE  #
+##########################################################
+'''
+    590 - BlockDetectionMiddleware sees responses BEFORE RetryMiddleware (550),
+          because Scrapy walks the response path in decreasing priority. A 403
+          therefore triggers an IP escalation instead of a blind retry from the
+          same address.
+    725 - ResidentialProxyMiddleware runs before Scrapy's HttpProxyMiddleware
+          (750), which converts the credentials in our proxy URL into a
+          Proxy-Authorization header.
 
-# Load environment variables from .env file (if present)
-load_dotenv()
-
-SCRAPEOPS_API_KEY = os.getenv("SCRAPEOPS_API_KEY")
-BOT_NAME = "MultiwebsiteScraper"
+    Both self-disable when PROXY_MODE=off or no IPRoyal credentials are set,
+    so local development goes out direct with no extra configuration.
+'''
 DOWNLOADER_MIDDLEWARES = {
+    "MultiwebsiteScraper.api_middlewares.BlockDetectionMiddleware": 590,
+    "MultiwebsiteScraper.api_middlewares.ResidentialProxyMiddleware": 725,
     # 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
     # 'scrapy_user_agents.middlewares.RandomUserAgentMiddleware': 400,
 }
+
+# How many times one request may climb the escalation ladder
+# (direct -> proxy -> fresh proxy IP) before it is dropped.
+PROXY_MAX_ESCALATIONS = 3
+
+# Residential bandwidth is metered, so give up on genuinely dead requests
+# rather than paying to retry them forever.
+RETRY_ENABLED = True
+RETRY_TIMES = 2
+DOWNLOAD_TIMEOUT = 60
 
 # Enable or disable extensions
 # See https://docs.scrapy.org/en/latest/topics/extensions.html

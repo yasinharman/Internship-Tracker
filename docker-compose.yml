@@ -16,9 +16,15 @@ services:
     restart: unless-stopped
 
   # 2. START THE AUTOMATION SERVICE (main.py)
+  # Local development only. In production Coolify starts the container idle
+  # (`sleep infinity`, the Dockerfile CMD) and fires `python main.py` as a
+  # scheduled task, so the schedule is not baked into the image.
+  #
+  # --schedule is required here: without it main.py exits after one crawl and
+  # `restart: unless-stopped` would immediately start another, forever.
   scraper:
     build: .
-    command: python main.py
+    command: python main.py --schedule
     depends_on:
       db:
         condition: service_healthy

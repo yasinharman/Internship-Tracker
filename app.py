@@ -13,10 +13,23 @@ st.set_page_config(page_title="Job Applications Dasboard", layout="wide", page_i
 # DATABASE CONNECTION #
 #######################
 def get_engine():
-    db_connection_str = os.getenv(
-        "DATABASE_URL",
-        "postgresql+psycopg2://postgres:Mehperya16@localhost:5432/job_applications_db"
-    )
+    """
+    DATABASE_URL is required - there is no fallback with credentials in it.
+
+    The previous default embedded a real password, which meant the password
+    lived in the repository (and in its history, since the repo is public) and
+    that a misconfigured deployment would quietly connect somewhere unintended
+    instead of failing. Set it in .env locally, or as an environment variable
+    in Coolify.
+    """
+    db_connection_str = os.getenv("DATABASE_URL")
+    if not db_connection_str:
+        st.error(
+            "DATABASE_URL is not set. Add it to .env for local runs, or to the "
+            "environment variables of this service in Coolify. Format:\n\n"
+            "`postgresql+psycopg2://user:password@host:5432/dbname`"
+        )
+        st.stop()
     return create_engine(db_connection_str)
 
 @st.cache_data(ttl=600)
@@ -53,7 +66,21 @@ site_list = df["source_site"].unique().tolist()
 selected_sites = st.sidebar.multiselect("Source site", site_list, default=site_list)
 
 job_type_list = df["job_type"].unique().tolist()
-selected_job_types = st.sidebar.multiselect("Job type", job_type_list, default=job_type_list)
+
+# The job types actually being looked for. Everything the scrapers find is
+# still stored - postings disappear from the sites within weeks and cannot be
+# fetched again, so we keep the data and narrow the view instead.
+PREFERRED_JOB_TYPES = ["Internship", "Part-Time"]
+default_job_types = [t for t in PREFERRED_JOB_TYPES if t in job_type_list] or job_type_list
+
+selected_job_types = st.sidebar.multiselect(
+    "Job type", job_type_list, default=default_job_types
+)
+if set(selected_job_types) != set(job_type_list):
+    st.sidebar.caption(
+        f"{len(job_type_list) - len(selected_job_types)} tip gizli - "
+        "hepsini görmek için yukarıdan ekleyin."
+    )
 
 filtered_df = df[df['source_site'].isin(selected_sites) & df['job_type'].isin(selected_job_types)]
 

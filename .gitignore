@@ -19,3 +19,9 @@ httpcache/
 
 #json files
 urller.jsonl
+
+#raw API response dumps (API_DEBUG_DUMP=1)
+debug/
+
+#working plans - local notes, not part of the repo
+PLAN-*.md

@@ -1,8 +1,12 @@
+# brotli + zstandard let Scrapy advertise the same Accept-Encoding a real
+# Chrome does (gzip, deflate, br, zstd). Without them our encoding header is
+# a giveaway that we are not a browser.
 altair==6.0.0
 APScheduler==3.11.2
 attrs==25.4.0
 Automat==25.4.16
 blinker==1.9.0
+Brotli==1.1.0
 cachetools==6.2.4
 certifi==2025.10.5
 cffi==2.0.0
@@ -23,8 +27,8 @@ itemadapter==0.12.2
 itemloaders==1.3.2
 Jinja2==3.1.6
 jmespath==1.0.1
-jsonschema==4.25.1
 jsonschema-specifications==2025.9.1
+jsonschema==4.25.1
 lxml==6.0.2
 MarkupSafe==3.0.3
 narwhals==2.14.0
@@ -33,8 +37,6 @@ packaging==25.0
 pandas==2.3.3
 parsel==1.10.0
 pillow==12.0.0
-playwright==1.55.0
-playwright-stealth==2.0.0
 Protego==0.5.0
 protobuf==6.33.2
 psycopg2==2.9.11
@@ -44,20 +46,16 @@ pyasn1_modules==0.4.2
 pycparser==2.23
 pydeck==0.9.1
 PyDispatcher==2.0.7
-pyee==13.0.0
 pyOpenSSL==25.3.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.1
 pytz==2025.2
 queuelib==1.8.0
 referencing==0.37.0
-requests==2.32.5
 requests-file==3.0.1
+requests==2.32.5
 rpds-py==0.30.0
-scrapeops_scrapy_proxy_sdk==1.0
 Scrapy==2.13.3
-scrapy-playwright==0.0.44
-scrapy-user-agents==0.1.1
 service-identity==24.2.0
 setuptools==80.9.0
 six==1.17.0
@@ -72,10 +70,8 @@ Twisted==25.5.0
 typing_extensions==4.15.0
 tzdata==2025.3
 tzlocal==5.3.1
-ua-parser==1.0.1
-ua-parser-builtins==0.18.0.post1
 urllib3==2.5.0
-user-agents==2.2.0
 w3lib==2.3.1
 watchdog==6.0.0
 zope.interface==8.0.1
+zstandard==0.23.0
