@@ -228,12 +228,23 @@ class BlockDetectionMiddleware:
         # Caught here rather than in the spider so the escalation ladder
         # below gets its chance: a sign-in wall is exactly the case a fresh
         # residential IP might get past.
-        final_url = (response.url or "").lower()
-        requested_url = (request.url or "").lower()
-        if final_url != requested_url:
+        #
+        # The url we asked for comes from meta["redirect_urls"], NOT from
+        # request.url. Scrapy's RedirectMiddleware runs ahead of this one and
+        # follows the 307 by issuing a fresh request, so by the time the final
+        # response arrives here request.url IS the sign-in page and comparing
+        # the two urls compares a value against itself. That is precisely how
+        # the first version of this check silently did nothing.
+        redirect_chain = request.meta.get("redirect_urls") or []
+        if redirect_chain:
+            asked_for = redirect_chain[0].lower()
+            landed_on = (response.url or request.url or "").lower()
             for signature in self.LOGIN_URL_SIGNATURES:
-                if signature in final_url and signature not in requested_url:
-                    return f"redirected to a sign-in wall ({response.url[:120]})"
+                if signature in landed_on and signature not in asked_for:
+                    return (
+                        f"redirected to a sign-in wall "
+                        f"({(response.url or request.url)[:120]})"
+                    )
 
         body = response.body or b""
 
@@ -271,6 +282,12 @@ class BlockDetectionMiddleware:
             )
             raise IgnoreRequest(f"blocked: {reason}")
 
+        # What the retry will actually ask for - see the comment where the
+        # retry is built. Computed here so the log lines below name the url
+        # being retried rather than the sign-in page we bounced off.
+        original_url = (request.meta.get("redirect_urls") or [None])[0]
+        target_url = original_url or request.url
+
         # ------------------------------------------------------------------
         # Escalation ladder
         # ------------------------------------------------------------------
@@ -295,7 +312,7 @@ class BlockDetectionMiddleware:
             spider.logger.warning(
                 "BLOCKED direct (%s) - retrying %s over residential proxy; "
                 "all further %s requests will use it too",
-                reason, request.url, domain or "same-domain",
+                reason, target_url, domain or "same-domain",
             )
             new_meta = {"use_proxy": True}
         else:
@@ -304,11 +321,26 @@ class BlockDetectionMiddleware:
             self.crawler.stats.inc_value("blocks/rotated_session")
             spider.logger.warning(
                 "BLOCKED on proxy session %s (%s) - retrying %s on a fresh IP",
-                request.meta.get("proxy_session"), reason, request.url,
+                request.meta.get("proxy_session"), reason, target_url,
             )
             new_meta = {"use_proxy": True}
 
-        retry = request.copy()
+        # Retry what we originally asked for, not where we were sent.
+        #
+        # When the block arrived as a redirect, `request` is the redirected
+        # request - the sign-in page - because RedirectMiddleware already
+        # followed it. Copying that would fetch the sign-in page again on the
+        # fresh IP, get a clean 200 with no redirect this time, sail past
+        # every check here, and hand the parser a login page: the same silent
+        # empty crawl, now with an escalation in the stats to make it look
+        # like something was done about it.
+        if original_url and original_url != request.url:
+            retry = request.replace(url=original_url)
+            for key in ("redirect_urls", "redirect_reasons", "redirect_times"):
+                retry.meta.pop(key, None)
+        else:
+            retry = request.copy()
+
         retry.meta.update(new_meta)
         retry.meta["_escalations"] = escalations + 1
         # Drop the stale proxy so ResidentialProxyMiddleware rebuilds the URL
