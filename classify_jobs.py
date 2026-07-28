@@ -21,7 +21,7 @@ import argparse
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from sqlalchemy.orm import sessionmaker
@@ -180,7 +180,11 @@ def print_disagreements(rows, per_model):
 # WRITE                                             #
 #####################################################
 def write_results(session, results):
-    now = datetime.utcnow()
+    # UTC, but written back as a naive value: classified_at is `timestamp
+    # without time zone`, like created_at, and handing psycopg2 an aware
+    # datetime for a naive column loses the offset silently. utcnow() would do
+    # the same thing but is deprecated.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     deactivated = 0
 
     for posting in session.query(JobPost).filter(JobPost.id.in_(results)).all():
