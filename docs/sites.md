@@ -622,3 +622,70 @@ update job_posts set is_active = true, job_category = null where id = <id>;
 If a whole class of postings is being misjudged, fix the examples in
 `SYSTEM_PROMPT` rather than adding special cases, then re-run `--compare`
 against the previous model to see what moved.
+
+---
+
+## The same job on two boards
+
+Added 28.07.2026. techcareer.net **belongs to kariyer.net** and carries the
+same ads, so one opening arrives under two urls. `url` is UNIQUE and correctly
+so - the two pages really are different resources - which means two rows, and
+the job appeared twice on the dashboard.
+
+Measured on 146 real postings: **3 pairs**, and notably one of them was
+kariyer.net + Indeed rather than the sister site, so this is not only a
+techcareer artefact.
+
+| Duplicate | Kept | Job |
+|---|---|---|
+| techcareer.net | kariyer.net | Bilgisayar Mühendisliği Stajyeri (THOTH) |
+| techcareer.net | kariyer.net | Dijital Sistem Mimarı (Öznur & Partners) |
+| indeed.com | kariyer.net | Supply Chain Finance Intern (PepsiCo) |
+
+### The rule
+
+Same normalised title **and** same normalised company **and different source
+sites**. Normalisation is `pipelines.canonical` - the Turkish-aware
+lowercasing that already exists because `"YARI ZAMANLI".lower()` produces a
+dotless i.
+
+The cross-site condition is the conservative half and it is deliberate. Two
+ads with the same title from the same company on **one** board are usually two
+real openings or that board's own repost, and the rule of this project is
+never to lose a posting. There were zero same-site collisions in the measured
+data, so the restriction costs nothing today and rules out a class of wrong
+merges. Company names that differ between boards ("X A.Ş." vs "X") will not
+match and the job stays listed twice - the safe direction to fail.
+
+### How it is recorded
+
+`job_posts.duplicate_of` points at the row this one duplicates; NULL means
+"show this one". The oldest row wins, which is stable across runs.
+
+It is **not** folded into `is_active`. That flag belongs to the classifier,
+and a second writer would resurrect or hide rows behind its back - exactly the
+bug that made `pipelines` bring excluded postings back to life. Two hides,
+two owners, no interaction.
+
+Nothing is deleted or merged. Both rows keep their own url, so no application
+link is lost.
+
+### Where it runs
+
+`dedupe_jobs.py`, from `main.py` **before** the classifier: a duplicate is
+never sent to the LLM, which saves a call and removes the chance of the two
+copies coming back with different verdicts. Re-runnable - a pairing that no
+longer holds is cleared. `--dry-run` shows what would change.
+
+To see the pairs:
+
+```sql
+select d.id, d.source_site, k.id as kept_id, k.source_site, d.job_title
+from job_posts d join job_posts k on k.id = d.duplicate_of;
+```
+
+To undo one, clear the link - the next run re-evaluates it:
+
+```sql
+update job_posts set duplicate_of = null where id = <id>;
+```

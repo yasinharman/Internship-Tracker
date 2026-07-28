@@ -52,9 +52,13 @@ CATEGORY_ORDER = ["it", "general_program", "other"]
 # READ                                              #
 #####################################################
 def load_unclassified(session, limit=None):
+    # Duplicates are skipped rather than classified: the same job on another
+    # board would cost a second call and could come back with a different
+    # verdict, which is worse than not knowing - the row is hidden anyway.
     query = (
         session.query(JobPost)
         .filter(JobPost.job_category.is_(None))
+        .filter(JobPost.duplicate_of.is_(None))
         .order_by(JobPost.created_at.desc())
     )
     if limit:

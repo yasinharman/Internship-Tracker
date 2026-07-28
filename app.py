@@ -38,10 +38,15 @@ def load_data():
 
     Base.metadata.create_all(engine)
 
-    # is_active is the classifier's soft delete: postings it judged to belong
-    # to another field are still in the table, just not shown here. Nothing
-    # else ever sets it to False, so this is the whole filter.
-    query = "SELECT * FROM job_posts WHERE is_active ORDER BY created_at DESC"
+    # Two independent hides, deliberately kept apart:
+    #   is_active     - the classifier's soft delete (wrong field)
+    #   duplicate_of  - the same job advertised on a second board
+    # Neither deletes anything; both are one UPDATE away from reversal.
+    query = (
+        "SELECT * FROM job_posts "
+        "WHERE is_active AND duplicate_of IS NULL "
+        "ORDER BY created_at DESC"
+    )
     df = pd.read_sql(query, engine)
 
     if not df.empty:

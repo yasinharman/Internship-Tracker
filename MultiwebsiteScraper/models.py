@@ -45,6 +45,20 @@ class JobPost(Base):
     category_reason = Column(Text)
     classified_at = Column(DateTime)
 
+    ###################################################################
+    # THE SAME JOB, ADVERTISED ON TWO BOARDS                          #
+    ###################################################################
+    # techcareer.net belongs to kariyer.net and carries the same ads, so one
+    # opening arrives twice under two urls - two rows, since url is what makes
+    # a posting unique and it is genuinely different.
+    #
+    # NULL means "this is the row to show". Otherwise it points at the row
+    # this one duplicates. Deliberately not folded into is_active: that flag
+    # belongs to the classifier, and a second writer would resurrect or hide
+    # rows behind its back. Points at an id rather than being a boolean so the
+    # pairing can be read back and argued with.
+    duplicate_of = Column(Integer, ForeignKey("job_posts.id"))
+
 ##############################
 # CONNECTION TO THE DATABASE #
 ##############################

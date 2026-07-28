@@ -52,6 +52,17 @@ MIGRATIONS = [
         "CREATE INDEX IF NOT EXISTS ix_job_posts_job_category "
         "ON job_posts (job_category)",
     ),
+    # The same opening advertised on two boards. See models.JobPost.
+    (
+        "job_posts.duplicate_of",
+        "ALTER TABLE job_posts ADD COLUMN IF NOT EXISTS duplicate_of INTEGER "
+        "REFERENCES job_posts (id)",
+    ),
+    (
+        "index on job_posts.duplicate_of",
+        "CREATE INDEX IF NOT EXISTS ix_job_posts_duplicate_of "
+        "ON job_posts (duplicate_of)",
+    ),
 ]
 
 

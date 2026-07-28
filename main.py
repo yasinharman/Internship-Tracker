@@ -16,7 +16,7 @@ second crawl on top of the first.
 
     python main.py                          all spiders, then classify
     python main.py --spider indeed_cards    one spider (schedule sites separately)
-    python main.py --skip-classify          crawl only, leave rows unclassified
+    python main.py --skip-classify          crawl only, skip dedupe + classify
     python main.py --list                   show the spider names
     python main.py --schedule               legacy in-process APScheduler loop,
                                             for running without Coolify
@@ -65,6 +65,9 @@ SPIDER_TIMEOUT = int(os.getenv("SPIDER_TIMEOUT", "1800"))
 # 150 postings at 8 concurrent requests finish in well under a minute; this is
 # a ceiling for a hung provider, not an expected duration.
 CLASSIFY_TIMEOUT = int(os.getenv("CLASSIFY_TIMEOUT", "900"))
+
+# Pure SQL over a few hundred rows - a second is generous.
+DEDUPE_TIMEOUT = int(os.getenv("DEDUPE_TIMEOUT", "120"))
 
 
 ####################################
@@ -160,42 +163,57 @@ def run_spiders(spiders=None):
 ############################################
 # CLASSIFY WHAT THE CRAWL JUST BROUGHT IN  #
 ############################################
-def run_classifier():
+def run_step(label, script, timeout):
     """
-    Returns True when classification finished cleanly.
+    Run one post-crawl script. Returns True when it exited cleanly.
 
-    Deliberately NOT part of the crawl's pass/fail: by the time this runs the
-    postings are already stored. A classifier failure leaves them unclassified,
-    which the dashboard shows anyway - so it is a degraded run, not a lost one,
-    and marking the whole scheduled task red would cry wolf.
+    Deliberately NOT part of the crawl's pass/fail: by the time these run the
+    postings are already stored. A failure here leaves them unsorted, which
+    the dashboard shows anyway - a degraded run, not a lost one, and marking
+    the whole scheduled task red would cry wolf.
     """
-    print("\n=== classify: starting ===", flush=True)
+    print(f"\n=== {label}: starting ===", flush=True)
     started = time.monotonic()
 
-    command = [sys.executable, "classify_jobs.py"]
-
     try:
-        result = subprocess.run(command, timeout=CLASSIFY_TIMEOUT)
+        result = subprocess.run([sys.executable, script], timeout=timeout)
         exit_code = result.returncode
     except subprocess.TimeoutExpired:
-        print(f"=== classify: KILLED after {CLASSIFY_TIMEOUT}s ===", flush=True)
+        print(f"=== {label}: KILLED after {timeout}s ===", flush=True)
         return False
     except FileNotFoundError as error:
-        print(f"=== classify: could not start - {error} ===", flush=True)
+        print(f"=== {label}: could not start - {error} ===", flush=True)
         return False
 
     elapsed = time.monotonic() - started
 
     if exit_code == 0:
-        print(f"=== classify: finished in {elapsed:.0f}s ===", flush=True)
+        print(f"=== {label}: finished in {elapsed:.0f}s ===", flush=True)
         return True
 
     print(
-        f"=== classify: FAILED (exit code {exit_code}) after {elapsed:.0f}s - "
-        f"postings are stored but unclassified; the next run retries them ===",
+        f"=== {label}: FAILED (exit code {exit_code}) after {elapsed:.0f}s ===",
         flush=True,
     )
     return False
+
+
+def run_post_crawl():
+    """
+    Everything that happens after the postings are in the database.
+
+    Order matters: linking duplicates BEFORE classifying means the copy of a
+    job already advertised on another board is never sent to the LLM - one
+    fewer call, and no chance of the two copies coming back with different
+    verdicts.
+
+    Dedupe failing does not stop classification. The consequence is a job
+    listed twice for a day, which is worth far less than leaving everything
+    the crawl just found unsorted.
+    """
+    deduped = run_step("dedupe", "dedupe_jobs.py", DEDUPE_TIMEOUT)
+    classified = run_step("classify", "classify_jobs.py", CLASSIFY_TIMEOUT)
+    return deduped and classified
 
 
 ############################################
@@ -242,8 +260,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--skip-classify",
         action="store_true",
-        help="Crawl only. New postings stay unclassified and remain visible "
-             "on the dashboard until a later run classifies them.",
+        help="Crawl only - skip both the dedupe and the classify step. New "
+             "postings stay unsorted and remain visible on the dashboard "
+             "until a later run picks them up.",
     )
     args = parser.parse_args()
 
@@ -276,9 +295,9 @@ if __name__ == "__main__":
     # Classify whatever the crawl added. Runs even when a spider failed: the
     # other spiders' postings are in the database and deserve to be sorted.
     if not args.skip_classify:
-        if not run_classifier():
+        if not run_post_crawl():
             print(
-                "  (classification did not finish - postings are stored and "
+                "  (post-crawl step did not finish - postings are stored and "
                 "visible, just unsorted)",
                 flush=True,
             )
