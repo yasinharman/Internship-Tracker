@@ -26,6 +26,7 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 
@@ -100,8 +101,30 @@ DEDUPE_TIMEOUT = int(os.getenv("DEDUPE_TIMEOUT", "120"))
 ####################################
 # RUN ONE SPIDER AS A SUBPROCESS   #
 ####################################
+def _read_item_count(stats_path):
+    """Item count the spider left behind, or None if it left nothing."""
+    try:
+        with open(stats_path, encoding="utf-8") as handle:
+            line = handle.read().strip().splitlines()[-1]
+        return int(line.split("\t")[1])
+    except (OSError, IndexError, ValueError):
+        return None
+    finally:
+        try:
+            os.remove(stats_path)
+        except OSError:
+            pass
+
+
 def run_spider(spider_name):
-    """Returns True when the spider exited cleanly."""
+    """
+    Returns (ok, item_count). item_count is None when the spider did not
+    report one - a crash before close, or an older spider class.
+
+    The count matters as much as the exit code: a blocked spider opens, gets
+    refused on every request, closes cleanly and exits 0. See
+    BaseApiSpider._report_item_count.
+    """
     print(f"\n=== {spider_name}: starting ===", flush=True)
     started = time.monotonic()
 
@@ -109,11 +132,18 @@ def run_spider(spider_name):
     # whether or not the venv's bin directory is on PATH.
     command = [sys.executable, "-m", "scrapy", "crawl", spider_name]
 
+    # Absolute: the subprocess runs with cwd=SCRAPY_PROJECT_FOLDER.
+    stats_path = os.path.join(
+        tempfile.gettempdir(), f"spider_stats_{os.getpid()}_{spider_name}"
+    )
+    env = {**os.environ, "SPIDER_STATS_FILE": stats_path}
+
     try:
         result = subprocess.run(
             command,
             cwd=SCRAPY_PROJECT_FOLDER,
             timeout=SPIDER_TIMEOUT,
+            env=env,
         )
         exit_code = result.returncode
 
@@ -123,23 +153,28 @@ def run_spider(spider_name):
             f"(raise SPIDER_TIMEOUT if this is legitimate) ===",
             flush=True,
         )
-        return False
+        return False, _read_item_count(stats_path)
 
     except FileNotFoundError as error:
         print(f"=== {spider_name}: could not start - {error} ===", flush=True)
-        return False
+        return False, None
 
     elapsed = time.monotonic() - started
+    items = _read_item_count(stats_path)
+    found = "?" if items is None else items
 
     if exit_code == 0:
-        print(f"=== {spider_name}: finished in {elapsed:.0f}s ===", flush=True)
-        return True
+        print(
+            f"=== {spider_name}: finished in {elapsed:.0f}s, {found} posting(s) ===",
+            flush=True,
+        )
+        return True, items
 
     print(
         f"=== {spider_name}: FAILED (exit code {exit_code}) after {elapsed:.0f}s ===",
         flush=True,
     )
-    return False
+    return False, items
 
 
 #########################################
@@ -151,6 +186,7 @@ def run_spiders(spiders=None):
     started = datetime.now()
     print(f"Crawl started at {started:%Y-%m-%d %H:%M:%S}", flush=True)
 
+    # name -> (ok, item_count)
     results = {}
 
     for spider in spiders:
@@ -158,7 +194,7 @@ def run_spiders(spiders=None):
 
         # Only chase a follow-up if the spider that feeds it succeeded - a
         # follow-up reading stale hand-off data is worse than not running.
-        if results[spider]:
+        if results[spider][0]:
             for follow_up in FOLLOW_UP_SPIDERS.get(spider, []):
                 results[follow_up] = run_spider(follow_up)
         elif spider in FOLLOW_UP_SPIDERS:
@@ -166,25 +202,64 @@ def run_spiders(spiders=None):
                 print(
                     f"=== {follow_up}: skipped, {spider} failed ===", flush=True
                 )
-                results[follow_up] = False
+                results[follow_up] = (False, None)
 
     ###########
     # SUMMARY #
     ###########
     elapsed = (datetime.now() - started).total_seconds()
-    failed = [name for name, ok in results.items() if not ok]
+    failed = [name for name, (ok, _) in results.items() if not ok]
+    # Exited cleanly and found nothing. Almost always a block: the spider is
+    # refused on every request, logs it, closes tidily and returns 0.
+    empty = [
+        name for name, (ok, items) in results.items() if ok and items == 0
+    ]
 
-    print(f"\n{'-' * 46}")
-    for name, ok in results.items():
-        print(f"  {'OK  ' if ok else 'FAIL'}  {name}")
+    print(f"\n{'-' * 52}")
+    for name, (ok, items) in results.items():
+        if not ok:
+            status, note = "FAIL ", ""
+        elif items == 0:
+            status, note = "EMPTY", "   <- found nothing, check for blocks"
+        else:
+            status, note = "OK   ", ""
+        found = "?" if items is None else items
+        print(f"  {status}  {name:<22} {found:>4} posting(s){note}")
+
     print(
-        f"{'-' * 46}\n"
+        f"{'-' * 52}\n"
         f"{len(results) - len(failed)}/{len(results)} spiders succeeded "
         f"in {elapsed:.0f}s",
         flush=True,
     )
 
-    return failed
+    # Said plainly, and after the table, because this is the failure that
+    # otherwise hides behind a green run: every spider exits 0 and the crawl
+    # looks healthy while the database gets nothing.
+    if empty:
+        print(
+            f"\n!! {len(empty)} spider(s) returned ZERO postings: "
+            f"{', '.join(empty)}\n"
+            f"!! They exited cleanly, so this is not a crash - look for 403s, "
+            f"sign-in redirects or a changed page shape in the log above.",
+            flush=True,
+        )
+
+    # A crawl where NOTHING came back is reported as a failed run, even though
+    # every spider exited 0. One empty spider is ambiguous - a board really
+    # can have no new postings today - but all of them empty means the crawl
+    # accomplished nothing, and that should be a red run in Coolify rather
+    # than a warning nobody opens the log to read.
+    counted = [items for ok, items in results.values() if ok and items is not None]
+    found_nothing = bool(counted) and sum(counted) == 0
+    if found_nothing:
+        print(
+            "!! Every spider that ran found nothing - reporting this run as "
+            "failed so it does not pass silently.",
+            flush=True,
+        )
+
+    return failed, found_nothing
 
 
 ############################################
@@ -325,7 +400,7 @@ if __name__ == "__main__":
                 + (f" (parked: {', '.join(PARKED_SPIDERS)})" if PARKED_SPIDERS else "")
             )
 
-    failed_spiders = run_spiders(selected)
+    failed_spiders, found_nothing = run_spiders(selected)
 
     # Classify whatever the crawl added. Runs even when a spider failed: the
     # other spiders' postings are in the database and deserve to be sorted.
@@ -338,6 +413,8 @@ if __name__ == "__main__":
             )
 
     # Non-zero tells Coolify the scheduled task failed, so a broken crawl shows
-    # up as a red run instead of passing silently. Only the spiders decide this
-    # - see run_classifier for why a failed classification does not.
-    sys.exit(1 if failed_spiders else 0)
+    # up as a red run instead of passing silently. Two ways to earn it: a
+    # spider crashed, or every spider that ran came back empty - see
+    # run_spiders for why the second one counts. Classification is not part of
+    # this; see run_post_crawl.
+    sys.exit(1 if (failed_spiders or found_nothing) else 0)

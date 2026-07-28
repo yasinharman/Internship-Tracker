@@ -477,6 +477,39 @@ class BaseApiSpider(scrapy.Spider):
 
     def closed(self, reason):
         self._log_discovery_report()
+        self._report_item_count()
+
+    ###################################################
+    # TELL THE RUNNER HOW MUCH WE ACTUALLY FOUND      #
+    ###################################################
+    def _report_item_count(self):
+        """
+        Write this crawl's item count where main.py can read it.
+
+        A blocked spider exits 0. It opens, gets refused on every request,
+        logs the refusals, closes cleanly and reports success - which is how
+        a production run announced "3/3 spiders succeeded" while two of the
+        three had contributed nothing at all. The exit code cannot tell the
+        difference; the item count can.
+
+        Written to a file rather than parsed out of the log because the runner
+        streams spider output straight to the Coolify logs and should keep
+        doing so - capturing it to grep would hide the live output.
+
+        No SPIDER_STATS_FILE in the environment means nobody asked, e.g. a
+        hand-run `scrapy crawl`. Silently do nothing.
+        """
+        path = os.getenv("SPIDER_STATS_FILE")
+        if not path:
+            return
+
+        count = self.crawler.stats.get_value("item_scraped_count", 0)
+        try:
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(f"{self.name}\t{count}\n")
+        except OSError as error:
+            # Never let bookkeeping break a crawl that otherwise worked.
+            self.logger.warning("could not write spider stats: %s", error)
 
     ###################################################
     # ONE JSON RECORD -> ONE JobPostItem, VIA field_map #
