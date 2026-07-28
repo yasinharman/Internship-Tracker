@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from datetime import datetime, timedelta
 import os
 
-from MultiwebsiteScraper.models import Base
+from MultiwebsiteScraper.models import Base, normalize_db_url
 
 # PAGE TITLE
 st.set_page_config(page_title="Job Applications Dasboard", layout="wide", page_icon="docs/logo.png")
@@ -27,10 +27,12 @@ def get_engine():
         st.error(
             "DATABASE_URL is not set. Add it to .env for local runs, or to the "
             "environment variables of this service in Coolify. Format:\n\n"
-            "`postgresql+psycopg2://user:password@host:5432/dbname`"
+            "`postgresql://user:password@host:5432/dbname`"
         )
         st.stop()
-    return create_engine(db_connection_str)
+    # Same `postgres://` rewrite the scraper does - the dashboard is usually
+    # given the identical connection string from the hosting panel.
+    return create_engine(normalize_db_url(db_connection_str))
 
 @st.cache_data(ttl=600)
 def load_data():

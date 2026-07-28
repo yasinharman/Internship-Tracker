@@ -67,6 +67,27 @@ class JobPost(Base):
 ##############################
 # CONNECTION TO THE DATABASE #
 ##############################
+def normalize_db_url(db_url):
+    """
+    Accept the `postgres://` url that hosting panels hand out.
+
+    Coolify (like Heroku and Render) shows the connection string as
+    `postgres://user:pass@host:5432/db`. SQLAlchemy dropped that alias in 1.4
+    and only answers to `postgresql://`, so pasting the panel's own value
+    verbatim fails with
+
+        NoSuchModuleError: Can't load plugin: sqlalchemy.dialects:postgres
+
+    which reads like a missing driver rather than a one-word url problem. The
+    scheme is the only difference, so rewrite it instead of asking every
+    deployment to remember. `postgresql://` on its own already resolves to
+    psycopg2, so no driver needs naming.
+    """
+    if db_url.startswith("postgres://"):
+        return "postgresql://" + db_url[len("postgres://"):]
+    return db_url
+
+
 def db_connect():
     """
     DATABASE_URL is required, and deliberately has no fallback.
@@ -82,9 +103,9 @@ def db_connect():
         raise RuntimeError(
             "DATABASE_URL is not set. Put it in .env for local runs, or in the "
             "service's environment variables in Coolify. Format: "
-            "postgresql+psycopg2://user:password@host:5432/dbname"
+            "postgresql://user:password@host:5432/dbname"
         )
-    return create_engine(db_url)
+    return create_engine(normalize_db_url(db_url))
 
 # FUNCTION TO CREATE TABLE
 def create_table(engine):
