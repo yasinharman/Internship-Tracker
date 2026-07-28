@@ -182,6 +182,18 @@ class BlockDetectionMiddleware:
         b"captcha-delivery.com",
     )
 
+    # Url fragments that mean we were sent to a sign-in page. Matched against
+    # the url we ENDED UP at, and only when the url we asked for did not
+    # already contain them - otherwise deliberately fetching a login page
+    # would count as a block.
+    LOGIN_URL_SIGNATURES = (
+        "/auth?",
+        "/login",
+        "/signin",
+        "sign_in",
+        "page-two-signin",
+    )
+
     def __init__(self, crawler):
         self.crawler = crawler
         self.state = get_proxy_state(crawler)
@@ -198,6 +210,30 @@ class BlockDetectionMiddleware:
     def _block_reason(self, request, response):
         if response.status in self.BLOCK_STATUSES:
             return response_status_message(response.status)
+
+        ###################################################################
+        # A BLOCK WEARING A 200                                           #
+        ###################################################################
+        # Indeed answers an ordinary job search from an IP it does not trust
+        # with 307 -> secure.indeed.com/auth?...&branding=page-two-signin: a
+        # 131 kB HTML sign-in page, served as 200.
+        #
+        # Every other test below waves it through. The status is fine, no
+        # anti-bot vendor fingerprint appears anywhere in it, and the request
+        # never set expect_json because the search page is HTML by design. So
+        # the parser looked for embedded job data, found none, logged an
+        # error - and the spider still exited 0. A production run reported
+        # "3/3 spiders succeeded" while Indeed contributed nothing at all.
+        #
+        # Caught here rather than in the spider so the escalation ladder
+        # below gets its chance: a sign-in wall is exactly the case a fresh
+        # residential IP might get past.
+        final_url = (response.url or "").lower()
+        requested_url = (request.url or "").lower()
+        if final_url != requested_url:
+            for signature in self.LOGIN_URL_SIGNATURES:
+                if signature in final_url and signature not in requested_url:
+                    return f"redirected to a sign-in wall ({response.url[:120]})"
 
         body = response.body or b""
 
