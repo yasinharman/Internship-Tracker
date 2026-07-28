@@ -458,27 +458,16 @@ is by KEYWORD (`stajyer`, `intern`, `part time`, `yarı zamanlı`), one route
 each, merged afterwards. Indeed has no category taxonomy, only free-text
 search, so a single query would miss whatever it does not literally match.
 
-### No field filter - exclusion instead
+### No field filter here
 
 Turkish companies routinely advertise one internship for the whole company and
 allocate people to departments afterwards: "Intern" at UPS, "Intern - Long
 Term" at Volvo, "Stajyer" at FarklıFikir Bilişim. There is no field to filter
 on, and guessing throws them away.
 
-So `job_filters.is_other_field()` drops only postings that NAME a different
-field, and keeps everything ambiguous. Measured on the 120:
-
-| | Count |
-|---|---|
-| Kept | 75 |
-| Excluded (Stajyer Diyetisyen, İnsan Kaynakları Stajyeri, Mutfak Stajyer, Stajyer Mimar, ...) | 45 |
-
-All 59 ambiguous postings survived. Any IT hint cancels an exclusion, so
-"Cybersecurity Pre-Sales Stajyeri" is not lost to the word "sales".
-
-*Tuning note:* "Finance Intern" currently survives - `finance` is not in the
-exclusion list while `muhasebe` is. Add it there if finance internships turn
-out to be noise.
+The spider therefore keeps every Istanbul internship and part-time posting it
+finds. The field is decided afterwards, by the LLM classifier - see the
+section at the end of this file.
 
 ### Internships tagged full-time
 
@@ -543,3 +532,93 @@ Deliberately excluded (decided 27.07.2026). Its JSON API (Voyager) only
 answers authenticated requests, and pointing the bot at a personal account
 risks a permanent ban for very little extra coverage. Checked by hand instead.
 `spiders/linkedIn.py` has been deleted. Do not add LinkedIn back.
+
+---
+
+## LLM field classification
+
+Added 28.07.2026. The spiders collect every Istanbul internship and part-time
+posting; this layer decides which ones are worth showing.
+
+### Why it is not a word list
+
+The old `job_filters.is_other_field()` matched a 60-term regex and could not be
+finished. Turkish inflection beats it: the list held `temizlik`, the posting
+said **"Parttime Ofis Temizliği"**, and the possessive suffix turns *k* into
+*ğ*, so the match is lost. The list was widened by hand twice and still leaked
+9 out of 9 on a real 130-row database - Oyun Ablası, Bulaşıkçısı, Cam Silimi,
+Diş Hekimi Asistanı, Gıda Mühendisi among them.
+
+Adding more words fixes only the postings you have already seen. The LLM reads
+the posting instead.
+
+### The three categories
+
+| Category | Meaning | Shown? |
+|---|---|---|
+| `it` | Software, IT, data, security, QA, DevOps, systems | yes |
+| `general_program` | Company-wide internship, department not named yet | yes |
+| `other` | Names a different line of work | no (`is_active=False`) |
+
+`general_program` exists because "Intern" at UPS could still be software - the
+employer has not said. The prompt's decisive rule: **when torn between `it` and
+`general_program`, choose `general_program`.** A wrong exclusion costs a real
+opportunity; a wrong inclusion costs one row of noise.
+
+Nothing is deleted. `other` sets `is_active = False` and the row stays with the
+model's reason beside it, visible in the dashboard's "Neden" column.
+
+### Where it lives
+
+| File | Role |
+|---|---|
+| `MultiwebsiteScraper/classifier.py` | Schema, prompt, one call per provider |
+| `classify_jobs.py` | Reads `job_category IS NULL`, writes results |
+| `migrate.py` | Adds the three columns (idempotent) |
+
+Runs from `main.py` after the crawl. A failure there does **not** fail the
+scheduled task: the postings are already stored, and unclassified rows stay
+visible on the dashboard.
+
+### Choosing the model
+
+Decided by measurement, not by price list. `classify_jobs.py --compare` runs
+the same postings through several models and prints only the disagreements.
+Result on the 130 real rows (28.07.2026):
+
+| Model | it | general_program | other | agreed with flagship |
+|---|---|---|---|---|
+| gpt-5.4-nano | 24 | 17 | 89 | 118/130 |
+| **gpt-5.4-mini** | 27 | 12 | 91 | **122/130** |
+| gpt-5.6-sol (ceiling) | 27 | 10 | 93 | - |
+
+`gpt-5.4-nano` is cheaper and was rejected anyway: it put
+**"Career Experıence Drıve - IT (Servıce&Operatıon)"** - an internship with IT
+in its title - into `other`, and did the same to **"Intern" at UPS**, which is
+written into its own system prompt as the canonical `general_program` example.
+That is an instruction-following ceiling, not a prompt gap; no extra rule fixes
+it reliably.
+
+Verdicts are not deterministic. The same model on the same rows produced
+27/12/91 in the comparison run and 29/13/88 when writing. Borderline postings
+move between runs; the stored decision is what counts.
+
+### When a decision looks wrong
+
+Every `other` verdict is logged at INFO with title and reason, so a bad call is
+visible in the Coolify logs without a query. To audit:
+
+```sql
+select job_title, company, category_reason
+from job_posts where job_category = 'other' order by created_at desc limit 30;
+```
+
+To undo an exclusion, clear the decision - the next run reclassifies it:
+
+```sql
+update job_posts set is_active = true, job_category = null where id = <id>;
+```
+
+If a whole class of postings is being misjudged, fix the examples in
+`SYSTEM_PROMPT` rather than adding special cases, then re-run `--compare`
+against the previous model to see what moved.

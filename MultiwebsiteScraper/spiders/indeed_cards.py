@@ -40,18 +40,17 @@ and allocate people to departments afterwards - "Intern" at UPS, "Stajyer" at
 FarklıFikir Bilişim. There is no field to filter on, and guessing would throw
 them away.
 
-So the field is handled by exclusion instead: `job_filters.is_other_field()`
-drops only postings that NAME a different field ("Stajyer Diyetisyen",
-"İnsan Kaynakları Stajyeri"), and keeps everything ambiguous. On the sampled
-120 that removed 45 and kept all 59 ambiguous ones.
+The field is not decided here at all. This spider keeps every internship and
+part-time posting it finds in Istanbul; `classifier.py` reads each one
+afterwards and marks the ones that belong to another line of work. A word
+list used to do it at this point and could not be made complete - see
+job_filters for the evidence.
 """
 
 import json
 
 from ..api_spider import BaseApiSpider, strip_html
-from ..job_filters import (
-    is_other_field, is_wanted, looks_like_internship, looks_like_parttime,
-)
+from ..job_filters import is_wanted, looks_like_internship, looks_like_parttime
 from ..loaders import JsonJobLoader
 
 PROVIDER_KEY = "mosaic-provider-jobcards"
@@ -243,12 +242,6 @@ class IndeedCardsSpider(BaseApiSpider):
             # The keyword search matches the description too, so postings that
             # are neither an internship nor part-time come back as well.
             if not is_wanted(title):
-                continue
-
-            # Only drop what names a different field. Ambiguous titles stay -
-            # see job_filters for why.
-            if is_other_field(title):
-                self.crawler.stats.inc_value("jobs/excluded_other_field")
                 continue
 
             jobkey = record.get("jobkey")

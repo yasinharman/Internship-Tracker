@@ -196,7 +196,18 @@ class JobScraperPipeline:
                 existing_job.job_description = item.get('job_description')
                 existing_job.job_type = normalized_job_type
 
-                existing_job.is_active = True
+                # Postings are matched on url, which is UNIQUE - so a posting
+                # seen again is an update, never a second row.
+                #
+                # is_active is NOT reset here when the classifier has already
+                # excluded this posting. It used to be set to True
+                # unconditionally, from back when nothing ever set it to
+                # False. Now the classifier owns the flag: a job it judged to
+                # belong to another field would come back to life every time
+                # the crawl saw it again, and stay there, because only rows
+                # with job_category IS NULL are ever reclassified.
+                if existing_job.job_category != "other":
+                    existing_job.is_active = True
 
                 spider.logger.info(f"Existing job post updated: {item.get('url')}")
             

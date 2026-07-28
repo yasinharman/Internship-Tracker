@@ -27,6 +27,22 @@ That is the whole argument for the union pattern: a posting should be
 reachable by at least two independent routes, so that one route's blind spot
 is covered by the other's. Title matching is one route. The site's own
 category or search page is the other. Neither is trusted alone.
+
+WHAT THIS MODULE NO LONGER DOES
+-------------------------------
+It used to decide the FIELD as well - whether a posting was software work or
+someone else's line of business - through a word list of excluded fields.
+That list could not be finished. Turkish inflection defeats it: the list held
+"temizlik", the posting said "Parttime Ofis Temizliği", and the possessive
+suffix turns k into ğ so the match is lost. Widened twice by hand, it still
+leaked 9 out of 9 on a real database ("Oyun Ablası", "Bulaşıkçısı", "Diş
+Hekimi Asistanı"...).
+
+The field decision now belongs to the LLM classifier (`classifier.py`), which
+reads the posting rather than pattern-matching it. What stays here is the
+cheap, certain part - is this an internship or part-time work - which is a
+DISCOVERY question (whose detail page is worth fetching) and does not depend
+on inflection, because "staj\\w*" and "part time" match their own suffixes.
 """
 
 import re
@@ -51,100 +67,10 @@ PARTTIME_TITLE_RE = re.compile(
 )
 
 
-#####################################################
-# IT / SOFTWARE HINTS                               #
-#####################################################
-# Deliberately broad. This is not used to SELECT postings - it is used to
-# protect them from being excluded, so a false positive here is harmless
-# while a false negative throws away a real match.
-IT_HINT_RE = re.compile(
-    r"(yazılım|software|developer|geliştirici|geliştirme|bilgi işlem|bilişim|"
-    r"\bit\b|\bict\b|bilgi teknoloji|information technolog|"
-    r"data|veri (?:bilim|analiz|mühendis)|frontend|front.?end|backend|back.?end|"
-    r"full.?stack|mobil|android|ios|web|devops|cloud|siber|cyber|security|"
-    r"network|ağ |sistem|bilgisayar|computer|yapay zeka|machine learning|\bai\b|"
-    r"\bllm\b|python|java|javascript|react|\.net|\bqa\b|test otomasyon|"
-    r"database|veritabanı|sap|erp|teknoloji|technolog|mühendis|engineer)",
-    re.IGNORECASE,
-)
-
-#####################################################
-# FIELDS THAT ARE DEFINITELY NOT OURS               #
-#####################################################
-'''
-    An EXCLUSION list, and the asymmetry is the whole point.
-
-    A general "Stajyer" at UPS or "Intern" at pladis could be anything,
-    including software - the employer simply has not said. Those must be kept:
-    Turkish companies routinely advertise one internship and allocate people
-    to departments afterwards.
-
-    "Stajyer Diyetisyen" is not ambiguous. It says which field it is, and it
-    is not this one. Dropping it loses nothing.
-
-    So: throw away only what we KNOW is someone else's, never what we merely
-    cannot identify. Measured against 120 real Istanbul internship postings,
-    this removed 46 and kept all 57 ambiguous ones.
-
-    Any IT hint cancels the exclusion, so "Cybersecurity Pre-Sales Stajyeri"
-    survives despite "sales", and "Data Analyst Intern for License Compliance"
-    survives despite "compliance".
-
-    TUNE THIS AGAINST EACH SEARCH, NOT JUST ONE. The list was first calibrated
-    on 120 internship postings and looked complete. The part-time search then
-    turned out to have an entirely different composition: 32 of the first 164
-    rows were childcare and domestic help - one agency, "enuygunbakıcı", was
-    19% of the whole database on its own - and not one of them was caught.
-    Different searches surface different neighbourhoods of the job market.
-'''
-OTHER_FIELD_RE = re.compile(
-    # Care work and domestic help. NOT "evde" on its own - "evde çalışma"
-    # means working from home, which is something we want.
-    r"(bak[ıi]c[ıi]|dad[ıi]|au.?pair|ev yard[ıi]mc|"
-    r"bebek|çocuk bak|çocuk oyun|evcil hayvan|hasta bak|ya[şs]l[ıi] bak|refakat|"
-    r"temizlik|hijyen|ho[şs]geldin görevlis|kat görevlis|"
-    # Unskilled / shift work
-    r"kasiyer|komi|paketleme|depo eleman|servis görevlis|güvenlik görevlis|"
-    r"avukat|hukuk|legal|"
-    r"diyetisyen|psikolog|doktor|hemşire|paramedik|terapist|masaj|eczacı|"
-    r"eczane|fizyoterap|"
-    r"mimar|inşaat|"
-    r"mutfak|aşçı|garson|barista|yiyecek|içecek|otelcilik|turizm|resepsiyon|"
-    r"ön büro|housekeeping|"
-    r"antrenör|fitness|spor salonu|"
-    r"kuaför|güzellik|makyaj|tırnak|kirpik|estetik|"
-    r"muhasebe|accounting|mali müşavir|\bymm\b|denetçi|"
-    r"insan kaynak|human resource|\bhr\b|bordro|özlük|"
-    r"grafik|graphic design|videograph|video editör|fotoğraf|"
-    r"öğretmen|eğitmen|çocuk gelişimi|okul öncesi|"
-    r"lojistik|depo|kurye|nakliye|gümrük|forwarding|warehouse|"
-    r"sekreter|santral|çağrı merkezi|call center|resepsiyonist|"
-    r"veri giriş|data entry|"
-    r"tekstil|moda|konfeksiyon|"
-    r"makine bakım|mekanik|kaynakçı|torna|"
-    r"saha satış|mağaza|kasiyer|reyon)",
-    re.IGNORECASE,
-)
-
 
 def looks_like_internship(*texts):
     """True when any of the given strings reads like an internship."""
     return bool(INTERNSHIP_TITLE_RE.search(" ".join(t or "" for t in texts)))
-
-
-def has_it_hint(*texts):
-    return bool(IT_HINT_RE.search(" ".join(t or "" for t in texts)))
-
-
-def is_other_field(*texts):
-    """
-    True only when the text names a field that is definitely not software.
-    Anything ambiguous returns False and is therefore kept.
-    """
-    joined = " ".join(t or "" for t in texts)
-    if IT_HINT_RE.search(joined):
-        return False
-    return bool(OTHER_FIELD_RE.search(joined))
 
 
 def looks_like_parttime(*texts):

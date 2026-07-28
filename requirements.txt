@@ -1,7 +1,36 @@
 # brotli + zstandard let Scrapy advertise the same Accept-Encoding a real
 # Chrome does (gzip, deflate, br, zstd). Without them our encoding header is
 # a giveaway that we are not a browser.
+#
+# scrapy-impersonate + curl_cffi are what get us past Indeed. Cloudflare
+# fingerprints the TLS handshake, so Python's own stack is refused before a
+# header is read; curl_cffi replays a real Chrome ClientHello. Without these
+# indeed_cards returns 403 on every request - and Indeed is the only
+# independent source we have left. See its custom_settings for the detail.
+#
+# openai + pydantic drive the field classifier (MultiwebsiteScraper/
+# classifier.py). anthropic is deliberately absent: the file keeps a seam for
+# it so models can be compared, but production settled on gpt-5.4-mini, and
+# the import only happens if LLM_PROVIDER=anthropic.
 altair==6.0.0
+annotated-types==0.8.0
+anyio==4.14.2
+colorama==0.4.6
+curl_cffi==0.15.0
+distro==1.9.0
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+jiter==0.16.0
+markdown-it-py==4.2.0
+openai==2.49.0
+pydantic==2.13.4
+Pygments==2.20.0
+rich==15.0.0
+scrapy-impersonate==1.7.0
+sniffio==1.3.1
+tqdm==4.70.0
+typing-inspection==0.4.2
 APScheduler==3.11.2
 attrs==25.4.0
 Automat==25.4.16

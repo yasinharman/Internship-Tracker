@@ -14,8 +14,9 @@ Exiting when the work is done is the whole point - a scheduled task that never
 returns would be reported as still running and the next tick would pile a
 second crawl on top of the first.
 
-    python main.py                          all spiders, once
+    python main.py                          all spiders, then classify
     python main.py --spider indeed_cards    one spider (schedule sites separately)
+    python main.py --skip-classify          crawl only, leave rows unclassified
     python main.py --list                   show the spider names
     python main.py --schedule               legacy in-process APScheduler loop,
                                             for running without Coolify
@@ -60,6 +61,10 @@ FOLLOW_UP_SPIDERS = {}
 
 # A wedged spider must not hold the scheduled task open forever.
 SPIDER_TIMEOUT = int(os.getenv("SPIDER_TIMEOUT", "1800"))
+
+# 150 postings at 8 concurrent requests finish in well under a minute; this is
+# a ceiling for a hung provider, not an expected duration.
+CLASSIFY_TIMEOUT = int(os.getenv("CLASSIFY_TIMEOUT", "900"))
 
 
 ####################################
@@ -153,6 +158,47 @@ def run_spiders(spiders=None):
 
 
 ############################################
+# CLASSIFY WHAT THE CRAWL JUST BROUGHT IN  #
+############################################
+def run_classifier():
+    """
+    Returns True when classification finished cleanly.
+
+    Deliberately NOT part of the crawl's pass/fail: by the time this runs the
+    postings are already stored. A classifier failure leaves them unclassified,
+    which the dashboard shows anyway - so it is a degraded run, not a lost one,
+    and marking the whole scheduled task red would cry wolf.
+    """
+    print("\n=== classify: starting ===", flush=True)
+    started = time.monotonic()
+
+    command = [sys.executable, "classify_jobs.py"]
+
+    try:
+        result = subprocess.run(command, timeout=CLASSIFY_TIMEOUT)
+        exit_code = result.returncode
+    except subprocess.TimeoutExpired:
+        print(f"=== classify: KILLED after {CLASSIFY_TIMEOUT}s ===", flush=True)
+        return False
+    except FileNotFoundError as error:
+        print(f"=== classify: could not start - {error} ===", flush=True)
+        return False
+
+    elapsed = time.monotonic() - started
+
+    if exit_code == 0:
+        print(f"=== classify: finished in {elapsed:.0f}s ===", flush=True)
+        return True
+
+    print(
+        f"=== classify: FAILED (exit code {exit_code}) after {elapsed:.0f}s - "
+        f"postings are stored but unclassified; the next run retries them ===",
+        flush=True,
+    )
+    return False
+
+
+############################################
 # LEGACY: SCHEDULE INSIDE THE PROCESS      #
 ############################################
 def run_with_internal_scheduler():
@@ -193,6 +239,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Stay alive and schedule the crawl in-process (legacy).",
     )
+    parser.add_argument(
+        "--skip-classify",
+        action="store_true",
+        help="Crawl only. New postings stay unclassified and remain visible "
+             "on the dashboard until a later run classifies them.",
+    )
     args = parser.parse_args()
 
     if args.list:
@@ -221,7 +273,17 @@ if __name__ == "__main__":
 
     failed_spiders = run_spiders(selected)
 
+    # Classify whatever the crawl added. Runs even when a spider failed: the
+    # other spiders' postings are in the database and deserve to be sorted.
+    if not args.skip_classify:
+        if not run_classifier():
+            print(
+                "  (classification did not finish - postings are stored and "
+                "visible, just unsorted)",
+                flush=True,
+            )
+
     # Non-zero tells Coolify the scheduled task failed, so a broken crawl shows
-    # up as a red run instead of passing silently. If one flaky site turns this
-    # into noise, narrow it to `if len(failed) == len(results)`.
+    # up as a red run instead of passing silently. Only the spiders decide this
+    # - see run_classifier for why a failed classification does not.
     sys.exit(1 if failed_spiders else 0)

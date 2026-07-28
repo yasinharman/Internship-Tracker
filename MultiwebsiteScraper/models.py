@@ -31,6 +31,20 @@ class JobPost(Base):
 
     job_type = Column(String)
 
+    ###################################################################
+    # LLM CLASSIFICATION                                              #
+    ###################################################################
+    # Filled in by classify_jobs.py after the crawl. NULL means "not looked
+    # at yet", which the dashboard treats as visible - an outage of the LLM
+    # API must not empty the board.
+    #
+    # 'other' postings are not deleted; is_active is set to False instead, so
+    # a wrong call can be undone with one UPDATE. reason is kept so that the
+    # decision can be read back and argued with.
+    job_category = Column(String(32))    # 'it' | 'general_program' | 'other'
+    category_reason = Column(Text)
+    classified_at = Column(DateTime)
+
 ##############################
 # CONNECTION TO THE DATABASE #
 ##############################

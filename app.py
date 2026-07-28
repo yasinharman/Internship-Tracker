@@ -38,7 +38,10 @@ def load_data():
 
     Base.metadata.create_all(engine)
 
-    query = "SELECT * FROM job_posts ORDER BY created_at DESC"
+    # is_active is the classifier's soft delete: postings it judged to belong
+    # to another field are still in the table, just not shown here. Nothing
+    # else ever sets it to False, so this is the whole filter.
+    query = "SELECT * FROM job_posts WHERE is_active ORDER BY created_at DESC"
     df = pd.read_sql(query, engine)
 
     if not df.empty:
@@ -82,7 +85,56 @@ if set(selected_job_types) != set(job_type_list):
         "hepsini görmek için yukarıdan ekleyin."
     )
 
-filtered_df = df[df['source_site'].isin(selected_sites) & df['job_type'].isin(selected_job_types)]
+####################################################
+# FIELD, AS DECIDED BY THE CLASSIFIER              #
+####################################################
+'''
+    Two rules here, and the second one is the important one.
+
+    Default to it + general_program: the whole point of the classifier is that
+    the board should show software work, and general_program stays because
+    "Intern" at UPS could still turn out to be software - the employer has not
+    said yet.
+
+    Unclassified rows (job_category IS NULL) stay VISIBLE no matter what the
+    filter says. If the LLM API is down, or a crawl finished and the classify
+    step failed, the postings are still real and the board must not be empty.
+    A silent blank dashboard is a worse failure than a few unsorted rows.
+'''
+PREFERRED_CATEGORIES = ["it", "general_program"]
+CATEGORY_LABELS = {
+    "it": "Yazılım / IT",
+    "general_program": "Genel staj programı",
+}
+
+category_list = [c for c in df["job_category"].dropna().unique().tolist()]
+if category_list:
+    default_categories = [
+        c for c in PREFERRED_CATEGORIES if c in category_list
+    ] or category_list
+
+    selected_categories = st.sidebar.multiselect(
+        "Alan",
+        category_list,
+        default=default_categories,
+        format_func=lambda c: CATEGORY_LABELS.get(c, c),
+    )
+    category_mask = df["job_category"].isin(selected_categories) | df["job_category"].isna()
+else:
+    category_mask = pd.Series(True, index=df.index)
+
+unclassified_count = int(df["job_category"].isna().sum())
+if unclassified_count:
+    st.sidebar.warning(
+        f"{unclassified_count} ilan henüz sınıflandırılmadı - filtreden "
+        "bağımsız olarak gösteriliyor."
+    )
+
+filtered_df = df[
+    df['source_site'].isin(selected_sites)
+    & df['job_type'].isin(selected_job_types)
+    & category_mask
+]
 
 ########################
 # CURRENT JOB POSTINGS #
@@ -127,13 +179,21 @@ with col_chart2:
 ###########################
 st.subheader("Recent Applications")
 
-display_columns = ["job_title", "company", "location", "source_site", "created_at", "job_type","url"]
+# category_reason is shown on purpose: the classifier's verdict should be
+# arguable, not silent. A posting sitting in the wrong bucket is obvious the
+# moment its reason reads wrong.
+display_columns = [
+    "job_title", "company", "location", "source_site", "created_at",
+    "job_type", "job_category", "category_reason", "url",
+]
 
 st.dataframe(
     filtered_df[display_columns],
     column_config={
         "url": st.column_config.LinkColumn("Application URL"),
-        "created_at": st.column_config.DatetimeColumn("Date", format="D MMM YYYY, HH:mm")
+        "created_at": st.column_config.DatetimeColumn("Date", format="D MMM YYYY, HH:mm"),
+        "job_category": st.column_config.TextColumn("Alan"),
+        "category_reason": st.column_config.TextColumn("Neden", width="large"),
     },
     width= "stretch",
     hide_index=True
