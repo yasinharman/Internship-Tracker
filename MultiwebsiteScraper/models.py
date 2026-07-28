@@ -41,7 +41,12 @@ class JobPost(Base):
     # 'other' postings are not deleted; is_active is set to False instead, so
     # a wrong call can be undone with one UPDATE. reason is kept so that the
     # decision can be read back and argued with.
-    job_category = Column(String(32))    # 'it' | 'general_program' | 'other'
+    # index=True so a database created from scratch by create_all() ends up
+    # with the same indexes migrate.py adds to an existing one. Without it the
+    # two paths diverge silently: a fresh deploy gets the columns but not the
+    # indexes, and classify_jobs scans the whole table on every run.
+    # SQLAlchemy names these ix_job_posts_<column>, matching migrate.py.
+    job_category = Column(String(32), index=True)  # it|general_program|other
     category_reason = Column(Text)
     classified_at = Column(DateTime)
 
@@ -57,7 +62,7 @@ class JobPost(Base):
     # belongs to the classifier, and a second writer would resurrect or hide
     # rows behind its back. Points at an id rather than being a boolean so the
     # pairing can be read back and argued with.
-    duplicate_of = Column(Integer, ForeignKey("job_posts.id"))
+    duplicate_of = Column(Integer, ForeignKey("job_posts.id"), index=True)
 
 ##############################
 # CONNECTION TO THE DATABASE #
