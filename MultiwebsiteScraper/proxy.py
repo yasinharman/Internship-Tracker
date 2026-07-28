@@ -60,6 +60,20 @@ def _env_int(key, default):
         return default
 
 
+def _country_from_env():
+    """
+    Exit country, distinguishing "unset" from "deliberately blank".
+
+    os.getenv returns None when the variable is absent and "" when it is
+    present but empty - the difference _env() throws away, and the difference
+    that decides between a Turkish exit IP and the worldwide pool.
+    """
+    raw = os.getenv("IPROYAL_COUNTRY")
+    if raw is None:
+        return "tr"
+    return raw.strip().lower()
+
+
 def new_session_id(length=10):
     """Random token for IPRoyal's `_session-<id>` sticky parameter."""
     alphabet = string.ascii_lowercase + string.digits
@@ -100,7 +114,19 @@ class ProxyConfig:
             port=_env("IPROYAL_PORT", "12321"),
             username=_env("IPROYAL_USERNAME", ""),
             password=_env("IPROYAL_PASSWORD", ""),
-            country=(_env("IPROYAL_COUNTRY", "tr") or "tr").lower(),
+            # `IPROYAL_COUNTRY=` - present but blank - has to mean "any
+            # country", because that is the only way to reach the worldwide
+            # exit pool: the country is a token we put in the proxy password
+            # on every request, not a setting in the IPRoyal dashboard.
+            #
+            # _env() cannot express it (it maps "" to the default), and the
+            # old `or "tr"` closed the door a second time, so every value of
+            # this variable produced a Turkish exit IP. That matters the day
+            # a site burns the TR pool: the obvious experiment silently
+            # changes nothing and you conclude the worldwide pool is blocked
+            # too. Read the raw variable so a deliberate blank survives;
+            # unset still means Turkey, since the boards are TR-facing.
+            country=_country_from_env(),
             lifetime=_env("IPROYAL_SESSION_LIFETIME", "30m"),
             rotate_after=_env_int("PROXY_ROTATE_AFTER", 50),
             full_url=_env("PROXY_URL", ""),
