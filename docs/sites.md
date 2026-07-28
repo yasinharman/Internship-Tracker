@@ -408,6 +408,44 @@ full scan. `workPlaces` across the board: 169 on-site, 23 hybrid, 2 remote.
 
 ---
 
+## Indeed - PARKED (not deleted)
+
+**Status 28.07.2026: removed from `main.py`'s SPIDERS list.** It works from a
+home connection and returns nothing from the server.
+
+Indeed answers a plain job search from an address it does not trust with
+`307 -> secure.indeed.com/auth?...&branding=page-two-signin` - a 131 kB HTML
+sign-in page served as **HTTP 200**. Measured from Coolify:
+
+| Route | Result |
+|---|---|
+| Direct (datacenter IP) | 403 |
+| Residential, Turkish pool | sign-in wall, 8 exit IPs |
+| Residential, worldwide pool (`IPROYAL_COUNTRY=`) | sign-in wall, 11 rotations, 4 searches given up |
+
+So it is not a burnt Turkish pool - Indeed refuses this traffic pattern from
+proxies whatever country they exit from. Nothing in the spider is wrong; the
+address we call from is the problem.
+
+Parked rather than deleted, unlike LinkedIn and jooble: those were structural
+decisions, this is environmental. Put `indeed_cards` back in `SPIDERS` to
+re-enable. `python main.py --spider indeed_cards` still runs it by hand, which
+is how to check whether that day has come.
+
+**What it costs us:** techcareer.net belongs to kariyer.net, so the two
+remaining spiders are one company's data and the two-independent-routes rule
+above no longer holds across sites.
+
+**Worth knowing:** the sign-in wall was invisible at first. Status 200, no
+anti-bot fingerprint, and Indeed's search page is HTML by design so
+`expect_json` never applied - the crawl reported "3/3 spiders succeeded" with
+Indeed contributing nothing. `BlockDetectionMiddleware.LOGIN_URL_SIGNATURES`
+now catches it, reading the requested url from `meta["redirect_urls"]` because
+RedirectMiddleware has already rewritten `request.url` by then.
+
+Everything below describes the spider as built, and still applies whenever it
+runs from an address Indeed accepts.
+
 ## Indeed
 
 **Status:** migrated - `spiders/indeed_cards.py`. The old

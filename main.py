@@ -53,7 +53,34 @@ SCRAPY_PROJECT_FOLDER = "MultiwebsiteScraper"
 # Their DOM-parsing predecessors (kariyerNet, TechCareer, indeed_html) have
 # been deleted - see docs/sites.md for what each site actually turned out to
 # need, and git history for the old code.
-SPIDERS = ["kariyernet_cards", "techcareer_api", "indeed_cards"]
+SPIDERS = ["kariyernet_cards", "techcareer_api"]
+
+# indeed_cards is PARKED, not deleted - 28.07.2026.
+#
+# It works from a home connection and returns nothing from the server. Indeed
+# answers a plain job search with 307 -> secure.indeed.com/auth, a sign-in
+# wall served as HTTP 200. Measured from Coolify: direct requests get 403,
+# and every residential exit gets the wall - 11 session rotations across the
+# Turkish pool and then the worldwide pool (IPROYAL_COUNTRY=), 16 blocks, 4
+# searches given up, zero postings. So this is not a burnt TR pool; Indeed
+# refuses this traffic pattern from proxies whatever country it exits from.
+#
+# Left in place rather than removed the way linkedin and jooble were: those
+# were structural decisions, this is environmental. The spider, the
+# curl_cffi/impersonate setup and the block detection all work - the address
+# we call from is what Indeed objects to. Put the name back in this list to
+# re-enable; nothing else needs changing.
+#
+# The cost of leaving it enabled is real: every run burns metered residential
+# bandwidth fetching a 131 kB login page, three escalations per search, and
+# reports success anyway.
+#
+# What this costs us: techcareer.net belongs to kariyer.net and carries the
+# same ads, so the two remaining spiders are one company's data. The rule in
+# docs/sites.md - every posting reachable by at least two independent routes -
+# no longer holds across sites. A blocked spider covers nothing either, but
+# the gap should be understood rather than forgotten.
+PARKED_SPIDERS = ["indeed_cards"]
 
 # spider -> spiders that must run straight after it. Empty: the only user was
 # jooble, which handed urls to detail_worker through a file. Both are gone.
@@ -271,6 +298,10 @@ if __name__ == "__main__":
             follow_ups = FOLLOW_UP_SPIDERS.get(name)
             suffix = f"  (then: {', '.join(follow_ups)})" if follow_ups else ""
             print(f"{name}{suffix}")
+        # Shown so a parked spider is not silently forgotten - it stays
+        # runnable with --spider, it just does not run on a schedule.
+        for name in PARKED_SPIDERS:
+            print(f"{name}  (parked - see the comment on SPIDERS)")
         sys.exit(0)
 
     if args.schedule:
@@ -279,15 +310,19 @@ if __name__ == "__main__":
 
     selected = args.spider
     if selected:
-        unknown = [
-            name for name in selected
-            if name not in SPIDERS
-            and name not in {f for group in FOLLOW_UP_SPIDERS.values() for f in group}
-        ]
+        # Parked spiders are runnable by name on purpose: retrying one by hand
+        # is how you find out whether it is worth un-parking.
+        runnable = (
+            set(SPIDERS)
+            | set(PARKED_SPIDERS)
+            | {f for group in FOLLOW_UP_SPIDERS.values() for f in group}
+        )
+        unknown = [name for name in selected if name not in runnable]
         if unknown:
             parser.error(
                 f"unknown spider(s): {', '.join(unknown)}. "
                 f"Available: {', '.join(SPIDERS)}"
+                + (f" (parked: {', '.join(PARKED_SPIDERS)})" if PARKED_SPIDERS else "")
             )
 
     failed_spiders = run_spiders(selected)
