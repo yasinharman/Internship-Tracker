@@ -177,10 +177,25 @@ class BaseApiSpider(scrapy.Spider):
             yield self.document_request(
                 self.warmup_url,
                 callback=self._after_warmup,
+                cookies=self.warmup_cookies() or None,
                 dont_filter=True,
             )
         else:
             yield from self.api_requests()
+
+    def warmup_cookies(self):
+        """
+        Cookies the run STARTS with - an exported browser session, normally.
+        Empty means arrive as a new visitor, which is the usual case.
+
+        Only the warm-up gets them, and deliberately so. From there Scrapy's
+        cookie jar takes over, which is what a browser does: the site hands
+        back rotated or refreshed values and the next request carries those.
+        Re-sending the exported set on every request would overwrite whatever
+        the site had just updated with a value going progressively staler -
+        the one thing guaranteed to make a good session look wrong.
+        """
+        return {}
 
     ###########################################################
     # WARM-UP: LOAD A REAL PAGE FIRST TO COLLECT ITS COOKIES  #
@@ -209,9 +224,23 @@ class BaseApiSpider(scrapy.Spider):
     #########################
     # REQUEST CONSTRUCTORS  #
     #########################
+    def default_meta(self):
+        """
+        Meta that belongs on EVERY request this spider makes, warm-up
+        included. Override to return e.g. the impersonation settings.
+
+        It exists because the warm-up is built here, in the base class, and
+        a subclass that only decorated its own requests would send the one
+        request it did not write - the first one of the run - with the
+        settings missing. On an impersonating spider that means the warm-up
+        goes out with Python's TLS fingerprint and is refused, which looks
+        exactly like the site blocking the crawl outright.
+        """
+        return {}
+
     def document_request(self, url, callback, *, referer=None, **kwargs):
         """A normal page navigation, headers shaped like a browser tab."""
-        meta = kwargs.pop("meta", {}) or {}
+        meta = {**self.default_meta(), **(kwargs.pop("meta", {}) or {})}
         headers = self.session.document_headers(referer=referer)
         headers.update(kwargs.pop("headers", {}) or {})
         return scrapy.Request(

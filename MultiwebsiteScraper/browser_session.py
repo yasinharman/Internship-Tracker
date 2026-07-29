@@ -99,6 +99,78 @@ def pick_profile(name: str = None) -> BrowserProfile:
     return random.choice(PROFILES)
 
 
+###############################################################
+# HEADERS THAT MATCH THE TLS HANDSHAKE WE ARE REPLAYING       #
+###############################################################
+'''
+    Spiders that go through scrapy-impersonate replay a real browser's TLS
+    ClientHello (meta["impersonate"] = "firefox147", ...). The headers are a
+    separate decision: scrapy-impersonate hands curl_cffi whatever is in
+    request.headers, so ours win over the browser defaults curl_cffi would
+    have sent.
+
+    Which means a random profile from PROFILES above can put a Firefox
+    User-Agent on a Chrome handshake, or a macOS UA on a Windows one. Measured
+    against Indeed from a clean home IP that mismatch changed nothing - the
+    TLS fingerprint alone decided the outcome - so this is not the bug that
+    was hunted here. It is still free to get right, and an exit IP with less
+    credit gets scored on more signals than a residential one does.
+
+    Not filled in from curl_cffi's own defaults, tempting as that is: leaving
+    User-Agent unset does not mean "let curl_cffi choose", it means Scrapy's
+    UserAgentMiddleware writes `Scrapy/2.13 (+https://scrapy.org)` into the
+    request first.
+
+    KEEP THE VERSIONS HONEST. Each entry must describe the same browser
+    release its impersonate token replays; a Chrome 124 handshake under a
+    Chrome 133 User-Agent is the mismatch this table exists to prevent.
+'''
+IMPERSONATE_PROFILES = {
+    "firefox147": BrowserProfile(
+        name="firefox-147-win",
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) "
+            "Gecko/20100101 Firefox/147.0"
+        ),
+    ),
+    "firefox135": PROFILES_BY_NAME["firefox-135-win"],
+    "safari184": BrowserProfile(
+        name="safari-18-4-mac",
+        user_agent=(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 "
+            "Safari/605.1.15"
+        ),
+        # Safari sends no client hints, same as Firefox.
+    ),
+    "chrome124": BrowserProfile(
+        name="chrome-124-win",
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        sec_ch_ua=(
+            '"Chromium";v="124", "Google Chrome";v="124", '
+            '"Not-A.Brand";v="99"'
+        ),
+        sec_ch_ua_platform='"Windows"',
+    ),
+}
+
+
+def profile_for_impersonate(token: str) -> BrowserProfile:
+    """
+    The browser identity that belongs with a curl_cffi impersonate token.
+
+    Unknown tokens fall back to a random profile rather than raising: a new
+    token is a reason to add a row here, not a reason to kill the crawl.
+    """
+    profile = IMPERSONATE_PROFILES.get(token)
+    if profile is None:
+        return random.choice(PROFILES)
+    return profile
+
+
 ##################
 # HEADER BUILDER #
 ##################

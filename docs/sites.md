@@ -408,43 +408,110 @@ full scan. `workPlaces` across the board: 169 on-site, 23 hybrid, 2 remote.
 
 ---
 
-## Indeed - PARKED (not deleted)
+## Indeed - PARKED, but the diagnosis has changed
 
-**Status 28.07.2026: removed from `main.py`'s SPIDERS list.** It works from a
-home connection and returns nothing from the server.
+**Status 29.07.2026.** Still out of `main.py`'s SPIDERS list, for reasons that
+are now about deployment rather than about whether it works. It ran end to end
+that day and stored 18 postings.
 
-Indeed answers a plain job search from an address it does not trust with
-`307 -> secure.indeed.com/auth?...&branding=page-two-signin` - a 131 kB HTML
-sign-in page served as **HTTP 200**. Measured from Coolify:
+### What 28.07 got wrong
 
-| Route | Result |
+The reading was "our address is refused": direct requests 403, every
+residential exit walled, therefore the exit IP. Three of the four conclusions
+below say otherwise, and the first one dismantles the original evidence -
+**the home connection got the same 403 on 29.07**, having worked the day
+before. It was never only about the address.
+
+### 1. The TLS fingerprint had gone stale
+
+`IMPERSONATE` was pinned to `chrome131`, verified 200 on 28.07. Measured
+29.07, two rounds each, one address, identical headers:
+
+| Handshake | Result | Handshake | Result |
+|---|---|---|---|
+| chrome110 | 403 challenge | **chrome124** | **200, 1.19 MB** |
+| chrome131 | 403 challenge | **firefox135** | **200, 1.19 MB** |
+| chrome136 / 142 / 145 / 146 | 403 challenge | **firefox147** | **200, 1.19 MB** |
+| safari260 | 1 of 2 challenged | **safari184** | **200, 1.19 MB** |
+
+Every Chrome token but one is challenged, and it is not a newest-is-best
+gradient. Chrome is what nearly all impersonating traffic claims to be, so
+that is where the scrutiny goes.
+
+Confirmed independent of the address: through a clean static residential IP,
+`chrome131` was still challenged while `firefox147` returned data. Neither
+variable rescues the other.
+
+`IMPERSONATE_CANDIDATES` is now a fallback ladder rather than one pinned
+value, and `BlockDetectionMiddleware` climbs it. **Re-measure with `python -m
+MultiwebsiteScraper.tls_probe`** rather than reasoning about it - that script
+exists because this will go stale again.
+
+### 2. The Referer was the actual trigger
+
+The spider sent `Referer: https://tr.indeed.com/` with `Sec-Fetch-Site:
+same-origin` on a request carrying no Indeed cookies at all - a browser
+claiming a journey without the evidence of it. Same IP, same token, minutes
+apart:
+
+| Request | Result |
 |---|---|
-| Direct (datacenter IP) | 403 |
-| Residential, Turkish pool | sign-in wall, 8 exit IPs |
-| Residential, worldwide pool (`IPROYAL_COUNTRY=`) | sign-in wall, 11 rotations, 4 searches given up |
+| bare headers | 200, data |
+| the spider's headers | **403 challenge** |
+| the spider's headers, no Referer | 200, data |
+| the spider's headers, after loading the home page first | 200, data |
 
-So it is not a burnt Turkish pool - Indeed refuses this traffic pattern from
-proxies whatever country they exit from. Nothing in the spider is wrong; the
-address we call from is the problem.
+Fixed by making the claim true: `warmup_url` now points at the home page, so
+the run collects real cookies before searching, and pagination refers to the
+page it actually came from. **This was invisible from a home connection** -
+every combination passed there. It only decided anything from a proxy.
 
-Parked rather than deleted, unlike LinkedIn and jooble: those were structural
-decisions, this is environmental. Put `indeed_cards` back in `SPIDERS` to
-re-enable. `python main.py --spider indeed_cards` still runs it by hand, which
-is how to check whether that day has come.
+### 3. Page two asks for an account
 
-**What it costs us:** techcareer.net belongs to kariyer.net, so the two
+`branding=page-two-signin` is named after what it is. Anonymous runs stop at
+page one (`ANONYMOUS_MAX_PAGES`); with `INDEED_COOKIES` set, pagination
+resumes. **Not yet measured** whether an account genuinely unlocks it or
+whether the wall is really about how much the address is trusted - every
+page-two attempt so far came from an address that had already been refused
+several times. The first authenticated run settles it.
+
+### 4. Refusals cost credit, and we were spending it
+
+Chasing page two anonymously did not just waste requests. The retries carry
+`priority+1`, so they overtook searches that had not started, and the burst
+of refusals spent enough of the address's standing that their first pages -
+which would have worked - were challenged too. Two searches lost to it.
+
+Both a home connection and the static residential IP did the same thing:
+serve 1.19 MB pages, get refused in a burst, then challenge everything for
+several minutes, then recover on their own. So `DOMAIN_BLOCK_BUDGET` (8) now
+stops a run that is being refused instead of grinding through every search
+times every identity - sixteen refusals in under a minute is an efficient way
+to teach a site to distrust an address, and it damages the *next* run too.
+
+### Why it is still parked
+
+Not because it fails. Because the server is not set up for it yet: the static
+residential address lives in a local `.env`, Coolify still has the rotating
+pool that never worked here, and the authenticated path has not had its first
+real run. Un-park it once the server has the same proxy configuration this was
+measured on.
+
+`python main.py --spider indeed_cards` runs it by hand meanwhile.
+
+**What parking costs us:** techcareer.net belongs to kariyer.net, so the two
 remaining spiders are one company's data and the two-independent-routes rule
-above no longer holds across sites.
+above does not hold across sites.
 
 **Worth knowing:** the sign-in wall was invisible at first. Status 200, no
 anti-bot fingerprint, and Indeed's search page is HTML by design so
 `expect_json` never applied - the crawl reported "3/3 spiders succeeded" with
 Indeed contributing nothing. `BlockDetectionMiddleware.LOGIN_URL_SIGNATURES`
 now catches it, reading the requested url from `meta["redirect_urls"]` because
-RedirectMiddleware has already rewritten `request.url` by then.
+RedirectMiddleware has already rewritten `request.url` by then. Cloudflare's
+own `cf-mitigated` header is read directly now too.
 
-Everything below describes the spider as built, and still applies whenever it
-runs from an address Indeed accepts.
+Everything below describes the spider as built.
 
 ## Indeed
 

@@ -13,6 +13,10 @@ Two middlewares that work as a pair:
 
                                   direct  ->  proxy  ->  proxy + fresh IP
 
+                              and, for spiders that replay a browser TLS
+                              handshake, changes WHO we look like at every
+                              rung as well - see _next_impersonation.
+
 Both share one ProxyState object that lives on the crawler, so the block
 detector can tell the proxy middleware "burn this IP" and have it stick.
 
@@ -30,10 +34,12 @@ Middleware priorities matter here:
 """
 
 import logging
+from collections import defaultdict
 
 from scrapy.exceptions import IgnoreRequest, NotConfigured
 from scrapy.utils.response import response_status_message
 
+from .browser_session import profile_for_impersonate
 from .proxy import ProxyConfig, new_session_id
 
 logger = logging.getLogger(__name__)
@@ -56,6 +62,19 @@ class ProxyState:
         self.blocked_domains = set()
 
     def rotate(self, reason=""):
+        # A static residential / ISP address is the only exit there is. Say so
+        # once per attempt rather than minting a session id that changes
+        # nothing and logging three "fresh" IPs that are all the same one.
+        if self.config.is_static:
+            logger.info(
+                "Would rotate the exit IP (%s) but PROXY_URL is a single "
+                "fixed address - there is nothing to rotate to. If this "
+                "address is the thing being refused, the ladder is out of "
+                "rungs here.",
+                reason or "manual",
+            )
+            return
+
         self.session_id = new_session_id()
         self.requests_on_session = 0
         self.rotations += 1
@@ -200,14 +219,81 @@ class BlockDetectionMiddleware:
         self.config = self.state.config
         self.max_escalations = crawler.settings.getint("PROXY_MAX_ESCALATIONS", 3)
 
+        # See _over_budget. domain -> blocks seen this run.
+        self.blocks_by_domain = defaultdict(int)
+        self.budget = crawler.settings.getint("DOMAIN_BLOCK_BUDGET", 8)
+        self.gave_up_on = set()
+
     @classmethod
     def from_crawler(cls, crawler):
         return cls(crawler)
+
+    ###################################################################
+    # KNOWING WHEN TO STOP KNOCKING                                   #
+    ###################################################################
+    '''
+        Everything else in this class answers "what should we change and try
+        again". Nothing answered "should we still be asking at all", and the
+        cost of that showed up twice in one afternoon.
+
+        A refusal is not free. Indeed sorts an address into a bucket and the
+        bucket has memory: after a burst of refused requests a home connection
+        that had been serving 1.19 MB pages went to challenging every single
+        request, and stayed there for about eight minutes before recovering on
+        its own. The static residential IP did the same thing, from a run that
+        had been working, because chasing page two burned it.
+
+        So a run that keeps escalating does not just fail - it spends the
+        address's credit and takes the NEXT run's first pages down with it.
+        Four searches times four identities is sixteen refusals, delivered in
+        under a minute, which is a very efficient way to convince a site that
+        this address is worth distrusting.
+
+        Past the budget we stop sending to that domain entirely: not a retry
+        with a different hat, no request on the wire at all. The crawl ends
+        early with whatever it collected, which is both the honest outcome
+        and the one that leaves the address usable in ten minutes rather than
+        an hour.
+    '''
+    def _over_budget(self, domain):
+        if not domain or self.budget <= 0:
+            return False
+        if self.blocks_by_domain[domain] < self.budget:
+            return False
+
+        if domain not in self.gave_up_on:
+            self.gave_up_on.add(domain)
+            self.crawler.stats.set_value(f"blocks/budget_spent/{domain}", True)
+            logger.error(
+                "%s has refused %s requests this run - stopping. Continuing "
+                "would spend this address's remaining credit and leave the "
+                "next run worse off; it recovers on its own in minutes if we "
+                "stop now. Whatever was collected before this point is kept.",
+                domain, self.blocks_by_domain[domain],
+            )
+        return True
+
+    def process_request(self, request, spider):
+        domain = request.url.split("/")[2] if "://" in request.url else ""
+        if self._over_budget(domain):
+            self.crawler.stats.inc_value("blocks/dropped_after_budget")
+            raise IgnoreRequest(f"{domain}: block budget spent this run")
+        return None
 
     ###########################################
     # WHY (IF AT ALL) IS THIS RESPONSE A BLOCK #
     ###########################################
     def _block_reason(self, request, response):
+        # Cloudflare says so itself when it acts on a request. Cheaper and
+        # more certain than pattern-matching the interstitial it serves, and
+        # it names the action - `challenge` on Indeed's 403 - so the log line
+        # says what happened instead of just quoting a status code.
+        mitigated = response.headers.get("cf-mitigated", b"").decode(
+            errors="replace"
+        )
+        if mitigated:
+            return f"cloudflare cf-mitigated={mitigated}"
+
         if response.status in self.BLOCK_STATUSES:
             return response_status_message(response.status)
 
@@ -265,6 +351,64 @@ class BlockDetectionMiddleware:
 
         return None
 
+    #########################################################
+    # THE OTHER THING WE CAN CHANGE: WHO WE LOOK LIKE       #
+    #########################################################
+    '''
+        A spider using scrapy-impersonate carries meta["impersonate"], the
+        browser whose TLS handshake curl_cffi replays, and can carry
+        meta["impersonate_candidates"], the ordered list to fall back through.
+
+        This exists because a pinned token is a dependency on someone else's
+        detection model, and that model moves without telling us. Indeed's
+        spider ran on `chrome131` for a day and then met a Cloudflare
+        challenge on every request from an address that had just worked. The
+        crawl had no way to try anything else, so it reported zero postings
+        and the cause looked like the exit IP - which is where two rounds of
+        proxy debugging went.
+
+        Rotating the handshake is also the cheapest rung on the ladder: it
+        costs one retry and no metered residential bandwidth, so it is worth
+        doing at every escalation rather than only after the proxy options
+        run out.
+    '''
+    def _next_impersonation(self, request):
+        """The next token to try, or None when the list is exhausted."""
+        candidates = request.meta.get("impersonate_candidates") or []
+        current = request.meta.get("impersonate")
+        if len(candidates) < 2:
+            return None
+
+        try:
+            position = candidates.index(current)
+        except ValueError:
+            return candidates[0] if current != candidates[0] else None
+
+        if position + 1 >= len(candidates):
+            return None
+        return candidates[position + 1]
+
+    def _wear_identity(self, request, token):
+        """
+        Point the request at another browser - handshake AND headers.
+
+        scrapy-impersonate forwards request.headers to curl_cffi as they are,
+        so swapping only meta["impersonate"] would leave the previous
+        browser's User-Agent on the new handshake. The client hints are
+        removed outright for Firefox and Safari, neither of which sends them.
+        """
+        profile = profile_for_impersonate(token)
+        request.meta["impersonate"] = token
+        request.headers[b"User-Agent"] = profile.user_agent
+
+        for name in (b"sec-ch-ua", b"sec-ch-ua-mobile", b"sec-ch-ua-platform"):
+            request.headers.pop(name, None)
+        if profile.is_chromium:
+            request.headers[b"sec-ch-ua"] = profile.sec_ch_ua
+            request.headers[b"sec-ch-ua-mobile"] = profile.sec_ch_ua_mobile
+            request.headers[b"sec-ch-ua-platform"] = profile.sec_ch_ua_platform
+        return profile
+
     def process_response(self, request, response, spider):
         reason = self._block_reason(request, response)
         if not reason:
@@ -273,6 +417,16 @@ class BlockDetectionMiddleware:
         self.crawler.stats.inc_value("blocks/detected")
         domain = request.url.split("/")[2] if "://" in request.url else ""
         escalations = request.meta.get("_escalations", 0)
+
+        # A sign-in wall means something specific to a spider carrying an
+        # exported session: the session is gone. Only the spider knows whether
+        # it had one, so tell it and let it decide whether that matters.
+        if "sign-in wall" in reason and hasattr(spider, "note_sign_in_wall"):
+            spider.note_sign_in_wall(response.url or request.url)
+
+        self.blocks_by_domain[domain] += 1
+        if self._over_budget(domain):
+            raise IgnoreRequest(f"{domain}: block budget spent this run")
 
         if escalations >= self.max_escalations:
             self.crawler.stats.inc_value("blocks/given_up")
@@ -288,33 +442,52 @@ class BlockDetectionMiddleware:
         original_url = (request.meta.get("redirect_urls") or [None])[0]
         target_url = original_url or request.url
 
+        # The other lever, pulled at every rung because it is free. None once
+        # the spider has been through every browser it knows how to be.
+        next_token = self._next_impersonation(request)
+
         # ------------------------------------------------------------------
         # Escalation ladder
         # ------------------------------------------------------------------
         if not request.meta.get("_via_proxy"):
             # Rung 1: we were going direct. The server IP is a datacenter IP,
             # so this is the expected first failure. Switch to residential.
-            if not self.config.enabled:
-                # Nothing to escalate to. Hand the response back untouched so
+            if self.config.enabled:
+                self.state.blocked_domains.add(domain)
+                self.crawler.stats.inc_value("blocks/escalated_to_proxy")
+                spider.logger.warning(
+                    "BLOCKED direct (%s) - retrying %s over residential "
+                    "proxy; all further %s requests will use it too",
+                    reason, target_url, domain or "same-domain",
+                )
+                new_meta = {"use_proxy": True}
+
+            elif next_token:
+                # No proxy to escalate to, but the address is not the only
+                # thing we can change. A local run has a perfectly good IP and
+                # a handshake the site has learnt to challenge - which is the
+                # whole of the Indeed failure, and it used to end right here.
+                self.crawler.stats.inc_value("blocks/no_proxy_available")
+                spider.logger.warning(
+                    "BLOCKED going direct (%s) and no residential proxy is "
+                    "configured - retrying %s as %s",
+                    reason, target_url, next_token,
+                )
+                new_meta = {}
+
+            else:
+                # Nothing left to change. Hand the response back untouched so
                 # RetryMiddleware / HttpErrorMiddleware handle it the way they
                 # always have - dropping it here would silently change how the
                 # older DOM spiders behave when they run without a proxy.
                 self.crawler.stats.inc_value("blocks/no_proxy_available")
                 spider.logger.warning(
-                    "BLOCKED going direct (%s) and no residential proxy is "
-                    "configured - set PROXY_MODE and the IPROYAL_* variables "
-                    "to escalate: %s", reason, request.url,
+                    "BLOCKED going direct (%s) and nothing left to escalate "
+                    "to - set PROXY_MODE and the IPROYAL_* variables, or give "
+                    "the spider more impersonation candidates: %s",
+                    reason, request.url,
                 )
                 return response
-
-            self.state.blocked_domains.add(domain)
-            self.crawler.stats.inc_value("blocks/escalated_to_proxy")
-            spider.logger.warning(
-                "BLOCKED direct (%s) - retrying %s over residential proxy; "
-                "all further %s requests will use it too",
-                reason, target_url, domain or "same-domain",
-            )
-            new_meta = {"use_proxy": True}
         else:
             # Rung 2+: the residential IP itself is burnt. Get another one.
             self.state.rotate(reason=f"blocked: {reason}")
@@ -347,6 +520,15 @@ class BlockDetectionMiddleware:
         # with the current session id.
         retry.meta.pop("proxy", None)
         retry.meta.pop("_via_proxy", None)
+
+        if next_token:
+            profile = self._wear_identity(retry, next_token)
+            self.crawler.stats.inc_value("blocks/rotated_impersonation")
+            spider.logger.info(
+                "Switching TLS handshake to %s (identity: %s)",
+                next_token, profile.name,
+            )
+
         retry.dont_filter = True
         retry.priority = request.priority + 1
         return retry

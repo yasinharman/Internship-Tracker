@@ -145,6 +145,27 @@ class ProxyConfig:
     def enabled(self) -> bool:
         return self.mode != "off" and self.is_configured
 
+    ##########################################################
+    # ONE FIXED EXIT IP, OR A POOL WE CAN ASK FOR ANOTHER?   #
+    ##########################################################
+    @property
+    def is_static(self) -> bool:
+        """
+        True for a dedicated address - IPRoyal's static residential / ISP
+        product, or any PROXY_URL pointing at a single host.
+
+        Worth knowing because half of this module does not apply to one.
+        Sticky sessions, `_session-<id>`, lifetime, rotate_after and the
+        block detector's "burn this IP and take another" rung all assume a
+        pool standing behind the endpoint. With a static address the rotation
+        still runs, still logs, still counts - and lands on the same IP every
+        time, which reads in the logs as three fresh addresses all refusing
+        us. That is a misleading diagnosis, not a working fallback.
+
+        The rest of the code checks this and says so plainly instead.
+        """
+        return bool(self.full_url)
+
     ####################################################
     # IPROYAL PACKS ITS OPTIONS INTO THE PASSWORD FIELD #
     ####################################################

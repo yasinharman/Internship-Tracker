@@ -48,10 +48,14 @@ job_filters for the evidence.
 """
 
 import json
+import os
 
 from ..api_spider import BaseApiSpider, strip_html
+from ..browser_session import BrowserSession, profile_for_impersonate
 from ..job_filters import is_wanted, looks_like_internship, looks_like_parttime
 from ..loaders import JsonJobLoader
+from ..session_cookies import describe as describe_cookies
+from ..session_cookies import load_cookies
 
 PROVIDER_KEY = "mosaic-provider-jobcards"
 
@@ -100,7 +104,39 @@ class IndeedCardsSpider(BaseApiSpider):
     site_name = "indeed.com"
     origin = "https://tr.indeed.com"
     allowed_domains = ["indeed.com"]
-    warmup_url = None
+
+    ###################################################################
+    # WHY THIS SPIDER LOADS THE HOME PAGE IT DOES NOT NEED            #
+    ###################################################################
+    '''
+        The search page carries its own data, so for a long time this was
+        None and the run opened by asking for search results directly.
+
+        That request told Indeed two things that cannot both be true:
+
+            Referer:        https://tr.indeed.com/
+            Sec-Fetch-Site: same-origin
+            Cookie:         (nothing at all)
+
+        A browser that had just been on tr.indeed.com would be carrying the
+        cookies tr.indeed.com set. Claiming the journey without the evidence
+        of it is a cleaner bot signal than sending no Referer would have
+        been. Measured through one fixed residential IP, one token, one
+        minute apart:
+
+            no Referer, Sec-Fetch-Site: none      200, 1.13 MB, data
+            Referer + same-origin, no cookies     403, Cloudflare challenge
+            Referer + same-origin, after warm-up  200, 1.13 MB, data
+
+        So: go there first. One extra request per run, the claim becomes
+        true, and pagination inherits a real session instead of looking like
+        four unrelated visitors who each arrived mid-search.
+
+        Note this was invisible from a home connection - every combination
+        passed there. It only decided anything from the proxy, which is why
+        it survived until the exit IP was the last variable left.
+    '''
+    warmup_url = "https://tr.indeed.com/"
 
     LOCATION = "İstanbul"
     PAGE_SIZE = 10          # Indeed's `start` offset step, not the record count
@@ -115,9 +151,58 @@ class IndeedCardsSpider(BaseApiSpider):
         "yari-zamanli": "yarı zamanlı",
     }
 
-    # Indeed keeps serving pages well past the useful results. Stop when a page
-    # brings nothing new - next_page_allowed() handles that - but cap it too.
+    #####################################################################
+    # HOW DEEP WE GO DEPENDS ON WHETHER WE ARE SIGNED IN                #
+    #####################################################################
+    '''
+        Indeed shows an anonymous visitor the first page of results and asks
+        everyone else to sign in. Its own url says so: page two answers with
+        `307 -> secure.indeed.com/auth?...&branding=page-two-signin`, and the
+        parameter is named after exactly what it is.
+
+        Asking anyway, anonymously, is not merely wasted. Measured on the run
+        that found this (29.07.2026), four searches:
+
+            yari-zamanli page 1   200, 8 postings kept
+            part-time    page 1   200, 10 postings kept
+            page 2 x2             sign-in wall, 3 escalations each
+            intern       page 1   CHALLENGED
+            stajyer      page 1   CHALLENGED
+
+        The page-two retries carry priority+1, so they overtook the two
+        searches that had not started yet, and the burst of refusals spent
+        enough of the address's credit that their first pages - which would
+        have worked - were challenged too. Chasing page two anonymously cost
+        us two whole searches.
+
+        So: anonymous runs stop at page one, and that is a normal ending
+        rather than the "narrow your search" ERROR the base class raises.
+        With INDEED_COOKIES set we are past the wall the ceiling exists for,
+        and pagination goes back to being bounded by the results themselves.
+
+        NOT YET MEASURED: whether an account genuinely unlocks page two, or
+        whether the wall is really about how much the exit address is
+        trusted. Every page-two attempt so far was made from an address that
+        had already been refused several times, so the two explanations are
+        still tangled. The first authenticated run settles it - if page two
+        still walls WITH a valid session, the account is not the answer and
+        this should go back to a flat ceiling of 1.
+    '''
     MAX_PAGES = 15
+    ANONYMOUS_MAX_PAGES = 1
+
+    def next_page_allowed(self, page, records, search_key="default"):
+        if not self.session_cookies and page >= self.ANONYMOUS_MAX_PAGES:
+            if records:
+                self.logger.info(
+                    "[%s] page %s: %s posting(s). Not asking for page %s - "
+                    "Indeed requires an account past the first page, and "
+                    "INDEED_COOKIES is not set.",
+                    search_key, page, len(records), page + 1,
+                )
+            return False
+
+        return super().next_page_allowed(page, records, search_key)
 
     custom_settings = {
         **BaseApiSpider.custom_settings,
@@ -148,9 +233,8 @@ class IndeedCardsSpider(BaseApiSpider):
             changes, the fingerprint does not.
 
             scrapy-impersonate swaps the transport for curl_cffi, which
-            replays a real Chrome handshake. Verified: `chrome124` and
-            `chrome131` both return 200 with 16 job cards, while the plain
-            `chrome` alias still gets 403 - so the version must be pinned.
+            replays a real browser handshake. WHICH browser is not a detail,
+            and it does not stay decided - see IMPERSONATE_CANDIDATES below.
 
             Only this spider needs it; kariyer.net and techcareer.net are fine
             with Scrapy's own downloader.
@@ -170,8 +254,139 @@ class IndeedCardsSpider(BaseApiSpider):
         "RETRY_TIMES": 3,
     }
 
-    # Passed through request.meta by _search_request. Pin the version.
-    IMPERSONATE = "chrome131"
+    #####################################################################
+    # WHICH HANDSHAKE TO REPLAY - AND WHY IT IS A LIST, NOT A CONSTANT  #
+    #####################################################################
+    '''
+        This used to be `IMPERSONATE = "chrome131"`, verified 200 on
+        28.07.2026. On 29.07 the same token returned an HTTP 403 carrying
+        `Security Check - Indeed.com` and `cf-mitigated: challenge` from a
+        home IP that had worked the day before. Nothing on our side changed;
+        Cloudflare's scoring did.
+
+        Measured that day, two runs each, one address, identical headers:
+
+            chrome110  403 challenge     chrome124   200, 1.19 MB, data
+            chrome131  403 challenge     firefox135  200, 1.19 MB, data
+            chrome136  403 challenge     firefox147  200, 1.19 MB, data
+            chrome142  403 challenge     safari184   200, 1.19 MB, data
+            chrome145  403 challenge     safari260   1 of 2 challenged
+            chrome146  403 challenge
+
+        Every Chrome token but one was challenged, and it was not a
+        newest-is-best gradient - chrome124 passes while chrome110 and
+        chrome146 do not. Chrome is what almost all impersonating traffic
+        claims to be, so it is where the scrutiny goes; Firefox got through
+        untouched. That is a fact about a vendor's current model, not a law,
+        which is exactly why nothing here is pinned to one value any more.
+
+        The list is an escalation ladder, same idea as the proxy one:
+        BlockDetectionMiddleware moves to the next token when a response
+        comes back as a block, so one stale entry costs a retry instead of
+        the whole crawl. Ordered by what measured cleanest, with a Chrome
+        entry last so we are not betting everything on one engine.
+
+        Re-measure with `python -m MultiwebsiteScraper.tls_probe` - it prints
+        this table fresh - and reorder from what it says. Do not "fix" this
+        by pinning the one token that works today; that is the bug above.
+
+        INDEED_IMPERSONATE overrides the order for a one-off experiment.
+    '''
+    IMPERSONATE_CANDIDATES = (
+        "firefox147", "firefox135", "safari184", "chrome124",
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        override = os.getenv("INDEED_IMPERSONATE", "").strip()
+        self.impersonate_candidates = (
+            [override] if override else list(self.IMPERSONATE_CANDIDATES)
+        )
+
+        # A real signed-in session, exported from a browser by hand. Empty is
+        # the normal case and means "crawl anonymously". See session_cookies.
+        self.session_cookies = load_cookies("INDEED_COOKIES")
+        # Set once the sign-in wall has been seen WITH cookies loaded, so the
+        # spider complains about the session exactly once instead of on every
+        # search left in the queue.
+        self._warned_stale_session = False
+
+        # The handshake and the User-Agent have to describe the same browser,
+        # so the identity follows the token rather than being drawn at random.
+        token = self.impersonate_candidates[0]
+        self.session = BrowserSession(
+            profile=profile_for_impersonate(token), origin=self.origin,
+        )
+        self.logger.info(
+            "TLS handshake order: %s (identity: %s) - %s",
+            ", ".join(self.impersonate_candidates), self.session.profile.name,
+            describe_cookies(self.session_cookies),
+        )
+
+        # Which browser the session was actually created in is not something
+        # this process can know - it only sees the cookie values. So it does
+        # not pretend to check: it prints the identity the session is about
+        # to be used under and leaves the comparison to the person who signed
+        # in, who is the only one holding the other half of it.
+        #
+        # Worth printing at all because the mismatch it guards against - a
+        # session created in one browser and used from another - is cheaper
+        # for a site to spot than anything else measured here, and the fix is
+        # sixty seconds of signing in again with the right browser.
+        if self.session_cookies:
+            self.logger.info(
+                "Session cookies will be sent as %s / %s. Sign in with that "
+                "browser if you have not - a session used by something other "
+                "than what created it is the easiest kind of anomaly to spot.",
+                self.impersonate_candidates[0], self.session.profile.user_agent,
+            )
+
+    def warmup_cookies(self):
+        return self.session_cookies
+
+    ###################################################################
+    # TELLING AN EXPIRED SESSION FROM A REFUSED ADDRESS               #
+    ###################################################################
+    def note_sign_in_wall(self, url):
+        """
+        Called by BlockDetectionMiddleware whenever Indeed answers with its
+        sign-in page. Both failures look identical in a log - no postings,
+        a redirect to /auth - and they need opposite responses: one is fixed
+        by signing in again, the other by leaving the address alone for ten
+        minutes. Guessing wrong between them cost an afternoon on 28.07.
+
+        The cookies being loaded is what separates them. Said once per run:
+        the searches still queued will each hit the same wall, and four
+        copies of the same instruction is how a log stops being read.
+        """
+        if not self.session_cookies or self._warned_stale_session:
+            return
+
+        self._warned_stale_session = True
+        self.crawler.stats.set_value("indeed/session_expired", True)
+        self.logger.error(
+            "INDEED_COOKIES is set, but Indeed still asked us to sign in. The "
+            "exported session has almost certainly expired - sign in again in "
+            "the browser, copy the Cookie header and replace the value. This "
+            "is NOT the address being blocked; do not go looking for a proxy "
+            "problem. (%s)", url[:100],
+        )
+
+    def default_meta(self):
+        """
+        Carried by every request including the warm-up, which the base class
+        builds before this spider gets a say. A warm-up sent without these
+        goes out on Python's own TLS fingerprint and is refused - and since
+        it is the first request of the run, the whole crawl dies there.
+        """
+        return {
+            # Tells scrapy-impersonate which browser handshake to replay.
+            "impersonate": self.impersonate_candidates[0],
+            # The rest of the ladder, for BlockDetectionMiddleware to climb
+            # when this one comes back challenged.
+            "impersonate_candidates": self.impersonate_candidates,
+        }
 
     ###########################################
     # ONE SEARCH PER KEYWORD                  #
@@ -180,7 +395,7 @@ class IndeedCardsSpider(BaseApiSpider):
         for search_key in self.SEARCHES:
             yield self._search_request(search_key, page=1)
 
-    def _search_request(self, search_key, page):
+    def _search_request(self, search_key, page, referer=None):
         from urllib.parse import urlencode
 
         params = {
@@ -193,16 +408,15 @@ class IndeedCardsSpider(BaseApiSpider):
         # A document request, not api_request: the response is HTML with JSON
         # inside it, so `expect_json` would make BlockDetectionMiddleware treat
         # every good page as a block.
+        #
+        # The referer is the page we actually came from - the home page for
+        # the first request of a search, the previous result page after that.
+        # Both are true statements by the time they are sent; see warmup_url.
         return self.document_request(
             url,
             callback=self.parse_search,
-            referer=f"{self.origin}/",
-            meta={
-                "page": page,
-                "search_key": search_key,
-                # Tells scrapy-impersonate which browser handshake to replay.
-                "impersonate": self.IMPERSONATE,
-            },
+            referer=referer or self.warmup_url,
+            meta={"page": page, "search_key": search_key},
             dont_filter=True,
         )
 
@@ -260,7 +474,7 @@ class IndeedCardsSpider(BaseApiSpider):
         self.crawler.stats.inc_value("jobs/seen", len(records))
 
         if self.next_page_allowed(page, records, search_key):
-            yield self._search_request(search_key, page + 1)
+            yield self._search_request(search_key, page + 1, referer=response.url)
 
     ###########################################
     # RECORD -> ITEM                          #

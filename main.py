@@ -56,31 +56,33 @@ SCRAPY_PROJECT_FOLDER = "MultiwebsiteScraper"
 # need, and git history for the old code.
 SPIDERS = ["kariyernet_cards", "techcareer_api"]
 
-# indeed_cards is PARKED, not deleted - 28.07.2026.
+# indeed_cards is PARKED, not deleted - and the reason changed on 29.07.2026.
 #
-# It works from a home connection and returns nothing from the server. Indeed
-# answers a plain job search with 307 -> secure.indeed.com/auth, a sign-in
-# wall served as HTTP 200. Measured from Coolify: direct requests get 403,
-# and every residential exit gets the wall - 11 session rotations across the
-# Turkish pool and then the worldwide pool (IPROYAL_COUNTRY=), 16 blocks, 4
-# searches given up, zero postings. So this is not a burnt TR pool; Indeed
-# refuses this traffic pattern from proxies whatever country it exits from.
+# It is no longer "Indeed refuses our address". That reading came from the
+# server getting 403s, and it did not survive the home connection getting the
+# same 403 the next day: the pinned TLS fingerprint (chrome131) had gone from
+# accepted to challenged without anything changing on our side. Two more
+# causes sat underneath it - a Referer claiming a visit that had left no
+# cookies, and page two wanting an account. All three are fixed; the spider
+# ran end to end on 29.07 and stored 18 postings. See docs/sites.md.
 #
-# Left in place rather than removed the way linkedin and jooble were: those
-# were structural decisions, this is environmental. The spider, the
-# curl_cffi/impersonate setup and the block detection all work - the address
-# we call from is what Indeed objects to. Put the name back in this list to
-# re-enable; nothing else needs changing.
+# It stays parked for a deployment reason instead. What it was measured
+# working on is a STATIC residential address that currently exists only in a
+# local .env; Coolify still has the rotating pool, which never got past the
+# sign-in wall. Enabling it here before the server has the same proxy
+# configuration would put a spider that is known to work into an environment
+# where it is known not to, and every refusal now costs the address credit
+# that the next run needs - see DOMAIN_BLOCK_BUDGET.
 #
-# The cost of leaving it enabled is real: every run burns metered residential
-# bandwidth fetching a 131 kB login page, three escalations per search, and
-# reports success anyway.
+# To un-park: give the server the static PROXY_URL, run
+# `python main.py --spider indeed_cards` there once, and if it returns
+# postings move the name into SPIDERS. Nothing else needs changing.
 #
-# What this costs us: techcareer.net belongs to kariyer.net and carries the
-# same ads, so the two remaining spiders are one company's data. The rule in
-# docs/sites.md - every posting reachable by at least two independent routes -
-# no longer holds across sites. A blocked spider covers nothing either, but
-# the gap should be understood rather than forgotten.
+# What this costs us meanwhile: techcareer.net belongs to kariyer.net and
+# carries the same ads, so the two remaining spiders are one company's data.
+# The rule in docs/sites.md - every posting reachable by at least two
+# independent routes - does not hold across sites. A blocked spider covers
+# nothing either, but the gap should be understood rather than forgotten.
 PARKED_SPIDERS = ["indeed_cards"]
 
 # spider -> spiders that must run straight after it. Empty: the only user was

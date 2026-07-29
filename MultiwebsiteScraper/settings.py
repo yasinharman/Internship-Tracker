@@ -88,6 +88,14 @@ DOWNLOADER_MIDDLEWARES = {
 # (direct -> proxy -> fresh proxy IP) before it is dropped.
 PROXY_MAX_ESCALATIONS = 3
 
+# How many refusals one domain may hand us in a single run before we stop
+# sending to it altogether. Blocks are not free: a burst of them moves the
+# exit address into a bucket that takes minutes to climb back out of, so a
+# crawl that keeps knocking damages the next one as well as itself. Eight is
+# room for a bad patch, not room for four searches to grind through every
+# impersonation candidate. See BlockDetectionMiddleware._over_budget.
+DOMAIN_BLOCK_BUDGET = 8
+
 # Residential bandwidth is metered, so give up on genuinely dead requests
 # rather than paying to retry them forever.
 RETRY_ENABLED = True

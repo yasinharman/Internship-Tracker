@@ -1,0 +1,145 @@
+"""
+CARRYING A REAL BROWSER SESSION
+===============================
+
+Some boards show an anonymous visitor one page of results and ask everyone
+else to sign in. Indeed is one: page two answers with
+`307 -> secure.indeed.com/auth?...&branding=page-two-signin`.
+
+The way past it is not to imitate a session but to carry a real one - the
+cookies from a browser that is actually signed in, exported by hand and
+handed to the spider through the environment.
+
+    INDEED_COOKIES="CTK=abc...; SESSION_ID=def...; PPID=ghi..."
+    INDEED_COOKIES=/run/secrets/indeed_cookies.json   (a path works too)
+
+WHY IT IS NOT AUTOMATED
+-----------------------
+Signing in is a one-off manual step on purpose. Indeed's sign-in sends a code
+to an email address, so scripting it means scripting a mailbox - more moving
+parts than the crawl itself, and every one of them a new way for a scheduled
+run to fail at 03:00. Logging in by hand every few weeks is a minute of work.
+
+WHAT TO DO WHEN THEY EXPIRE
+---------------------------
+Sign in again in the browser, copy the Cookie header again, replace the
+value. The spider says so explicitly when it happens - see
+IndeedCardsSpider's handling of the sign-in wall - rather than letting an
+expired session look like an address that has been blocked. Telling those two
+apart by hand cost an afternoon once already.
+
+MATCH THE BROWSER YOU SIGNED IN WITH
+------------------------------------
+A session created in Chrome and then used under a Firefox User-Agent is a
+session being used by something other than what created it, which is a
+cheaper signal to spot than any of the ones we spent today measuring. Sign in
+with the browser whose handshake the spider replays.
+
+Today that means FIREFOX: Cloudflare currently challenges every Chrome
+fingerprint curl_cffi can produce and waves Firefox through (see
+IMPERSONATE_CANDIDATES in spiders/indeed_cards.py). Set INDEED_IMPERSONATE
+and the User-Agent to match whatever browser you actually used.
+
+THESE ARE CREDENTIALS
+---------------------
+A session cookie is the account. It goes in .env (gitignored) or a Coolify
+secret, never in the repo, and nothing here ever logs its value - see
+describe(), which is what the logs get.
+"""
+
+import json
+import os
+
+
+def _parse_header_string(raw):
+    """
+    Turn a copied `Cookie:` header into a dict.
+
+        "CTK=abc; SESSION_ID=def"  ->  {"CTK": "abc", "SESSION_ID": "def"}
+
+    Written for the value you get from DevTools -> Network -> any request ->
+    Request Headers -> Cookie, because that is the copy-paste a person can
+    actually do without installing an extension. A leading "Cookie:" is
+    tolerated; so is the whitespace that comes with copying out of a browser.
+    """
+    raw = raw.strip()
+    if raw.lower().startswith("cookie:"):
+        raw = raw.split(":", 1)[1].strip()
+
+    cookies = {}
+    for pair in raw.split(";"):
+        pair = pair.strip()
+        if not pair or "=" not in pair:
+            continue
+        name, value = pair.split("=", 1)
+        name = name.strip()
+        if name:
+            cookies[name] = value.strip()
+    return cookies
+
+
+def _parse_json(text):
+    """
+    Accept what cookie-exporting extensions produce.
+
+    Either a plain object, or the list-of-objects shape every
+    "Export cookies" extension uses:
+
+        {"CTK": "abc"}
+        [{"name": "CTK", "value": "abc", "domain": ".indeed.com", ...}]
+    """
+    data = json.loads(text)
+
+    if isinstance(data, dict):
+        return {str(k): str(v) for k, v in data.items()}
+
+    cookies = {}
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        if name:
+            cookies[str(name)] = str(entry.get("value", ""))
+    return cookies
+
+
+def load_cookies(env_var):
+    """
+    Read a session from the environment. Returns {} when nothing is set,
+    which means "crawl anonymously" - the normal, unconfigured case.
+
+    The value is either the cookies themselves or a path to a file holding
+    them. A path is worth supporting because a full Indeed session is long
+    enough to be awkward in a panel's environment-variable box, and because
+    a file can be mounted as a secret instead of sitting in the process
+    environment.
+    """
+    raw = (os.getenv(env_var) or "").strip()
+    if not raw:
+        return {}
+
+    # A path, or the cookies themselves? A cookie header always contains
+    # "=", and no sane path does, which separates the two without guessing.
+    if "=" not in raw and os.path.exists(raw):
+        with open(raw, encoding="utf-8") as handle:
+            text = handle.read().strip()
+        return _parse_json(text) if text.startswith(("{", "[")) else \
+            _parse_header_string(text)
+
+    if raw.startswith(("{", "[")):
+        return _parse_json(raw)
+
+    return _parse_header_string(raw)
+
+
+def describe(cookies):
+    """
+    A log line that proves a session was loaded without leaking it.
+
+    Names only, never values, and never the whole list either: the set of
+    cookie names is itself a fingerprint of the account state. Enough to
+    answer "did it pick up my session" from a log, and nothing more.
+    """
+    if not cookies:
+        return "no session cookies (anonymous)"
+    return f"{len(cookies)} session cookie(s) loaded"
