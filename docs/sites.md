@@ -408,13 +408,18 @@ full scan. `workPlaces` across the board: 169 on-site, 23 hybrid, 2 remote.
 
 ---
 
-## Indeed - PARKED, and now only deployment is left
+## Indeed - RUNNING, un-parked 30.07.2026
 
-**Status 30.07.2026.** Still out of `main.py`'s SPIDERS list, for one reason
-and it is not about whether the spider works: the server does not yet have the
-proxy and the session this was measured on. The authenticated run happened -
-**61 requests, 61 HTTP 200**, no escalations, 367 items, 93 new postings and 68
-updated.
+**Status 30.07.2026.** Back in `main.py`'s SPIDERS list. The proving run
+happened on the server, through the static residential proxy, with the
+exported session: **61 requests, 61 HTTP 200**, no challenges, no handshake
+escalations, 335 postings, and all four searches into the page ceiling with
+results still arriving.
+
+Three things had to be true at once, and the whole three-day detour came from
+each being mistaken for the others: an accepted **handshake**, a residential
+**address**, and a **session carried under the browser that made it**. The
+last one is new and is the subtlest - see below.
 
 ### What 28.07 got wrong
 
@@ -538,13 +543,38 @@ password to the account to get a "remember me" checkbox is not needed.
 next data point; if it comes back with nothing, re-export the cookies before
 suspecting anything else.
 
-### Why it is still parked
+### 6. The session and the handshake are a PAIR - the last mistake
 
-Not because it fails - only because the server is not set up for it. The
-static residential address and the session file both live in a local `.env`,
-while Coolify still has the rotating pool that never worked here. Un-park it
-once the server has `PROXY_URL` and `INDEED_COOKIES`, and measure there with
-`tls_probe --both` first.
+The server had the proxy and the session and still lost a run: 8 of 11
+requests refused, block budget spent. The reflex reading was "the ladder has
+gone stale again". It had not. Same address, ten minutes apart:
+
+| Run | Handshake | Result |
+|---|---|---|
+| `tls_probe --both`, no cookies | safari184, chrome124 | 200, data |
+| `tls_probe --both`, no cookies | firefox147, firefox135 | 403 challenge |
+| spider, session attached | safari184 | 0 of 2 answered |
+| spider, session attached | chrome124 | 0 of 4 answered |
+| spider, session attached | firefox147 | 3 of 3 answered |
+| spider, `INDEED_IMPERSONATE=firefox147` | firefox147 | **61 of 61 answered** |
+
+The session was exported from Firefox. Presented under Safari's or Chrome's
+handshake it is a session being used by something other than what created it
+- and that is cheaper to spot than any fingerprint, which is what
+`session_cookies.py` had been saying all along in prose.
+
+So the probe and the spider measure different things, and the probe's verdict
+only applies to an anonymous crawl. `_prefer_the_session_s_browser` puts the
+session's browser at the head of the ladder whenever cookies are loaded,
+leaving the measured order alone when they are not.
+`INDEED_SESSION_BROWSER` changes it if the session is ever made elsewhere.
+
+### Why it stayed parked so long
+
+Not because it failed - because the server did not have what the measurements
+were made on. The static address and the session lived in a local `.env`
+while Coolify had the rotating pool that never worked. Both are now set there
+(`PROXY_URL`, `INDEED_COOKIES_B64`) and the spider is un-parked.
 
 `INDEED_COOKIES` must be an **absolute** path: `main.py:137` runs the spider
 with `cwd=MultiwebsiteScraper`, so a bare filename resolves in the wrong

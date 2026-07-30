@@ -54,36 +54,31 @@ SCRAPY_PROJECT_FOLDER = "MultiwebsiteScraper"
 # Their DOM-parsing predecessors (kariyerNet, TechCareer, indeed_html) have
 # been deleted - see docs/sites.md for what each site actually turned out to
 # need, and git history for the old code.
-SPIDERS = ["kariyernet_cards", "techcareer_api"]
+SPIDERS = ["kariyernet_cards", "techcareer_api", "indeed_cards"]
 
-# indeed_cards is PARKED, not deleted - and the reason changed on 29.07.2026.
+# indeed_cards was parked from 28.07.2026 to 30.07.2026. Un-parked on the
+# terms the parking comment itself set: the server got the static PROXY_URL
+# and the session, `python main.py --spider indeed_cards` was run there once,
+# and it returned postings - 61 requests, 61 answered, 335 postings, four
+# searches into the page ceiling with results still coming.
 #
-# It is no longer "Indeed refuses our address". That reading came from the
-# server getting 403s, and it did not survive the home connection getting the
-# same 403 the next day: the pinned TLS fingerprint (chrome131) had gone from
-# accepted to challenged without anything changing on our side. Two more
-# causes sat underneath it - a Referer claiming a visit that had left no
-# cookies, and page two wanting an account. All three are fixed; the spider
-# ran end to end on 29.07 and stored 18 postings. See docs/sites.md.
+# Three things had to be true at once, and each was mistaken for the others
+# at some point (docs/sites.md has the measurements):
 #
-# It stays parked for a deployment reason instead. What it was measured
-# working on is a STATIC residential address that currently exists only in a
-# local .env; Coolify still has the rotating pool, which never got past the
-# sign-in wall. Enabling it here before the server has the same proxy
-# configuration would put a spider that is known to work into an environment
-# where it is known not to, and every refusal now costs the address credit
-# that the next run needs - see DOMAIN_BLOCK_BUDGET.
+#   - a TLS handshake Cloudflare accepts today, which changes without notice
+#     and is why IMPERSONATE_CANDIDATES is a ladder rather than a value
+#   - a residential exit address, static, so the account and the address stay
+#     consistent - the datacenter address the server sits on is refused on
+#     every handshake
+#   - a signed-in session, carried under the handshake of the browser that
+#     created it. The pairing is the part that took longest to see: the
+#     tokens measured clean WITHOUT cookies were the ones being challenged
+#     WITH them.
 #
-# To un-park: give the server the static PROXY_URL, run
-# `python main.py --spider indeed_cards` there once, and if it returns
-# postings move the name into SPIDERS. Nothing else needs changing.
-#
-# What this costs us meanwhile: techcareer.net belongs to kariyer.net and
-# carries the same ads, so the two remaining spiders are one company's data.
-# The rule in docs/sites.md - every posting reachable by at least two
-# independent routes - does not hold across sites. A blocked spider covers
-# nothing either, but the gap should be understood rather than forgotten.
-PARKED_SPIDERS = ["indeed_cards"]
+# If it starts failing, read the first three log lines before anything else.
+# They say which handshake, which address and how many session cookies, and
+# every wrong turn in those three days came from guessing one of them.
+PARKED_SPIDERS = []
 
 # spider -> spiders that must run straight after it. Empty: the only user was
 # jooble, which handed urls to detail_worker through a file. Both are gone.

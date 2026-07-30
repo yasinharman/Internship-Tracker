@@ -328,6 +328,7 @@ class IndeedCardsSpider(BaseApiSpider):
         super().__init__(*args, **kwargs)
 
         override = os.getenv("INDEED_IMPERSONATE", "").strip()
+        self._impersonate_pinned = bool(override)
         self.impersonate_candidates = (
             [override] if override else list(self.IMPERSONATE_CANDIDATES)
         )
@@ -336,6 +337,7 @@ class IndeedCardsSpider(BaseApiSpider):
         # the normal case and means "crawl anonymously". See session_cookies.
         self.session_cookies = load_cookies("INDEED_COOKIES")
         self._require_a_whole_session()
+        self._prefer_the_session_s_browser()
         # Set once the sign-in wall has been seen WITH cookies loaded, so the
         # spider complains about the session exactly once instead of on every
         # search left in the queue.
@@ -352,6 +354,70 @@ class IndeedCardsSpider(BaseApiSpider):
             ", ".join(self.impersonate_candidates), self.session.profile.name,
             describe_cookies(self.session_cookies),
         )
+
+    #####################################################################
+    # A SESSION PICKS THE HANDSHAKE - MEASURED, NOT ASSUMED             #
+    #####################################################################
+    SESSION_BROWSER = "firefox"
+
+    def _prefer_the_session_s_browser(self):
+        """
+        Carry a session under the handshake of the browser that made it.
+
+        Measured on the server, 30.07.2026, one address, ten minutes apart:
+
+            ladder as ordered (safari184 first)   8 of 11 requests refused,
+                                                  block budget spent, run over
+            firefox147 pinned                     61 of 61 answered, no
+                                                  challenge, 335 postings
+
+        And the refusals were not spread evenly: every one of the three
+        responses the first run did get came back on firefox147, while
+        safari184 went 0 for 2 and chrome124 0 for 4. The session was exported
+        from Firefox. A session presented under a different browser's
+        handshake is a session being used by something other than what made
+        it, which is a cheaper thing to notice than any fingerprint - the
+        warning in session_cookies.py said so before this measured it.
+
+        Note what this does NOT say: safari184 and chrome124 had both been
+        measured clean by tls_probe minutes earlier, from the same address.
+        The probe sends no cookies. So the ladder is not stale - the pairing
+        is what matters, and only when a session is loaded. An anonymous
+        crawl keeps the measured order untouched.
+
+        Set INDEED_SESSION_BROWSER if the session was made somewhere else,
+        and INDEED_IMPERSONATE still overrides everything for an experiment.
+        """
+        if not self.session_cookies or self._impersonate_pinned:
+            # A pinned token is someone running an experiment on purpose, and
+            # the mismatch warning below would read as a mistake.
+            return
+
+        # `or` rather than a getenv default: .env.example ships the key with
+        # an empty value, and empty has to mean "the default" instead of
+        # "skip this", or copying the example file would silently turn the
+        # pairing off.
+        browser = (os.getenv("INDEED_SESSION_BROWSER", "").strip().lower()
+                   or self.SESSION_BROWSER)
+
+        matching = [t for t in self.impersonate_candidates
+                    if t.startswith(browser)]
+        if not matching:
+            self.logger.warning(
+                "The session was made in %s but no %s handshake is in the "
+                "ladder (%s). Carrying it under another browser is what "
+                "cost a run on 30.07.2026 - expect challenges.",
+                browser, browser, ", ".join(self.impersonate_candidates),
+            )
+            return
+
+        rest = [t for t in self.impersonate_candidates if t not in matching]
+        if self.impersonate_candidates != matching + rest:
+            self.logger.info(
+                "Session was made in %s, so %s leads the ladder - the other "
+                "tokens stay as fallbacks.", browser, matching[0],
+            )
+        self.impersonate_candidates = matching + rest
 
     #####################################################################
     # A HALF-SESSION IS WORSE THAN NO SESSION                           #
