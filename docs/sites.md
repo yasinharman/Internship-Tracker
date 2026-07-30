@@ -408,11 +408,13 @@ full scan. `workPlaces` across the board: 169 on-site, 23 hybrid, 2 remote.
 
 ---
 
-## Indeed - PARKED, but the diagnosis has changed
+## Indeed - PARKED, and now only deployment is left
 
-**Status 29.07.2026.** Still out of `main.py`'s SPIDERS list, for reasons that
-are now about deployment rather than about whether it works. It ran end to end
-that day and stored 18 postings.
+**Status 30.07.2026.** Still out of `main.py`'s SPIDERS list, for one reason
+and it is not about whether the spider works: the server does not yet have the
+proxy and the session this was measured on. The authenticated run happened -
+**61 requests, 61 HTTP 200**, no escalations, 367 items, 93 new postings and 68
+updated.
 
 ### What 28.07 got wrong
 
@@ -447,6 +449,18 @@ value, and `BlockDetectionMiddleware` climbs it. **Re-measure with `python -m
 MultiwebsiteScraper.tls_probe`** rather than reasoning about it - that script
 exists because this will go stale again.
 
+It went stale again the next afternoon, which is how fast this moves. Measured
+30.07 at 16:28 through the same static residential proxy:
+
+| Handshake | Result | Handshake | Result |
+|---|---|---|---|
+| firefox147 | 403 challenge | **safari184** | **200, 1.14 MB** |
+| firefox135 | 403 challenge | **chrome124** | **200, 1.14 MB** |
+
+Exactly inverted from the table above, and the tokens that carried that
+morning's 61/61 run were the ones being refused. The ladder is reordered
+`safari184, chrome124, firefox147, firefox135`. Treat the order as weather.
+
 ### 2. The Referer was the actual trigger
 
 The spider sent `Referer: https://tr.indeed.com/` with `Sec-Fetch-Site:
@@ -466,14 +480,24 @@ the run collects real cookies before searching, and pagination refers to the
 page it actually came from. **This was invisible from a home connection** -
 every combination passed there. It only decided anything from a proxy.
 
-### 3. Page two asks for an account
+### 3. Page two asks for an account - SETTLED 30.07
 
-`branding=page-two-signin` is named after what it is. Anonymous runs stop at
-page one (`ANONYMOUS_MAX_PAGES`); with `INDEED_COOKIES` set, pagination
-resumes. **Not yet measured** whether an account genuinely unlocks it or
-whether the wall is really about how much the address is trusted - every
-page-two attempt so far came from an address that had already been refused
-several times. The first authenticated run settles it.
+`branding=page-two-signin` is named after what it is, and an account genuinely
+opens it. The same url that walled anonymously at 13:18 returned job cards
+with a session at 13:44, from the same address - so the "is it the account or
+is it the address's standing" question is closed in favour of the account.
+All four searches then ran to the `MAX_PAGES = 15` ceiling with results still
+arriving, which means the ceiling is ours, not Indeed's.
+
+Anonymous runs still stop at page one (`ANONYMOUS_MAX_PAGES`), and that is
+still the right ceiling: a control run at 16:30 with no cookies got page one
+data and a page two wall.
+
+**Seen once and not reproducible:** at 13:18 `?start=0` itself redirected to
+`branding=page-two-signin`, i.e. the wall reached page one. Three hours later
+anonymous page one was answering normally again. Do not build on either
+reading - if a run reports zero postings anonymously, this is the thing to
+re-measure rather than the proxy.
 
 ### 4. Refusals cost credit, and we were spending it
 
@@ -489,13 +513,44 @@ stops a run that is being refused instead of grinding through every search
 times every identity - sixteen refusals in under a minute is an efficient way
 to teach a site to distrust an address, and it damages the *next* run too.
 
+### 5. The session outlives the cookies it was afraid of
+
+The account was created through Google with no "remember me" box, so
+`PPID`, `__Secure-PassportAuthProxy-BearerToken` and `-OauthExpires` all fill
+up about 55 minutes after export. The browser renews them with
+`RefreshToken`; the spider cannot. That is what kept the schedule blocked -
+a 03:00 run with a dead session would return zero postings silently.
+
+Measured 30.07 at 16:30 with the file exported at 13:43, nearly three hours
+old:
+
+| Cookies sent | Page 1 | Page 2 |
+|---|---|---|
+| all 32, as exported | 200 data | **200 data** |
+| the 6 durable ones only | 200 data | **200 data** |
+| none (control) | 200 data | sign-in wall |
+
+So the oauth trio is not what opens page two - `CTK, JSESSIONID, PPID, RF,
+SOCK, SHOE` do it on their own, and those are the long-lived ones. Adding a
+password to the account to get a "remember me" checkbox is not needed.
+
+**Still unmeasured past three hours.** The first scheduled 03:00 run is the
+next data point; if it comes back with nothing, re-export the cookies before
+suspecting anything else.
+
 ### Why it is still parked
 
-Not because it fails. Because the server is not set up for it yet: the static
-residential address lives in a local `.env`, Coolify still has the rotating
-pool that never worked here, and the authenticated path has not had its first
-real run. Un-park it once the server has the same proxy configuration this was
-measured on.
+Not because it fails - only because the server is not set up for it. The
+static residential address and the session file both live in a local `.env`,
+while Coolify still has the rotating pool that never worked here. Un-park it
+once the server has `PROXY_URL` and `INDEED_COOKIES`, and measure there with
+`tls_probe --both` first.
+
+`INDEED_COOKIES` must be an **absolute** path: `main.py:137` runs the spider
+with `cwd=MultiwebsiteScraper`, so a bare filename resolves in the wrong
+directory. That mistake cost a run and eight refusals on 30.07 before anyone
+read the first log line; `load_cookies` now raises instead of quietly
+crawling anonymously.
 
 `python main.py --spider indeed_cards` runs it by hand meanwhile.
 

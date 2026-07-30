@@ -17,6 +17,9 @@ httpcache/
 #Passwords
 .env
 
+#exported browser session - this file IS the Indeed account
+indeed-cookies.txt
+
 #json files
 urller.jsonl
 

@@ -120,7 +120,27 @@ def load_cookies(env_var):
 
     # A path, or the cookies themselves? A cookie header always contains
     # "=", and no sane path does, which separates the two without guessing.
-    if "=" not in raw and os.path.exists(raw):
+    if "=" not in raw:
+        # No "=" means this cannot be a cookie header, so it was meant as a
+        # path - and the path is not there. Raising rather than falling through
+        # to {}: an empty dict means "crawl anonymously", which on Indeed is
+        # now a sign-in wall on page ONE, and the log would only say
+        # "no session cookies (anonymous)" as if that had been the intent.
+        #
+        # Measured the hard way on 30.07.2026: INDEED_COOKIES was set to a
+        # bare filename while main.py runs the spider with
+        # cwd=MultiwebsiteScraper (main.py:137), so it resolved against the
+        # wrong directory. The run went out anonymous and spent eight refusals
+        # before anyone read the first line of the log. Hence absolute paths,
+        # and hence this.
+        if not os.path.exists(raw):
+            raise ValueError(
+                f"{env_var} looks like a path but nothing is there: {raw!r} "
+                f"(resolved from cwd {os.getcwd()!r}). Use an absolute path - "
+                f"the spider does not run from the project root. Unset "
+                f"{env_var} entirely if an anonymous crawl really is what you "
+                f"want."
+            )
         with open(raw, encoding="utf-8") as handle:
             text = handle.read().strip()
         return _parse_json(text) if text.startswith(("{", "[")) else \

@@ -180,13 +180,24 @@ class IndeedCardsSpider(BaseApiSpider):
         With INDEED_COOKIES set we are past the wall the ceiling exists for,
         and pagination goes back to being bounded by the results themselves.
 
-        NOT YET MEASURED: whether an account genuinely unlocks page two, or
-        whether the wall is really about how much the exit address is
-        trusted. Every page-two attempt so far was made from an address that
-        had already been refused several times, so the two explanations are
-        still tangled. The first authenticated run settles it - if page two
-        still walls WITH a valid session, the account is not the answer and
-        this should go back to a flat ceiling of 1.
+        MEASURED 30.07.2026, and the account is the answer. The first
+        authenticated run was 61 requests, 61 of them HTTP 200, no
+        escalations, 367 items, and all four searches ran into this ceiling
+        with results still arriving (`pagination/hit_ceiling: 4`). The same
+        url that walled anonymously at 13:18 returned data with a session at
+        13:44 from that same address, so the address was never the reason.
+        MAX_PAGES = 15 is a real ceiling and could go higher.
+
+        The session outlives its oauth cookies. Measured again at 16:30 the
+        same day with a cookie file exported at 13:43 - nearly three hours
+        old, well past the ~55 minutes in which PPID/BearerToken/OauthExpires
+        fill up - page two still answered 200 with data. Repeated with only
+        the durable cookies (CTK, JSESSIONID, PPID, RF, SOCK, SHOE): same
+        result. The oauth trio the browser refreshes is not what opens the
+        wall, so a scheduled run does not need a browser to keep it alive.
+        Control run at the same minute with no cookies: page one data, page
+        two wall. Still unmeasured beyond three hours; a scheduled 03:00 run
+        is the next data point.
     '''
     MAX_PAGES = 15
     ANONYMOUS_MAX_PAGES = 1
@@ -291,9 +302,26 @@ class IndeedCardsSpider(BaseApiSpider):
         by pinning the one token that works today; that is the bug above.
 
         INDEED_IMPERSONATE overrides the order for a one-off experiment.
+
+        Re-measured 30.07.2026, through the static residential proxy, and the
+        ladder had turned over completely in a day:
+
+            firefox147  403 challenge    safari184  200, 1.14 MB, data
+            firefox135  403 challenge    chrome124  200, 1.14 MB, data
+
+        The two tokens that carried the successful morning run were being
+        challenged by the afternoon, and chrome124 - last in the list because
+        Chrome is where the scrutiny goes - was fine. Reordered from that
+        measurement, not from a preference. This is the second reversal in
+        two days: read the ladder as weather, and run tls_probe before
+        assuming today's order is still right.
+
+        Worth knowing: the exported session was created in FIREFOX, and it
+        keeps working under the safari184 handshake. The browser-must-match
+        note in session_cookies.py is a caution, not an observed refusal.
     '''
     IMPERSONATE_CANDIDATES = (
-        "firefox147", "firefox135", "safari184", "chrome124",
+        "safari184", "chrome124", "firefox147", "firefox135",
     )
 
     def __init__(self, *args, **kwargs):
