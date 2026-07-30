@@ -12,6 +12,19 @@ handed to the spider through the environment.
 
     INDEED_COOKIES="CTK=abc...; SESSION_ID=def...; PPID=ghi..."
     INDEED_COOKIES=/run/secrets/indeed_cookies.json   (a path works too)
+    INDEED_COOKIES_B64=Q1RLPWFiYy4uLg==               (and so does base64)
+
+THE BASE64 FORM IS FOR PANELS
+-----------------------------
+A real Indeed session is about 5 KB and contains double quotes inside its
+values (RF=, SOCK=, SHOE=, PREF=). Locally that ruled out putting it in .env
+- no quoting style survived it - and a file was used instead. On a hosting
+panel a file is worse: it means a mount, a copy, and a second place the
+account lives.
+
+Base64 has no quotes, no semicolons and no newlines, so it survives any
+environment-variable box, and it is decoded here rather than being something
+the deployment has to get right. `_B64` wins when both are set.
 
 WHY IT IS NOT AUTOMATED
 -----------------------
@@ -47,6 +60,8 @@ secret, never in the repo, and nothing here ever logs its value - see
 describe(), which is what the logs get.
 """
 
+import base64
+import binascii
 import json
 import os
 
@@ -103,17 +118,40 @@ def _parse_json(text):
     return cookies
 
 
+def _from_text(text):
+    """Header string or JSON - decide by what it starts with."""
+    text = text.strip()
+    return _parse_json(text) if text.startswith(("{", "[")) else \
+        _parse_header_string(text)
+
+
 def load_cookies(env_var):
     """
     Read a session from the environment. Returns {} when nothing is set,
     which means "crawl anonymously" - the normal, unconfigured case.
 
-    The value is either the cookies themselves or a path to a file holding
-    them. A path is worth supporting because a full Indeed session is long
-    enough to be awkward in a panel's environment-variable box, and because
-    a file can be mounted as a secret instead of sitting in the process
-    environment.
+    Three shapes, in order: `<VAR>_B64` (base64 of either of the others),
+    then `<VAR>` as a path to a file, then `<VAR>` as the cookies themselves.
+    A path exists because a session can be mounted as a secret instead of
+    sitting in the process environment; base64 exists because a hosting panel
+    has a text box and not a filesystem.
     """
+    encoded = "".join((os.getenv(f"{env_var}_B64") or "").split())
+    if encoded:
+        try:
+            text = base64.b64decode(encoded, validate=True).decode("utf-8")
+        except (binascii.Error, ValueError, UnicodeDecodeError) as error:
+            # Same reasoning as the missing-path branch below: falling
+            # through to {} would crawl anonymously and log it as if that
+            # had been the intent.
+            raise ValueError(
+                f"{env_var}_B64 is set but is not valid base64 of UTF-8 text "
+                f"({type(error).__name__}). Re-encode the cookie header: "
+                f"base64.b64encode(header.encode()).decode(). Unset it "
+                f"entirely if an anonymous crawl really is what you want."
+            ) from error
+        return _from_text(text)
+
     raw = (os.getenv(env_var) or "").strip()
     if not raw:
         return {}
@@ -123,8 +161,8 @@ def load_cookies(env_var):
     if "=" not in raw:
         # No "=" means this cannot be a cookie header, so it was meant as a
         # path - and the path is not there. Raising rather than falling through
-        # to {}: an empty dict means "crawl anonymously", which on Indeed is
-        # now a sign-in wall on page ONE, and the log would only say
+        # to {}: an empty dict means "crawl anonymously", which on Indeed
+        # means one page out of fifteen, and the log would only say
         # "no session cookies (anonymous)" as if that had been the intent.
         #
         # Measured the hard way on 30.07.2026: INDEED_COOKIES was set to a
@@ -142,14 +180,9 @@ def load_cookies(env_var):
                 f"want."
             )
         with open(raw, encoding="utf-8") as handle:
-            text = handle.read().strip()
-        return _parse_json(text) if text.startswith(("{", "[")) else \
-            _parse_header_string(text)
+            return _from_text(handle.read())
 
-    if raw.startswith(("{", "[")):
-        return _parse_json(raw)
-
-    return _parse_header_string(raw)
+    return _from_text(raw)
 
 
 def describe(cookies):

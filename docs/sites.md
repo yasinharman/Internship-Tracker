@@ -552,6 +552,13 @@ directory. That mistake cost a run and eight refusals on 30.07 before anyone
 read the first log line; `load_cookies` now raises instead of quietly
 crawling anonymously.
 
+On the panel, use **`INDEED_COOKIES_B64`** instead - base64 of the same
+header. The raw header is ~5 KB with double quotes inside its values, which
+is why a file was used locally in the first place, and a file on a hosting
+panel means a mount plus a copy plus a second place the account lives. Base64
+has nothing in it that any environment-variable box will mangle, and it wins
+over `INDEED_COOKIES` when both are set.
+
 `python main.py --spider indeed_cards` runs it by hand meanwhile.
 
 **What parking costs us:** techcareer.net belongs to kariyer.net, so the two
