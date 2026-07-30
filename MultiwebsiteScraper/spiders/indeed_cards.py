@@ -335,6 +335,7 @@ class IndeedCardsSpider(BaseApiSpider):
         # A real signed-in session, exported from a browser by hand. Empty is
         # the normal case and means "crawl anonymously". See session_cookies.
         self.session_cookies = load_cookies("INDEED_COOKIES")
+        self._require_a_whole_session()
         # Set once the sign-in wall has been seen WITH cookies loaded, so the
         # spider complains about the session exactly once instead of on every
         # search left in the queue.
@@ -351,6 +352,42 @@ class IndeedCardsSpider(BaseApiSpider):
             ", ".join(self.impersonate_candidates), self.session.profile.name,
             describe_cookies(self.session_cookies),
         )
+
+    #####################################################################
+    # A HALF-SESSION IS WORSE THAN NO SESSION                           #
+    #####################################################################
+    SIGNED_IN_COOKIES = ("SOCK", "SHOE")
+
+    def _require_a_whole_session(self):
+        """
+        Refuse a session that is missing the cookies that do the work.
+
+        SOCK and SHOE are what actually carry the sign-in: measured
+        30.07.2026, those two plus CTK/JSESSIONID/PPID/RF opened page two on
+        their own, three hours after export, with the oauth cookies long
+        expired. A session without them is not a session.
+
+        The failure this catches is silent by nature. A value truncated on
+        its way through a panel's text box still decodes, still parses, and
+        still yields a plausible-looking pile of cookies - it just quietly
+        crawls one page out of fifteen and reports success, which is the
+        shape of every expensive mistake this spider has already made. Better
+        to stop with the reason on screen.
+        """
+        if not self.session_cookies:
+            return                                  # anonymous, on purpose
+
+        missing = [name for name in self.SIGNED_IN_COOKIES
+                   if name not in self.session_cookies]
+        if missing:
+            raise ValueError(
+                f"The Indeed session is missing {', '.join(missing)} - it "
+                f"loaded {len(self.session_cookies)} cookie(s) but not the "
+                f"ones that carry the sign-in. A value cut short in a panel's "
+                f"environment box does exactly this. Re-export the Cookie "
+                f"header and set INDEED_COOKIES_B64 again; unset it if an "
+                f"anonymous one-page crawl is what you want."
+            )
 
         # Which browser the session was actually created in is not something
         # this process can know - it only sees the cookie values. So it does

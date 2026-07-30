@@ -64,6 +64,7 @@ import base64
 import binascii
 import json
 import os
+import re
 
 
 def _parse_header_string(raw):
@@ -118,6 +119,50 @@ def _parse_json(text):
     return cookies
 
 
+def _decode_base64(encoded, env_var):
+    """
+    Decode what a panel stored, not what base64 says it should have stored.
+
+    An environment-variable box is a text field with a person and a clipboard
+    on one side of it, so the value arrives wrapped in quotes, or broken over
+    lines, or with the line breaks turned into a literal backslash-n, or in
+    the url-safe alphabet. None of that is the session being wrong, and all
+    of it used to arrive as `binascii.Error: Only base64 data is allowed`,
+    which says nothing about which of those happened.
+
+    So: clean the things that are known not to be data, then refuse - loudly
+    and specifically - if anything is left that cannot be base64.
+    """
+    cleaned = "".join(encoded.split())          # spaces, tabs, real newlines
+    cleaned = cleaned.replace("\\n", "").replace("\\r", "")  # escaped ones
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in "\"'":
+        cleaned = cleaned[1:-1]                 # a panel that kept the quotes
+    cleaned = cleaned.replace("-", "+").replace("_", "/")    # url-safe alphabet
+
+    stray = sorted(set(re.findall(r"[^A-Za-z0-9+/=]", cleaned)))
+    if stray:
+        raise ValueError(
+            f"{env_var} holds {len(encoded)} characters that are not base64: "
+            f"found {', '.join(repr(c) for c in stray[:8])}. The value was "
+            f"probably mangled on its way into the environment - re-paste it "
+            f"as a single line with no quotes."
+        )
+
+    cleaned += "=" * (-len(cleaned) % 4)        # padding a copy can lose
+
+    try:
+        return base64.b64decode(cleaned).decode("utf-8")
+    except (binascii.Error, ValueError, UnicodeDecodeError) as error:
+        raise ValueError(
+            f"{env_var} is base64 but does not decode to text "
+            f"({type(error).__name__}); {len(cleaned)} characters received. "
+            f"A truncated value does this - panels have length limits. "
+            f"Re-encode with: python -c \"import base64,sys; "
+            f"print(base64.b64encode(open(sys.argv[1],'rb').read().strip())"
+            f".decode())\" indeed-cookies.txt"
+        ) from error
+
+
 def _from_text(text):
     """Header string or JSON - decide by what it starts with."""
     text = text.strip()
@@ -136,21 +181,19 @@ def load_cookies(env_var):
     sitting in the process environment; base64 exists because a hosting panel
     has a text box and not a filesystem.
     """
-    encoded = "".join((os.getenv(f"{env_var}_B64") or "").split())
+    encoded = (os.getenv(f"{env_var}_B64") or "").strip()
     if encoded:
-        try:
-            text = base64.b64decode(encoded, validate=True).decode("utf-8")
-        except (binascii.Error, ValueError, UnicodeDecodeError) as error:
-            # Same reasoning as the missing-path branch below: falling
-            # through to {} would crawl anonymously and log it as if that
-            # had been the intent.
+        # Anything wrong here raises rather than falling through to {}: an
+        # empty dict means "crawl anonymously", and the log would report that
+        # as if it had been the intent. Same reasoning as the path branch.
+        cookies = _from_text(_decode_base64(encoded, f"{env_var}_B64"))
+        if not cookies:
             raise ValueError(
-                f"{env_var}_B64 is set but is not valid base64 of UTF-8 text "
-                f"({type(error).__name__}). Re-encode the cookie header: "
-                f"base64.b64encode(header.encode()).decode(). Unset it "
-                f"entirely if an anonymous crawl really is what you want."
-            ) from error
-        return _from_text(text)
+                f"{env_var}_B64 decoded cleanly but held no cookies. It "
+                f"should be base64 of a Cookie header - 'CTK=...; SOCK=...' - "
+                f"or of a cookie exporter's JSON."
+            )
+        return cookies
 
     raw = (os.getenv(env_var) or "").strip()
     if not raw:

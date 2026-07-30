@@ -559,6 +559,20 @@ panel means a mount plus a copy plus a second place the account lives. Base64
 has nothing in it that any environment-variable box will mangle, and it wins
 over `INDEED_COOKIES` when both are set.
 
+The first attempt on the server failed anyway - `binascii.Error: Only base64
+data is allowed` - so the decoder now cleans what a clipboard and a text box
+do to a value before judging it: whitespace, real newlines, `\n` written out
+literally, surrounding quotes, url-safe alphabet, missing padding. Anything
+left that is not base64 is named in the error rather than described as
+invalid.
+
+**A truncated value is the dangerous one**, because it decodes and parses and
+yields a plausible pile of cookies that just happens not to include the
+sign-in. `IndeedCardsSpider.SIGNED_IN_COOKIES` refuses a session without
+`SOCK` and `SHOE` for that reason - measured, those two are what carry it. A
+cut after them costs only the oauth cookies, which do not matter, so that
+session is allowed to run.
+
 `python main.py --spider indeed_cards` runs it by hand meanwhile.
 
 **What parking costs us:** techcareer.net belongs to kariyer.net, so the two
