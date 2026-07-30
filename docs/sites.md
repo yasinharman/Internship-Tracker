@@ -53,6 +53,31 @@ One run of this says what took two manual audits to discover. Read it as:
 Because the crawl runs daily and never deletes, a posting missed today is
 picked up tomorrow. Index instability delays discovery; it does not lose it.
 
+## Indeed search terms - measured 30.07.2026
+
+Five field terms were added on top of the four broad ones, because depth was
+not the constraint: pages 10-15 of `intern` returned the same six postings
+repeatedly. First page of each new term, measured before adding them:
+
+| Term | Records | Passed the filter |
+|---|---|---|
+| `yazılım stajyer` | 9 | 8 |
+| `bilgisayar mühendisliği stajyer` | 3 | 3 |
+| `software intern` | 15 | 8 |
+| `developer intern` | 13 | 3 |
+| `IT intern` | 15 | 14 |
+
+46 unique postings across the five, 8 of them found by more than one term -
+and they surface what the broad terms do not: *Yazılım Stajyeri*, *Long-Term
+Full Stack Developer Intern*, *Working Student (Software Development
+Engineer)*, *Cybersecurity Pre-Sales Stajyeri*. The run that used only broad
+terms found 157 postings of which the classifier kept 14 as IT.
+
+The small record counts also bound the cost: a narrow term runs out of
+results long before `MAX_PAGES`, so nine searches do not mean nine times the
+requests. Field terms are queued first - `DOMAIN_BLOCK_BUDGET` ends a run
+partway through, and whatever is last is what gets lost.
+
 ## The search we are reproducing on every site
 
 Three axes, all applied at the source so we download only what is wanted:
@@ -568,6 +593,21 @@ only applies to an anonymous crawl. `_prefer_the_session_s_browser` puts the
 session's browser at the head of the ladder whenever cookies are loaded,
 leaving the measured order alone when they are not.
 `INDEED_SESSION_BROWSER` changes it if the session is ever made elsewhere.
+
+**But do not carry the pairing further than the measurement goes.** Two hours
+after the server run, the same Firefox session was carried from the HOME
+machine through the same proxy: `safari184` answered 200 with data (twice,
+an hour apart) and `firefox147` was refused. That is the server's result
+inverted, with the exit address, the session and the hour all held constant.
+The remaining difference is the client itself - curl_cffi on Windows/Python
+3.14 here against Linux/Python 3.12 there.
+
+So the honest statement is narrower than "a session must wear its own
+browser": the accepted combination is (client × handshake × session), it is
+not stable across machines, and the ladder exists precisely because none of
+it stays decided. Leading with the session's browser is what measured right
+**on the server, which is where this runs**. Re-measure there, never here -
+the same lesson that cost 28.07, and again on 30.07.
 
 ### Why it stayed parked so long
 

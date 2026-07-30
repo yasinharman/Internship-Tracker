@@ -144,7 +144,39 @@ class IndeedCardsSpider(BaseApiSpider):
     # One search per term, merged afterwards. Indeed has no category taxonomy,
     # only free-text search, so a single query would miss whatever it does not
     # literally match - "stajyer" does not find "Long Term Intern".
+    #
+    # WIDER BEATS DEEPER. The four broad terms below all ran into MAX_PAGES on
+    # 30.07 with results still arriving, which reads as "raise the ceiling"
+    # and is a trap: pages 10-15 of `intern` returned the same six postings
+    # over and over (Haleon, Peak, Maersk, GE, Novartis), all of them already
+    # stored. Indeed pads a deep result set rather than ending it. A new term
+    # costs one request for its first page and brings fifteen postings nobody
+    # has seen; page 16 of an old term costs one request for fifteen repeats.
+    #
+    # The field terms were added 30.07 for that reason. They also address the
+    # yield problem the classifier exposes: of 157 postings that run found,
+    # 14 were IT and 112 were filed as "other" - cleaners, waiters, teachers,
+    # HR. The broad terms are what a general job search returns; these ask
+    # for what is actually wanted.
+    #
+    # Keep both kinds. The discovery report prints found/sole per term, so a
+    # term that stops earning its request can be measured out rather than
+    # guessed out - and note that on 30.07 EVERY term was the sole finder of
+    # something, including the two the field terms most overlap with.
+    # ORDER MATTERS, and not for tidiness. Searches enter the queue in this
+    # order, and DOMAIN_BLOCK_BUDGET can end a run partway through - it did on
+    # 30.07, eight refusals in, with two of the four searches never started.
+    # Whatever is last is what gets lost, so the precise terms go first and
+    # the broad ones - which mostly re-find what is already stored - absorb
+    # the loss.
     SEARCHES = {
+        # field: the job-shape term plus what we actually want it to be about
+        "yazilim-stajyer": "yazılım stajyer",
+        "bilgisayar-muhendisligi-stajyer": "bilgisayar mühendisliği stajyer",
+        "software-intern": "software intern",
+        "developer-intern": "developer intern",
+        "it-intern": "IT intern",
+        # broad: the job-shape terms, high volume, low precision
         "stajyer": "stajyer",
         "intern": "intern",
         "part-time": "part time",
@@ -381,9 +413,22 @@ class IndeedCardsSpider(BaseApiSpider):
 
         Note what this does NOT say: safari184 and chrome124 had both been
         measured clean by tls_probe minutes earlier, from the same address.
-        The probe sends no cookies. So the ladder is not stale - the pairing
-        is what matters, and only when a session is loaded. An anonymous
-        crawl keeps the measured order untouched.
+        The probe sends no cookies. So the ladder is not stale - something
+        about carrying a session changes the verdict, and an anonymous crawl
+        keeps the measured order untouched.
+
+        AND THE PAIRING IS NOT THE WHOLE STORY. Later the same evening, from
+        the HOME machine through that same proxy, the Firefox session was
+        carried under safari184 and answered 200 with data, twice, while
+        firefox147 was refused - the exact opposite of the server. Same exit
+        address, same session, same hour. So the accepted combination
+        involves the client environment too (curl_cffi on Windows/3.14 here,
+        Linux/3.12 there), and "use the session's browser" is the rule that
+        fits where this actually runs rather than a law about Cloudflare.
+
+        Which is only the standing rule restated: measure where the spider
+        runs. A verdict from a laptop says nothing about the server, and that
+        confusion has now cost this project three separate afternoons.
 
         Set INDEED_SESSION_BROWSER if the session was made somewhere else,
         and INDEED_IMPERSONATE still overrides everything for an experiment.
