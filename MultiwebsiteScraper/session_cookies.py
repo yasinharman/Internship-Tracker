@@ -141,11 +141,28 @@ def _decode_base64(encoded, env_var):
 
     stray = sorted(set(re.findall(r"[^A-Za-z0-9+/=]", cleaned)))
     if stray:
+        # The first thing this ever went wrong on, on the server, 30.07.2026:
+        # the variable held the NAME of the file holding the base64 rather
+        # than the base64. Worth naming, because "not valid base64" sends you
+        # looking for a mangled paste instead of at the value itself. Only
+        # INDEED_COOKIES takes a path; this one takes the contents.
+        # Short, and shaped like a name or a path. We are already in the
+        # error branch, so nothing that would otherwise have loaded is at
+        # risk of being described this way.
+        looks_like_a_filename = (
+            len(cleaned) < 200 and ("." in cleaned or "/" in cleaned)
+        )
+        hint = (
+            f"That looks like a filename. This variable takes the CONTENTS of "
+            f"the file, not its name - {env_var[:-4]} is the one that accepts "
+            f"a path."
+            if looks_like_a_filename else
+            f"The value was probably mangled on its way into the environment "
+            f"- re-paste it as a single line with no quotes."
+        )
         raise ValueError(
             f"{env_var} holds {len(encoded)} characters that are not base64: "
-            f"found {', '.join(repr(c) for c in stray[:8])}. The value was "
-            f"probably mangled on its way into the environment - re-paste it "
-            f"as a single line with no quotes."
+            f"found {', '.join(repr(c) for c in stray[:8])}. {hint}"
         )
 
     cleaned += "=" * (-len(cleaned) % 4)        # padding a copy can lose
