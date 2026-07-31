@@ -165,13 +165,38 @@ class KariyerNetCardsSpider(BaseApiSpider):
     '''
     IMPERSONATE_WITH_CURL = True
 
+    #############################################
+    # HOW HARD TO KNOCK - AND THE DAY WE LEARNT #
+    #############################################
+    '''
+        kariyer.net runs PerimeterX, and on 31.07.2026 it stopped being enough
+        to be merely unhurried.
+
+        A verification run of this spider - roughly 35 requests at about one a
+        second, all through the static residential exit - got that address
+        refused site-wide. Measured straight afterwards: from the proxy every
+        one of the four handshakes returned the same 5065-byte block page,
+        while from a home address all four returned 460 kB of cards. Same
+        tokens, same minute; the only difference was where the request came
+        from. An hour earlier the proxy had still been good for one handshake
+        out of four, so the penalty had been building all day - the morning's
+        refused crawls went out from that address too.
+
+        Hence one request at a time, four seconds apart, matching indeed_cards.
+        Concurrency was never real anyway: CurlImpersonateMiddleware fetches
+        synchronously and blocks the reactor, so CONCURRENT_REQUESTS=2 bought
+        nothing while reading as permission to go twice as fast. The searches
+        are small - two of them, around 35 requests all told - so this costs
+        about two and a half minutes on a job that runs every other day.
+
+        And yes, this comment is outside the dict for the reason the other
+        block gives. It was written inside it first.
+    '''
     custom_settings = {
         **BaseApiSpider.custom_settings,
-        # kariyer.net runs PerimeterX. Stay unhurried - a listing page is
-        # 115 kB and there are only a handful of them.
-        "CONCURRENT_REQUESTS": 2,
-        "CONCURRENT_REQUESTS_PER_DOMAIN": 2,
-        "DOWNLOAD_DELAY": 2,
+        "CONCURRENT_REQUESTS": 1,
+        "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
+        "DOWNLOAD_DELAY": 4,
         "RANDOMIZE_DOWNLOAD_DELAY": True,
 
         # 403 is not in Scrapy's default retry list, and the first page of a
