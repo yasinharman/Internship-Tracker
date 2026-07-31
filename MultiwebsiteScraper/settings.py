@@ -80,6 +80,10 @@ COOKIES_ENABLED = True
 DOWNLOADER_MIDDLEWARES = {
     "MultiwebsiteScraper.api_middlewares.BlockDetectionMiddleware": 590,
     "MultiwebsiteScraper.api_middlewares.ResidentialProxyMiddleware": 725,
+    # 730: after ResidentialProxyMiddleware puts the proxy url in meta, before
+    # HttpProxyMiddleware (750) moves its credentials into a header that
+    # curl_cffi never sees. Only spiders with IMPERSONATE_WITH_CURL use it.
+    "MultiwebsiteScraper.api_middlewares.CurlImpersonateMiddleware": 730,
     # 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
     # 'scrapy_user_agents.middlewares.RandomUserAgentMiddleware': 400,
 }

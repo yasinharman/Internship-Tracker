@@ -36,7 +36,10 @@ Middleware priorities matter here:
 import logging
 from collections import defaultdict
 
+from curl_cffi import requests as curl_requests
 from scrapy.exceptions import IgnoreRequest, NotConfigured
+from scrapy.responsetypes import responsetypes
+from scrapy.utils.python import to_unicode
 from scrapy.utils.response import response_status_message
 
 from .browser_session import profile_for_impersonate
@@ -532,3 +535,136 @@ class BlockDetectionMiddleware:
         retry.dont_filter = True
         retry.priority = request.priority + 1
         return retry
+
+
+###############################################################
+# CURL_CFFI TRANSPORT - ACTUALLY REPLAY THE BROWSER HANDSHAKE #
+###############################################################
+class CurlImpersonateMiddleware:
+    '''
+        Fetches a request with curl_cffi instead of Scrapy's downloader, so
+        the TLS ClientHello is a real browser's rather than Python's.
+
+        WHY NOT scrapy-impersonate, WHICH IS ALREADY IN requirements.txt:
+        it is broken against the pinned Scrapy. 1.7.0 (the newest release)
+        defines `download_request(self, request)` while Scrapy 2.13.3 calls it
+        with `(request, spider)`, so every request dies with
+
+            TypeError: ImpersonateDownloadHandler.download_request() takes 2
+            positional arguments but 3 were given
+
+        That went unnoticed for days because the DOWNLOAD_HANDLERS setting
+        that would have installed it never took effect: it was written inside
+        custom_settings directly after a triple-quoted comment, and Python
+        concatenated the two into one enormous dict key. The typo was load-
+        bearing - had the setting worked, indeed_cards would have died on
+        every request instead of quietly crawling over Scrapy's own
+        downloader. See the comment in spiders/kariyernet_cards.py.
+
+        So this replaces the library rather than fixing the setting, and it
+        depends on nothing but curl_cffi - the same call tls_probe already
+        makes, which is how every handshake measurement in docs/sites.md was
+        taken.
+
+        OPT-IN, PER SPIDER. A spider gets this transport only by setting
+        IMPERSONATE_WITH_CURL = True. indeed_cards deliberately does NOT:
+        it writes meta["impersonate"] too, but it has been crawling perfectly
+        well on the plain downloader (773 postings on 31.07.2026) carried by
+        the residential proxy and its session cookies. Switching its transport
+        would be changing the one thing that works, for a benefit nobody has
+        measured.
+
+        Priority 730 is between ResidentialProxyMiddleware (725), which puts
+        the proxy url in meta, and Scrapy's HttpProxyMiddleware (750), which
+        would strip the credentials out of it into a header curl_cffi never
+        sees. It also sits after CookiesMiddleware (700), so the Cookie header
+        is already built by the time we copy the headers across.
+
+        KNOWN COST - THIS FETCH BLOCKS THE REACTOR. curl_cffi is synchronous,
+        so Twisted stops for the length of every request and CONCURRENT_
+        REQUESTS stops meaning anything: the crawl is serial while this
+        transport is in use. kariyer.net can afford it - two searches, a
+        handful of listing pages, roughly a second each, and its settings ask
+        for a 2s delay between requests anyway, which is longer than the stall.
+        A spider with sixty requests could not, and that is the second reason
+        indeed_cards is left alone. If this ever needs to scale, the fix is to
+        run the call in a thread (deferToThread) rather than to widen its use.
+    '''
+
+    def __init__(self, crawler):
+        self.crawler = crawler
+        self.timeout = crawler.settings.getfloat("DOWNLOAD_TIMEOUT", 180)
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        return cls(crawler)
+
+    def process_request(self, request, spider):
+        if not getattr(spider, "IMPERSONATE_WITH_CURL", False):
+            return None
+
+        token = request.meta.get("impersonate")
+        if not token:
+            # Nothing to replay - let Scrapy download it normally.
+            return None
+
+        headers = {
+            to_unicode(name): to_unicode(b", ".join(values))
+            for name, values in request.headers.items()
+        }
+
+        proxy = request.meta.get("proxy")
+        proxies = {"http": proxy, "https": proxy} if proxy else None
+
+        try:
+            reply = curl_requests.request(
+                request.method,
+                request.url,
+                headers=headers,
+                data=request.body or None,
+                impersonate=token,
+                proxies=proxies,
+                timeout=self.timeout,
+                # Scrapy's RedirectMiddleware has to see the 3xx itself: a
+                # sign-in redirect IS the block signal on Indeed, and
+                # following it here would hide it behind a 200.
+                allow_redirects=False,
+                verify=True,
+            )
+        except Exception as error:
+            # Raised, not swallowed: ResidentialProxyMiddleware.process_
+            # exception reads a transport error as "this exit node is dead"
+            # and rotates the session. Returning None here would instead
+            # re-download the request over Python's TLS and get a refusal
+            # that looks like the site's verdict on us.
+            spider.logger.warning(
+                "curl_cffi (%s) could not fetch %s: %s",
+                token, request.url, error,
+            )
+            raise
+
+        # Multi-value headers matter here - Set-Cookie arrives one per line
+        # and dict() would keep only the last of them.
+        raw_headers = defaultdict(list)
+        try:
+            items = reply.headers.multi_items()
+        except AttributeError:
+            items = reply.headers.items()
+        for name, value in items:
+            # curl_cffi already decompressed the body, but the header saying
+            # so survives. Left in place, HttpCompressionMiddleware would try
+            # to decompress plain bytes and fail on a response that is fine.
+            if name.lower() in ("content-encoding", "content-length"):
+                continue
+            raw_headers[name].append(value)
+
+        response_class = responsetypes.from_args(
+            headers=raw_headers, url=reply.url, body=reply.content,
+        )
+        return response_class(
+            url=reply.url,
+            status=reply.status_code,
+            headers=raw_headers,
+            body=reply.content,
+            request=request,
+        )

@@ -30,9 +30,11 @@ Attribute names are matched in lowercase - HTML parsers normalise
 `workTypeId` to `worktypeid`, and the CamelCase form silently matches nothing.
 """
 
+import os
 from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
 
 from ..api_spider import BaseApiSpider
+from ..browser_session import BrowserSession, profile_for_impersonate
 from ..job_filters import looks_like_internship
 from ..loaders import KariyerNetLoader
 
@@ -132,16 +134,110 @@ class KariyerNetCardsSpider(BaseApiSpider):
     # So this set is a safety net, not the mechanism.
     WANTED_WORK_TYPES = {"P", "S"}
 
+    #########################################################
+    # WHY THIS SPIDER REPLAYS A BROWSER HANDSHAKE TOO       #
+    #########################################################
+    '''
+        "Nothing exotic is needed while the exit IP looks residential"
+        stopped being true on 31.07.2026. The crawl came back with zero
+        postings twice while the residential proxy was up and the search URLs
+        opened normally in a browser, which reads like a dead selector and is
+        not one. Measured through the proxy that day:
+
+            safari184   403,   5 kB      firefox147  200, 460 kB, data
+            chrome124   403,   5 kB      firefox135  403,   5 kB
+
+        So the page was there the whole time and PerimeterX was refusing the
+        handshake, exactly the failure indeed_cards met on 29.07 - and the
+        comment there ("only this spider needs it; kariyer.net and
+        techcareer.net are fine with Scrapy's own downloader") had simply gone
+        stale. Scrapy's own downloader sends Python's ClientHello, which is
+        refused before a header is read; the residential proxy cannot help,
+        because CONNECT tunnels our fingerprint through unchanged.
+
+        techcareer.net is still fine without this - it defines no handshake
+        of its own and nothing here reaches it.
+
+        The transport is CurlImpersonateMiddleware, not the scrapy-impersonate
+        package that requirements.txt has carried all along: that package is
+        broken against the pinned Scrapy and never actually ran. The middleware
+        docstring has the whole story, including why nobody noticed.
+    '''
+    IMPERSONATE_WITH_CURL = True
+
     custom_settings = {
         **BaseApiSpider.custom_settings,
-        # kariyer.net runs PerimeterX. Nothing exotic is needed while the exit
-        # IP looks residential, but stay unhurried - a listing page is 115 kB
-        # and there are only a handful of them.
+        # kariyer.net runs PerimeterX. Stay unhurried - a listing page is
+        # 115 kB and there are only a handful of them.
         "CONCURRENT_REQUESTS": 2,
         "CONCURRENT_REQUESTS_PER_DOMAIN": 2,
         "DOWNLOAD_DELAY": 2,
         "RANDOMIZE_DOWNLOAD_DELAY": True,
+
+        # 403 is not in Scrapy's default retry list, and the first page of a
+        # search is the one that must not be lost: no page 1, no pagination,
+        # no postings. Same reasoning as indeed_cards.
+        "RETRY_HTTP_CODES": [403, 408, 429, 500, 502, 503, 504, 522, 524],
+        "RETRY_TIMES": 3,
     }
+
+    #####################################################
+    # WHICH HANDSHAKE TO REPLAY - A LADDER, NOT A VALUE #
+    #####################################################
+    '''
+        Ordered by what the 31.07.2026 measurement above said, firefox147
+        first because it was the only token that came back with data. The
+        losers stay in the list: BlockDetectionMiddleware walks them when a
+        response comes back as a block, so a stale first entry costs one
+        retry instead of the whole crawl.
+
+        Do NOT pin this to the one token that works today. Indeed's ladder
+        reversed twice in two days - safari184 and chrome124 were carrying it
+        on 30.07 and are the ones refused here on 31.07. Re-measure with
+
+            python -m MultiwebsiteScraper.tls_probe --proxy \
+                --url "<a search URL from SEARCHES>" --expect "ad-card"
+
+        and reorder from what it prints. KARIYERNET_IMPERSONATE pins one
+        token for a one-off experiment.
+    '''
+    IMPERSONATE_CANDIDATES = (
+        "firefox147", "safari184", "chrome124", "firefox135",
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        override = os.getenv("KARIYERNET_IMPERSONATE", "").strip()
+        self.impersonate_candidates = (
+            [override] if override else list(self.IMPERSONATE_CANDIDATES)
+        )
+
+        # The handshake and the headers have to describe the same browser: a
+        # Firefox 147 ClientHello arriving under a random profile's Chrome
+        # user-agent is a mismatch of exactly the kind PerimeterX looks for.
+        # BaseApiSpider picked a random profile in its __init__; replace it
+        # with the one that belongs to the token we are about to use.
+        token = self.impersonate_candidates[0]
+        self.session = BrowserSession(
+            profile=profile_for_impersonate(token), origin=self.origin,
+        )
+
+        self.logger.info(
+            "Handshake ladder: %s (identity: %s)",
+            ", ".join(self.impersonate_candidates), self.session.profile.name,
+        )
+
+    def default_meta(self):
+        """
+        On EVERY request, warm-up included - see the base class. This spider
+        has no warm-up today, but a request built anywhere else and sent with
+        Python's fingerprint would be refused and look like a site block.
+        """
+        return {
+            "impersonate": self.impersonate_candidates[0],
+            "impersonate_candidates": self.impersonate_candidates,
+        }
 
     ###############################################################
     # PAGINATION IDENTITY - THE POSTING LINK, NOT THE ELEMENT     #
