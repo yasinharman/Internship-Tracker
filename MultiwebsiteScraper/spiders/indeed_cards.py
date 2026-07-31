@@ -247,6 +247,61 @@ class IndeedCardsSpider(BaseApiSpider):
 
         return super().next_page_allowed(page, records, search_key)
 
+    ###################################################################
+    # TLS FINGERPRINT - AND THE HANDLER THAT WAS NEVER INSTALLED      #
+    ###################################################################
+    '''
+        Cloudflare fingerprints the TLS handshake itself (JA3/JA4), not just
+        the IP and headers. Measured from one machine, one address, one
+        moment, with identical headers:
+
+            curl              -> 200
+            python requests   -> 403
+            Scrapy            -> 403 on every request
+
+        Python's OpenSSL stack has a different ClientHello from a browser's,
+        and Indeed rejects it before a single header is read. The residential
+        proxy does not change that: it tunnels with CONNECT, so our own
+        ClientHello still reaches the server.
+
+        THAT IS THE THEORY. WHAT THIS SPIDER ACTUALLY DOES IS SIMPLER, and it
+        took until 31.07.2026 to notice: it crawls over Scrapy's own
+        downloader and always has. Two mistakes cancelled out.
+
+        First, a DOWNLOAD_HANDLERS entry pointing at scrapy-impersonate used
+        to live in custom_settings BELOW this comment - and never took effect,
+        because a triple-quoted comment written inside a dict does not stay a
+        comment. Python concatenates it with the string literal that follows,
+        so the setting's name was swallowed into one enormous key. No error,
+        no handler, no impersonation. (`[k for k in
+        IndeedCardsSpider.custom_settings if len(k) > 40]` was how it finally
+        showed itself.)
+
+        Second, the package could not have worked anyway: scrapy-impersonate
+        1.7.0, the newest release, is incompatible with the pinned Scrapy
+        2.13.3 and raises TypeError on every request. So the typo was load-
+        bearing. Had the setting worked, this spider would have died on its
+        first request rather than quietly returning 773 postings, as it did on
+        the morning this was found.
+
+        What actually gets Indeed's pages, then, is the static residential
+        exit address plus the signed-in session cookies - not the handshake.
+        IMPERSONATE_CANDIDATES below and the ladder in BlockDetectionMiddleware
+        still swap meta["impersonate"] on a block, but nothing reads it here,
+        so treat the "Switching TLS handshake" log line as noise on this
+        spider. tls_probe calls curl_cffi directly, which is why its
+        measurements never described what this crawl was doing.
+
+        THE DEAD SETTING HAS BEEN REMOVED, NOT REPAIRED. Repairing it would
+        install a transport that raises TypeError and take a working crawl
+        down with it. If Indeed ever does start refusing us on the handshake,
+        the way in is CurlImpersonateMiddleware - already written, already
+        proven on kariyer.net - by setting IMPERSONATE_WITH_CURL = True on
+        this class. Read that middleware's docstring first: it fetches
+        synchronously and would serialise a sixty-request crawl.
+
+        TWISTED_REACTOR below is a real, live setting and stays.
+    '''
     custom_settings = {
         **BaseApiSpider.custom_settings,
         # The most protected of the sites and the only independent source left,
@@ -256,36 +311,6 @@ class IndeedCardsSpider(BaseApiSpider):
         "DOWNLOAD_DELAY": 4,
         "RANDOMIZE_DOWNLOAD_DELAY": True,
 
-        ###################################################################
-        # TLS FINGERPRINT - THE REASON THIS SITE NEEDS SPECIAL TREATMENT  #
-        ###################################################################
-        '''
-            Cloudflare fingerprints the TLS handshake itself (JA3/JA4), not
-            just the IP and headers. Measured from one machine, one address,
-            one moment, with identical headers:
-
-                curl              -> 200
-                python requests   -> 403
-                Scrapy            -> 403 on every request
-
-            Python's OpenSSL stack has a different ClientHello from a
-            browser's, and Indeed rejects it before a single header is read.
-
-            The residential proxy does NOT help here. It tunnels with CONNECT,
-            so our own ClientHello still goes to the server - the address
-            changes, the fingerprint does not.
-
-            scrapy-impersonate swaps the transport for curl_cffi, which
-            replays a real browser handshake. WHICH browser is not a detail,
-            and it does not stay decided - see IMPERSONATE_CANDIDATES below.
-
-            Only this spider needs it; kariyer.net and techcareer.net are fine
-            with Scrapy's own downloader.
-        '''
-        "DOWNLOAD_HANDLERS": {
-            "http": "scrapy_impersonate.ImpersonateDownloadHandler",
-            "https": "scrapy_impersonate.ImpersonateDownloadHandler",
-        },
         "TWISTED_REACTOR": "twisted.internet.asyncioreactor.AsyncioSelectorReactor",
 
         # Impersonation gets almost everything through, but not quite all: one
