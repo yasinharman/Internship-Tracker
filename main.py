@@ -23,6 +23,7 @@ second crawl on top of the first.
 """
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -98,12 +99,28 @@ DEDUPE_TIMEOUT = int(os.getenv("DEDUPE_TIMEOUT", "120"))
 ####################################
 # RUN ONE SPIDER AS A SUBPROCESS   #
 ####################################
-def _read_item_count(stats_path):
-    """Item count the spider left behind, or None if it left nothing."""
+
+# Cosmetic only - used by _print_run_summary() to show a name a human
+# recognises instead of the internal spider class name.
+SITE_LABELS = {
+    "kariyernet_cards": "kariyer.net",
+    "techcareer_api": "techcareer.net",
+    "indeed_cards": "Indeed",
+}
+
+
+def _read_spider_stats(stats_path):
+    """
+    The dict BaseApiSpider._report_item_count left behind, or None if it
+    left nothing (a crash before close, or an older spider class).
+
+    stats["items"] matters as much as the exit code: a blocked spider opens,
+    gets refused on every request, closes cleanly and exits 0.
+    """
     try:
         with open(stats_path, encoding="utf-8") as handle:
             line = handle.read().strip().splitlines()[-1]
-        return int(line.split("\t")[1])
+        return json.loads(line)
     except (OSError, IndexError, ValueError):
         return None
     finally:
@@ -115,12 +132,8 @@ def _read_item_count(stats_path):
 
 def run_spider(spider_name):
     """
-    Returns (ok, item_count). item_count is None when the spider did not
-    report one - a crash before close, or an older spider class.
-
-    The count matters as much as the exit code: a blocked spider opens, gets
-    refused on every request, closes cleanly and exits 0. See
-    BaseApiSpider._report_item_count.
+    Returns (ok, stats). stats is the dict from _read_spider_stats(), or
+    None when the spider did not report one.
     """
     print(f"\n=== {spider_name}: starting ===", flush=True)
     started = time.monotonic()
@@ -150,14 +163,15 @@ def run_spider(spider_name):
             f"(raise SPIDER_TIMEOUT if this is legitimate) ===",
             flush=True,
         )
-        return False, _read_item_count(stats_path)
+        return False, _read_spider_stats(stats_path)
 
     except FileNotFoundError as error:
         print(f"=== {spider_name}: could not start - {error} ===", flush=True)
         return False, None
 
     elapsed = time.monotonic() - started
-    items = _read_item_count(stats_path)
+    stats = _read_spider_stats(stats_path)
+    items = stats["items"] if stats else None
     found = "?" if items is None else items
 
     if exit_code == 0:
@@ -165,13 +179,70 @@ def run_spider(spider_name):
             f"=== {spider_name}: finished in {elapsed:.0f}s, {found} posting(s) ===",
             flush=True,
         )
-        return True, items
+        return True, stats
 
     print(
         f"=== {spider_name}: FAILED (exit code {exit_code}) after {elapsed:.0f}s ===",
         flush=True,
     )
-    return False, items
+    return False, stats
+
+
+####################################################
+# THE HUMAN-READABLE VERSION OF WHAT JUST HAPPENED #
+####################################################
+def _print_run_summary(results):
+    """
+    One plain-language block per site: requests made, searches run and what
+    each found, postings kept, and whether a block cut the run short.
+
+    Meant to be read once a day without opening the scrapy log above it -
+    the log is for debugging, this is for "did today's run work".
+    """
+    print(f"\n{'=' * 60}")
+    print("CALISTIRMA OZETI")
+    print(f"{'=' * 60}")
+
+    total_items = 0
+    for name, (ok, stats) in results.items():
+        label = SITE_LABELS.get(name, name)
+        print(f"\n{label} ({name})")
+
+        if not ok and not stats:
+            print("  Calismadi - crash veya baslamadan hata. Log'a bak.")
+            continue
+
+        items = stats.get("items", 0) if stats else 0
+        requests = stats.get("requests") if stats else None
+        total_items += items
+
+        request_bit = f"{requests} istek atildi" if requests is not None else "istek sayisi bilinmiyor"
+        print(f"  {request_bit} -> {items} ilan bulundu")
+
+        responses = (stats or {}).get("responses") or {}
+        if responses:
+            parts = [f"{code}: {count}" for code, count in sorted(responses.items())]
+            print(f"  Yanitlar: {', '.join(parts)}")
+
+        routes = (stats or {}).get("routes") or {}
+        if routes:
+            parts = [f'"{route}" ({count} ilan)' for route, count in routes.items()]
+            print(f"  Aramalar: {' | '.join(parts)}")
+
+        if (stats or {}).get("blocked"):
+            print(
+                "  Not: Site bir noktada engelledi (Cloudflare/PerimeterX vb.) "
+                "- kod kendi guvenlik butcesiyle temiz sekilde durdu, o ana "
+                "kadar bulunanlar korundu."
+            )
+
+        if not ok:
+            print("  UYARI: bu site FAILED olarak isaretlendi, log'daki hataya bak.")
+
+    succeeded = sum(1 for ok, _ in results.values() if ok)
+    print(f"\n{'-' * 60}")
+    print(f"TOPLAM: {total_items} ilan | {succeeded}/{len(results)} site basarili")
+    print(f"{'-' * 60}")
 
 
 #########################################
@@ -183,7 +254,8 @@ def run_spiders(spiders=None):
     started = datetime.now()
     print(f"Crawl started at {started:%Y-%m-%d %H:%M:%S}", flush=True)
 
-    # name -> (ok, item_count)
+    # name -> (ok, stats). stats is the dict from _read_spider_stats(), see
+    # BaseApiSpider._report_item_count for its shape.
     results = {}
 
     for spider in spiders:
@@ -206,31 +278,20 @@ def run_spiders(spiders=None):
     ###########
     elapsed = (datetime.now() - started).total_seconds()
     failed = [name for name, (ok, _) in results.items() if not ok]
+
+    def _items(stats):
+        return stats["items"] if stats else None
+
     # Exited cleanly and found nothing. Almost always a block: the spider is
     # refused on every request, logs it, closes tidily and returns 0.
     empty = [
-        name for name, (ok, items) in results.items() if ok and items == 0
+        name for name, (ok, stats) in results.items() if ok and _items(stats) == 0
     ]
 
-    print(f"\n{'-' * 52}")
-    for name, (ok, items) in results.items():
-        if not ok:
-            status, note = "FAIL ", ""
-        elif items == 0:
-            status, note = "EMPTY", "   <- found nothing, check for blocks"
-        else:
-            status, note = "OK   ", ""
-        found = "?" if items is None else items
-        print(f"  {status}  {name:<22} {found:>4} posting(s){note}")
+    _print_run_summary(results)
+    print(f"({elapsed:.0f}s toplam)", flush=True)
 
-    print(
-        f"{'-' * 52}\n"
-        f"{len(results) - len(failed)}/{len(results)} spiders succeeded "
-        f"in {elapsed:.0f}s",
-        flush=True,
-    )
-
-    # Said plainly, and after the table, because this is the failure that
+    # Said plainly, and after the summary, because this is the failure that
     # otherwise hides behind a green run: every spider exits 0 and the crawl
     # looks healthy while the database gets nothing.
     if empty:
@@ -247,7 +308,10 @@ def run_spiders(spiders=None):
     # can have no new postings today - but all of them empty means the crawl
     # accomplished nothing, and that should be a red run in Coolify rather
     # than a warning nobody opens the log to read.
-    counted = [items for ok, items in results.values() if ok and items is not None]
+    counted = [
+        _items(stats) for ok, stats in results.values()
+        if ok and _items(stats) is not None
+    ]
     found_nothing = bool(counted) and sum(counted) == 0
     if found_nothing:
         print(

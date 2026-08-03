@@ -513,7 +513,7 @@ class BaseApiSpider(scrapy.Spider):
     ###################################################
     def _report_item_count(self):
         """
-        Write this crawl's item count where main.py can read it.
+        Write this crawl's summary where main.py can read it.
 
         A blocked spider exits 0. It opens, gets refused on every request,
         logs the refusals, closes cleanly and reports success - which is how
@@ -521,9 +521,11 @@ class BaseApiSpider(scrapy.Spider):
         three had contributed nothing at all. The exit code cannot tell the
         difference; the item count can.
 
-        Written to a file rather than parsed out of the log because the runner
-        streams spider output straight to the Coolify logs and should keep
-        doing so - capturing it to grep would hide the live output.
+        One JSON object per line rather than just the count, so main.py can
+        print a per-site summary (requests made, searches run, postings
+        found, whether a block cut the run short) without re-deriving it
+        from the scrapy log - which streams straight to Coolify and should
+        keep doing so, not get grepped for numbers.
 
         No SPIDER_STATS_FILE in the environment means nobody asked, e.g. a
         hand-run `scrapy crawl`. Silently do nothing.
@@ -532,10 +534,36 @@ class BaseApiSpider(scrapy.Spider):
         if not path:
             return
 
-        count = self.crawler.stats.get_value("item_scraped_count", 0)
+        stats = self.crawler.stats.get_stats()
+
+        routes = {}
+        for key, value in stats.items():
+            if key.startswith("discovery/") and key.endswith("/found"):
+                route = key[len("discovery/"):-len("/found")]
+                routes[route] = value
+
+        responses = {
+            key.rsplit("/", 1)[-1]: value
+            for key, value in stats.items()
+            if key.startswith("downloader/response_status_count/")
+        }
+
+        # response_count over request_count: CurlImpersonateMiddleware
+        # answers requests itself for the curl_cffi-driven spiders, which
+        # skips the downloader stats that would normally count the request.
+        # response_count is populated the same way for every spider here.
+        summary = {
+            "name": self.name,
+            "items": stats.get("item_scraped_count", 0),
+            "requests": stats.get("downloader/response_count", 0),
+            "responses": responses,
+            "routes": routes,
+            "blocked": bool(stats.get("blocks/detected", 0)),
+        }
+
         try:
             with open(path, "a", encoding="utf-8") as handle:
-                handle.write(f"{self.name}\t{count}\n")
+                handle.write(json.dumps(summary, ensure_ascii=False) + "\n")
         except OSError as error:
             # Never let bookkeeping break a crawl that otherwise worked.
             self.logger.warning("could not write spider stats: %s", error)

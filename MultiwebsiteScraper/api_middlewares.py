@@ -465,7 +465,7 @@ class BlockDetectionMiddleware:
                 )
                 new_meta = {"use_proxy": True}
 
-            elif next_token:
+            elif next_token and not getattr(spider, "session_cookies", None):
                 # No proxy to escalate to, but the address is not the only
                 # thing we can change. A local run has a perfectly good IP and
                 # a handshake the site has learnt to challenge - which is the
@@ -483,6 +483,15 @@ class BlockDetectionMiddleware:
                 # RetryMiddleware / HttpErrorMiddleware handle it the way they
                 # always have - dropping it here would silently change how the
                 # older DOM spiders behave when they run without a proxy.
+                #
+                # A loaded session_cookies takes this branch even when
+                # next_token is available: switching TLS handshake mid-run
+                # means the same signed-in cookie gets replayed under two
+                # different browser identities, which is the exact anomaly
+                # _prefer_the_session_s_browser() warns about elsewhere.
+                # Better to stop within budget than make the session look
+                # stolen. Unmeasured whether this actually slows the block -
+                # 03.08.2026, see the run that prompted it.
                 self.crawler.stats.inc_value("blocks/no_proxy_available")
                 spider.logger.warning(
                     "BLOCKED going direct (%s) and nothing left to escalate "

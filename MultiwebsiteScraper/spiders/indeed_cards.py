@@ -308,7 +308,11 @@ class IndeedCardsSpider(BaseApiSpider):
         # so it gets the gentlest treatment.
         "CONCURRENT_REQUESTS": 1,
         "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
-        "DOWNLOAD_DELAY": 4,
+        # Raised from 4 on 03.08.2026 - a slower, less mechanical cadence is
+        # one of the few free levers left once a session is loaded and TLS
+        # identity switching is off the table (see BlockDetectionMiddleware).
+        # Unmeasured whether this alone moves the block point.
+        "DOWNLOAD_DELAY": 6,
         "RANDOMIZE_DOWNLOAD_DELAY": True,
 
         "TWISTED_REACTOR": "twisted.internet.asyncioreactor.AsyncioSelectorReactor",
@@ -494,6 +498,13 @@ class IndeedCardsSpider(BaseApiSpider):
     #####################################################################
     SIGNED_IN_COOKIES = ("SOCK", "SHOE")
 
+    # A Google/OAuth-linked Indeed account (no password ever set) never gets
+    # SOCK/SHOE - it carries this pair instead. Discovered 03.08.2026;
+    # unlike SIGNED_IN_COOKIES this has not been measured past page 1, see
+    # _require_a_whole_session().
+    OAUTH_SIGNED_IN_COOKIES = ("__Secure-PassportAuthProxy-RefreshToken",
+                               "JSESSIONID")
+
     def _require_a_whole_session(self):
         """
         Refuse a session that is missing the cookies that do the work.
@@ -515,7 +526,9 @@ class IndeedCardsSpider(BaseApiSpider):
 
         missing = [name for name in self.SIGNED_IN_COOKIES
                    if name not in self.session_cookies]
-        if missing:
+        oauth_missing = [name for name in self.OAUTH_SIGNED_IN_COOKIES
+                          if name not in self.session_cookies]
+        if missing and oauth_missing:
             raise ValueError(
                 f"The Indeed session is missing {', '.join(missing)} - it "
                 f"loaded {len(self.session_cookies)} cookie(s) but not the "
@@ -523,6 +536,20 @@ class IndeedCardsSpider(BaseApiSpider):
                 f"environment box does exactly this. Re-export the Cookie "
                 f"header and set INDEED_COOKIES_B64 again; unset it if an "
                 f"anonymous one-page crawl is what you want."
+            )
+        if missing:
+            # UNMEASURED as of 03.08.2026: a Google-linked account never
+            # carries SOCK/SHOE, only the __Secure-PassportAuthProxy-* /
+            # JSESSIONID family. Letting it through is a real experiment,
+            # not a known-good path - note_sign_in_wall() below will say so
+            # loudly in the log if page 2 turns out to be a sign-in wall
+            # rather than data.
+            self.logger.warning(
+                "Session has no %s (native login) but does have %s "
+                "(Google/OAuth login) - proceeding as an unmeasured "
+                "experiment. Watch for a sign-in-wall error past page 1.",
+                "/".join(self.SIGNED_IN_COOKIES),
+                "/".join(self.OAUTH_SIGNED_IN_COOKIES),
             )
 
         # Which browser the session was actually created in is not something
