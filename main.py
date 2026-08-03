@@ -95,6 +95,11 @@ CLASSIFY_TIMEOUT = int(os.getenv("CLASSIFY_TIMEOUT", "900"))
 # Pure SQL over a few hundred rows - a second is generous.
 DEDUPE_TIMEOUT = int(os.getenv("DEDUPE_TIMEOUT", "120"))
 
+# A handful of HTTP calls to Hermes, each with its own REQUEST_TIMEOUT
+# (notify_watchlist.py) - this is the ceiling for the whole batch, not one
+# call, in case a run has an unusually large number of watchlist matches.
+NOTIFY_TIMEOUT = int(os.getenv("NOTIFY_TIMEOUT", "300"))
+
 
 ####################################
 # RUN ONE SPIDER AS A SUBPROCESS   #
@@ -368,15 +373,23 @@ def run_post_crawl():
     Order matters: linking duplicates BEFORE classifying means the copy of a
     job already advertised on another board is never sent to the LLM - one
     fewer call, and no chance of the two copies coming back with different
-    verdicts.
+    verdicts. Notifying Hermes about watchlist companies also happens after
+    dedupe and for the same reason: the duplicate copy of a watched posting
+    should not ping Telegram a second time.
 
-    Dedupe failing does not stop classification. The consequence is a job
-    listed twice for a day, which is worth far less than leaving everything
-    the crawl just found unsorted.
+    Notifying does not need classify's verdict - the watchlist match is on
+    company name alone - so it runs before classify rather than after,
+    trading a slightly earlier Telegram ping for nothing classify would have
+    added.
+
+    None of dedupe, notify or classify failing stops the others. A job listed
+    twice, a missed Telegram ping, or an unsorted posting are each worth far
+    less than leaving everything the crawl just found untouched.
     """
     deduped = run_step("dedupe", "dedupe_jobs.py", DEDUPE_TIMEOUT)
+    notified = run_step("notify", "notify_watchlist.py", NOTIFY_TIMEOUT)
     classified = run_step("classify", "classify_jobs.py", CLASSIFY_TIMEOUT)
-    return deduped and classified
+    return deduped and notified and classified
 
 
 ############################################

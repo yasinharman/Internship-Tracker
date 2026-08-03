@@ -63,6 +63,12 @@ MIGRATIONS = [
         "CREATE INDEX IF NOT EXISTS ix_job_posts_duplicate_of "
         "ON job_posts (duplicate_of)",
     ),
+    # notify_watchlist.py selects `WHERE notified_at IS NULL` on every run.
+    # See models.JobPost.
+    (
+        "job_posts.notified_at",
+        "ALTER TABLE job_posts ADD COLUMN IF NOT EXISTS notified_at TIMESTAMP",
+    ),
 ]
 
 

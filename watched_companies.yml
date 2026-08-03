@@ -1,0 +1,20 @@
+# COMPANIES TO GET A TELEGRAM PING ABOUT
+# =======================================
+#
+# Read by notify_watchlist.py after every crawl. Each entry is matched
+# case-insensitively as a SUBSTRING against JobPost.company - so "Trendyol"
+# below also matches "Trendyol Teknoloji A.S." or "TRENDYOL GROUP". Keep
+# entries short and specific enough that they do not accidentally match an
+# unrelated company whose name happens to contain the same word.
+#
+# Edit this file and redeploy - no restart of Hermes or the database needed.
+# A company added here only affects postings added AFTER the edit; postings
+# already in the database are not retroactively notified.
+
+companies:
+  - Garanti
+  - İş Bankası
+  - Türk Hava Yolları
+  - Denizbank
+  - Yapı Kredi
+  - Halkbank

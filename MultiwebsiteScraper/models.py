@@ -64,6 +64,15 @@ class JobPost(Base):
     # pairing can be read back and argued with.
     duplicate_of = Column(Integer, ForeignKey("job_posts.id"), index=True)
 
+    ###################################################################
+    # WATCHLIST NOTIFICATION (Hermes agent / Telegram)                #
+    ###################################################################
+    # Set by notify_watchlist.py once a matching posting has been handed to
+    # the Hermes webhook successfully. NULL means "not tried yet, or the last
+    # attempt failed" - either way the next run will retry it, same shape as
+    # job_category above.
+    notified_at = Column(DateTime)
+
 ##############################
 # CONNECTION TO THE DATABASE #
 ##############################
