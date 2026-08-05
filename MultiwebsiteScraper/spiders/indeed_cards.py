@@ -302,6 +302,33 @@ class IndeedCardsSpider(BaseApiSpider):
 
         TWISTED_REACTOR below is a real, live setting and stays.
     '''
+    ###################################################################
+    # PLAYWRIGHT - A REAL BROWSER, BECAUSE CURL_CFFI HAS NO JS ENGINE  #
+    ###################################################################
+    '''
+        MEASURED 05.08.2026. Two runs that day, both with the session loaded,
+        both blocked (cf-mitigated=challenge) on the very FIRST request -
+        no pages served, not even the warm-up. The same machine, same address,
+        opening tr.indeed.com by hand in an actual browser at the same time:
+        loads clean. curl_cffi's replayed TLS handshake gets past the
+        IP/fingerprint scoring that used to be the whole story here (see the
+        big comment below), but it has no JS engine, so it cannot run
+        whatever Cloudflare's managed challenge now asks the page to do.
+        That is not an address problem, so no proxy or impersonation token
+        fixes it - the client itself has to be a real browser.
+
+        See playwright_middleware.py for how this actually runs (a
+        dedicated thread driving Playwright's sync API, because this
+        project's asyncio reactor cannot host it directly) and why the
+        session cookies go into the browser's own cookie jar instead of a
+        Cookie header.
+
+        UNMEASURED PAST HEADLESS - this is the first attempt. If a headless
+        Chromium is refused too, PLAYWRIGHT_HEADLESS=0 or
+        PLAYWRIGHT_CHANNEL=chrome are the next rungs, not a code change.
+    '''
+    USE_PLAYWRIGHT = True
+
     custom_settings = {
         **BaseApiSpider.custom_settings,
         # The most protected of the sites and the only independent source left,

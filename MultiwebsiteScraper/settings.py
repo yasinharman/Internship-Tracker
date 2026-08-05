@@ -15,14 +15,20 @@ NEWSPIDER_MODULE = "MultiwebsiteScraper.spiders"
 ADDONS = {}
 
 '''
-    Playwright is gone. It was only ever used by the old TechCareer spider,
-    which rendered the page to reach data that turned out to be sitting in the
-    HTML as JSON all along. Removing it takes ~500MB and the slowest, most
-    failure-prone step out of the Docker build.
+    Playwright was gone, then came back for one spider only. It was first used
+    by the old TechCareer spider, which rendered the page to reach data that
+    turned out to be sitting in the HTML as JSON all along - removed then for
+    exactly that reason (~500MB and the slowest, most failure-prone step out
+    of the Docker build).
 
-    Every spider now makes plain HTTP requests: kariyer.net is parsed from
-    server-rendered markup, TechCareer from its Next.js data endpoint, Indeed
-    from the JSON embedded in its search page.
+    kariyer.net and techcareer.net are still plain HTTP requests: kariyer.net
+    parsed from server-rendered markup, TechCareer from its Next.js data
+    endpoint. Indeed is different - see playwright_middleware.py's docstring.
+    MEASURED 05.08.2026: curl_cffi's replayed TLS handshake gets past Indeed's
+    IP/fingerprint scoring but has no JS engine, so it cannot run Cloudflare's
+    managed challenge the way an actual browser does. A real Chromium, driven
+    by Playwright, can - opt-in per spider via USE_PLAYWRIGHT = True, so this
+    does not reintroduce the cost for the two spiders that never needed it.
 '''
 DOWNLOAD_HANDLERS = {
     'file': 'scrapy.core.downloader.handlers.file.FileDownloadHandler',
@@ -73,13 +79,17 @@ COOKIES_ENABLED = True
     725 - ResidentialProxyMiddleware runs before Scrapy's HttpProxyMiddleware
           (750), which converts the credentials in our proxy URL into a
           Proxy-Authorization header.
+    729 - PlaywrightMiddleware, opt-in via USE_PLAYWRIGHT = True. Only
+          indeed_cards sets it, so this is a no-op for every other spider.
 
-    Both self-disable when PROXY_MODE=off or no IPRoyal credentials are set,
-    so local development goes out direct with no extra configuration.
+    Both proxy-related middlewares self-disable when PROXY_MODE=off or no
+    IPRoyal credentials are set, so local development goes out direct with no
+    extra configuration.
 '''
 DOWNLOADER_MIDDLEWARES = {
     "MultiwebsiteScraper.api_middlewares.BlockDetectionMiddleware": 590,
     "MultiwebsiteScraper.api_middlewares.ResidentialProxyMiddleware": 725,
+    "MultiwebsiteScraper.playwright_middleware.PlaywrightMiddleware": 729,
     # 730: after ResidentialProxyMiddleware puts the proxy url in meta, before
     # HttpProxyMiddleware (750) moves its credentials into a header that
     # curl_cffi never sees. Only spiders with IMPERSONATE_WITH_CURL use it.

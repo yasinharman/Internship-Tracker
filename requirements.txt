@@ -2,11 +2,14 @@
 # Chrome does (gzip, deflate, br, zstd). Without them our encoding header is
 # a giveaway that we are not a browser.
 #
-# scrapy-impersonate + curl_cffi are what get us past Indeed. Cloudflare
-# fingerprints the TLS handshake, so Python's own stack is refused before a
-# header is read; curl_cffi replays a real Chrome ClientHello. Without these
-# indeed_cards returns 403 on every request - and Indeed is the only
-# independent source we have left. See its custom_settings for the detail.
+# scrapy-impersonate + curl_cffi replay a real browser's TLS ClientHello,
+# which gets Indeed past the IP/fingerprint scoring Python's own stack fails
+# outright. It is not enough on its own, though: curl_cffi has no JS engine,
+# so it cannot run Cloudflare's managed challenge the way an actual browser
+# does (measured 05.08.2026 - see playwright_middleware.py). playwright is
+# what drives that actual browser, opt-in for indeed_cards only via
+# USE_PLAYWRIGHT = True. Run `playwright install chromium` once after
+# installing this file - the package alone does not ship the browser binary.
 #
 # openai + pydantic drive the field classifier (MultiwebsiteScraper/
 # classifier.py). anthropic is deliberately absent: the file keeps a seam for
@@ -66,6 +69,7 @@ packaging==25.0
 pandas==2.3.3
 parsel==1.10.0
 pillow==12.0.0
+playwright==1.62.0
 Protego==0.5.0
 protobuf==6.33.2
 psycopg2==2.9.11
@@ -76,6 +80,7 @@ pyasn1_modules==0.4.2
 pycparser==2.23
 pydeck==0.9.1
 PyDispatcher==2.0.7
+pyee==13.0.1
 pyOpenSSL==25.3.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.1

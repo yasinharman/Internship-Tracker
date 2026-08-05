@@ -20,6 +20,7 @@ httpcache/
 #exported browser session - these files ARE the Indeed account
 indeed-cookies.txt
 indeed-cookies.b64
+indeed-storage-state.json
 
 #json files
 urller.jsonl
