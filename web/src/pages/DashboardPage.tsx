@@ -1,14 +1,15 @@
 import { Link } from "react-router-dom";
 import { useEffect, useRef } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { ExternalLink } from "lucide-react";
+import { Activity, AlertTriangle, Building2, Clock, ExternalLink } from "lucide-react";
 import { api } from "../lib/api";
 import type { PageProps } from "../lib/shared";
 import { RANGE_DESCRIPTIONS, fmtDateTime, fmtNumber, fmtRelative, sourceTone } from "../lib/format";
 import type { Job, RangeKey } from "../lib/types";
 import { PageHeader } from "../components/PageHeader";
 import { RangeToggle } from "../components/RangeToggle";
-import { FilterBar } from "../components/FilterBar";
+import { FilterBar, UNCLASSIFIED_NOTE } from "../components/FilterBar";
+import { StatCard } from "../components/StatCard";
 import { Panel } from "../components/Panel";
 import { RankedList, type Row } from "../components/RankedList";
 import { DataTable, type Column } from "../components/DataTable";
@@ -171,22 +172,96 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
   // scraper when the real answer was a filter you had set two clicks earlier.
   const databaseEmpty = meta?.total === 0;
 
+  // Defined once, placed twice: in the channel between the header's columns
+  // where there is room for it, and as a plain row under the header where
+  // there is not. Only one is ever displayed - the other is display:none, so
+  // it is out of the accessibility tree too - because a grid cannot move
+  // between two different parents with CSS alone.
+  const cards = (
+    <>
+      <StatCard
+        label="Toplam İlan"
+        icon={Activity}
+        value={kpis?.total ?? 0}
+        delta={kpis?.total_delta}
+      />
+      <StatCard label="Bugün Eklenen" icon={Clock} value={kpis?.today ?? 0} />
+      <StatCard
+        label="Farklı Şirket"
+        icon={Building2}
+        value={kpis?.companies ?? 0}
+        delta={kpis?.companies_delta}
+      />
+      <StatCard
+        label="Sınıflandırılmamış"
+        icon={AlertTriangle}
+        value={unclassified}
+        warn={unclassified > 0}
+      />
+    </>
+  );
+  const showCards = !databaseEmpty && !stats.isError;
+
   return (
     <>
-      <PageHeader
-        title="Güncel İlanlar"
-        tone={databaseEmpty ? "idle" : unclassified > 0 ? "warn" : "ok"}
-        status={
-          databaseEmpty
-            ? "Veritabanı boş"
-            : `${meta?.sources.length ?? 0} kaynak · ${RANGE_DESCRIPTIONS[query.range]} · son ilan ${fmtRelative(meta?.last_crawl_at ?? null)}`
-        }
-      >
-        <RangeToggle value={query.range} onChange={(next: RangeKey) => update({ range: next })} />
-      </PageHeader>
+      {/*
+        THE HEADER BLOCK, IN THREE COLUMNS
+        ==================================
+        Left holds the title, the status line and the filters; right holds the
+        range toggle at the top and the note at the bottom; the cards sit in
+        the channel between them, centred against the whole block rather than
+        belonging to either row.
 
-      {meta && !databaseEmpty && (
-        <FilterBar meta={meta} query={query} update={update} reset={reset} touched={touched} />
+        This is the shape the marked screenshot asks for
+        (docs/Screenshot_20260820_152958-1.png): two vertical rules just past
+        the last filter and just before the toggle, spanning both rows. The
+        earlier attempts each put the cards inside one row or the other, which
+        is why they kept running out of width - the channel is only wide
+        because it is claiming the empty half of two rows at once.
+      */}
+      <div className="flex items-center gap-6">
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
+          <PageHeader
+            title="Güncel İlanlar"
+            tone={databaseEmpty ? "idle" : unclassified > 0 ? "warn" : "ok"}
+            status={
+              databaseEmpty
+                ? "Veritabanı boş"
+                : `${meta?.sources.length ?? 0} kaynak · ${RANGE_DESCRIPTIONS[query.range]} · son ilan ${fmtRelative(meta?.last_crawl_at ?? null)}`
+            }
+          />
+          {meta && !databaseEmpty && (
+            <FilterBar
+              meta={meta}
+              query={query}
+              update={update}
+              reset={reset}
+              touched={touched}
+              showNote={false}
+            />
+          )}
+        </div>
+
+        {showCards && (
+          <div className="hidden shrink-0 gap-3 min-[1500px]:grid min-[1500px]:grid-cols-2">
+            {cards}
+          </div>
+        )}
+
+        {/* Toggle at the top of the block, note at its foot - the two ends the
+            marked screenshot shows them at. */}
+        <div className="flex shrink-0 flex-col items-end justify-between gap-4 self-stretch">
+          <RangeToggle value={query.range} onChange={(next: RangeKey) => update({ range: next })} />
+          {!databaseEmpty && query.categories.length > 0 && (
+            <span className="max-w-64 text-right text-[11px] text-muted-2">{UNCLASSIFIED_NOTE}</span>
+          )}
+        </div>
+      </div>
+
+      {showCards && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 min-[1500px]:hidden">
+          {cards}
+        </div>
       )}
 
       {databaseEmpty ? (

@@ -1,19 +1,6 @@
 import { NavLink } from "react-router-dom";
-import {
-  Activity,
-  AlertTriangle,
-  Bell,
-  Building2,
-  ChevronRight,
-  Clock,
-  Database,
-  Globe,
-  LayoutDashboard,
-  List,
-} from "lucide-react";
-import type { Stats } from "../lib/types";
+import { Activity, Bell, Building2, ChevronRight, Database, Globe, LayoutDashboard, List } from "lucide-react";
 import { fmtRelative } from "../lib/format";
-import { StatCard } from "./StatCard";
 
 /**
  * The reference's sidebar: a 64px brand block, two labelled nav groups, and a
@@ -43,45 +30,10 @@ const GROUPS = [
 
 interface Props {
   lastCrawlAt: string | null;
-  kpis?: Stats["kpis"];
   onNavigate?: () => void;
 }
 
-/**
- * Between the nav and the database block, so it sits with the other things
- * that are true of the whole board rather than of one page.
- *
- * The filters live in the URL and every page reads the same ones, so these
- * numbers stay meaningful wherever you navigate - they describe the current
- * selection, not the current page.
- */
-function Summary({ kpis }: { kpis?: Stats["kpis"] }) {
-  if (!kpis) return null;
-
-  return (
-    <div className="shrink-0 border-t border-line px-4 py-4">
-      <p className="mb-2 px-3 text-xs font-medium text-muted-2">Özet</p>
-      <div className="space-y-2">
-        <StatCard label="Toplam İlan" icon={Activity} value={kpis.total} delta={kpis.total_delta} />
-        <StatCard label="Bugün Eklenen" icon={Clock} value={kpis.today} />
-        <StatCard
-          label="Farklı Şirket"
-          icon={Building2}
-          value={kpis.companies}
-          delta={kpis.companies_delta}
-        />
-        <StatCard
-          label="Sınıflandırılmamış"
-          icon={AlertTriangle}
-          value={kpis.unclassified}
-          warn={kpis.unclassified > 0}
-        />
-      </div>
-    </div>
-  );
-}
-
-export function Sidebar({ lastCrawlAt, kpis, onNavigate }: Props) {
+export function Sidebar({ lastCrawlAt, onNavigate }: Props) {
   return (
     <div className="flex h-full flex-col border-r border-line bg-bg">
       <div className="flex h-16 shrink-0 items-center gap-3 border-b border-line px-6">
@@ -89,16 +41,7 @@ export function Sidebar({ lastCrawlAt, kpis, onNavigate }: Props) {
         <span className="text-sm font-medium tracking-tight text-white">Internship Tracker</span>
       </div>
 
-      {/*
-        Nav and summary share one scroller rather than each taking a fixed
-        share of the column. The summary is 463px of card; left as its own
-        fixed block it squeezed the nav to 88px at a 768px window and pushed
-        the database block off the bottom entirely below 620px. Scrolling them
-        together means a short window loses the bottom of a list instead of
-        losing a whole section.
-      */}
-      <div className="hide-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <nav className="shrink-0 space-y-6 px-4 py-6">
+      <nav className="hide-scrollbar flex-1 space-y-6 overflow-y-auto px-4 py-6">
         {GROUPS.map((group) => (
           <div key={group.label}>
             <p className="mb-2 px-3 text-xs font-medium text-muted-2">{group.label}</p>
@@ -126,9 +69,6 @@ export function Sidebar({ lastCrawlAt, kpis, onNavigate }: Props) {
           </div>
         ))}
       </nav>
-
-        <Summary kpis={kpis} />
-      </div>
 
       <div className="shrink-0 border-t border-line p-4">
         <div className="flex items-center gap-3 p-2">

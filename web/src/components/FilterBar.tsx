@@ -4,6 +4,15 @@ import type { Meta, Option } from "../lib/types";
 import type { Query } from "../lib/api";
 
 /**
+ * The rule this states is enforced in api/queries.py: a row with no category
+ * is shown whatever the Alan filter says, because a failed classify step must
+ * not empty the board. Exported so the header can place it wherever the
+ * layout has room for it.
+ */
+export const UNCLASSIFIED_NOTE =
+  "Sınıflandırılmamış ilanlar alan filtresinden bağımsız gösterilir";
+
+/**
  * Streamlit put these in the sidebar; the reference uses that space for
  * navigation, so the filters became a horizontal bar under the page title.
  *
@@ -116,12 +125,15 @@ export function FilterBar({
   update,
   reset,
   touched,
+  showNote = true,
 }: {
   meta: Meta;
   query: Query;
   update: (patch: Partial<Query>) => void;
   reset: () => void;
   touched: boolean;
+  /** Off when the header renders the note itself, somewhere with more room. */
+  showNote?: boolean;
 }) {
   const chips: { key: string; label: string; clear: () => void }[] = [];
   if (query.q) {
@@ -194,10 +206,8 @@ export function FilterBar({
         </button>
       )}
 
-      {query.categories.length > 0 && (
-        <span className="ml-auto text-[11px] text-muted-2">
-          Sınıflandırılmamış ilanlar alan filtresinden bağımsız gösterilir
-        </span>
+      {showNote && query.categories.length > 0 && (
+        <span className="ml-auto text-[11px] text-muted-2">{UNCLASSIFIED_NOTE}</span>
       )}
     </div>
   );

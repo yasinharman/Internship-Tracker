@@ -41,14 +41,6 @@ export default function App() {
   // sidebar. Refetching it per page would make those defaults flicker.
   const meta = useQuery({ queryKey: ["meta"], queryFn: api.meta, staleTime: 60_000 });
   const { query, update, reset, touched } = useFilters(meta.data);
-
-  // Same query key DashboardPage uses, so react-query serves both from one
-  // request rather than asking twice for the numbers in the sidebar.
-  const stats = useQuery({
-    queryKey: ["stats", query],
-    queryFn: () => api.stats(query),
-    enabled: Boolean(meta.data),
-  });
   const fetching = useIsFetching() > 0;
 
   const page = PAGES[location.pathname] ?? PAGES["/"];
@@ -57,7 +49,7 @@ export default function App() {
   return (
     <div className="relative z-10 flex h-full">
       <aside className="hidden w-64 shrink-0 lg:block">
-        <Sidebar lastCrawlAt={meta.data?.last_crawl_at ?? null} kpis={stats.data?.kpis} />
+        <Sidebar lastCrawlAt={meta.data?.last_crawl_at ?? null} />
       </aside>
 
       {menuOpen && (
@@ -70,7 +62,7 @@ export default function App() {
           <div className="absolute inset-y-0 left-0 w-64">
             <Sidebar
               lastCrawlAt={meta.data?.last_crawl_at ?? null}
-              kpis={stats.data?.kpis}
+             
               onNavigate={() => setMenuOpen(false)}
             />
           </div>
