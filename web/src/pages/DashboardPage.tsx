@@ -218,7 +218,18 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
         because it is claiming the empty half of two rows at once.
       */}
       <div className="flex items-center gap-6">
-        <div className="flex min-w-0 flex-1 flex-col gap-4">
+        {/*
+          Not flex-1: the slack belongs after the cards, not before them, so
+          ml-auto on the right column takes it instead of this one.
+
+          The cap is what fixes where the cards start. Without it this column
+          is as wide as its filter row, so adding a chip walks the cards to the
+          right; with it their left edge stays put whether or not any filter is
+          narrowed, and the chips wrap inside the column instead. It is a cap,
+          not a width - the column still shrinks below it when the channel is
+          tight, and it only applies where the channel exists at all.
+        */}
+        <div className="flex min-w-0 flex-col gap-4 min-[1500px]:max-w-[30rem]">
           <PageHeader
             title="Güncel İlanlar"
             tone={databaseEmpty ? "idle" : unclassified > 0 ? "warn" : "ok"}
@@ -248,7 +259,9 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
 
         {/* Toggle at the top of the block, note at its foot - the two ends the
             marked screenshot shows them at. */}
-        <div className="flex shrink-0 flex-col items-end justify-between gap-4 self-stretch">
+        {/* ml-auto takes the free space, which is what leaves the cards sitting
+            against the filters rather than against this column. */}
+        <div className="ml-auto flex shrink-0 flex-col items-end justify-between gap-4 self-stretch">
           <RangeToggle value={query.range} onChange={(next: RangeKey) => update({ range: next })} />
           {!databaseEmpty && query.categories.length > 0 && (
             <span className="max-w-64 text-right text-[11px] text-muted-2">{UNCLASSIFIED_NOTE}</span>
