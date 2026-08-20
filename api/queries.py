@@ -99,7 +99,19 @@ RANGES = {
     "30d": timedelta(days=30),
     "all": None,
 }
-DEFAULT_RANGE = "7d"
+
+# Everything, by default.
+#
+# The board already lists postings newest first, so a time window is not what
+# makes the recent ones easy to find - it only hides the older ones. And
+# hiding them is the wrong default for this data: a posting that is three
+# weeks old is still open, and the crawl schedule means a quiet fortnight
+# would leave a seven-day board looking broken rather than quiet.
+#
+# The cost is that the KPI deltas have nothing to compare against and are
+# omitted (see _delta), which is honest - there is no "previous period" for
+# all of time. Pick 24h/7d/30d in the header to get them back.
+DEFAULT_RANGE = "all"
 
 # The daily chart is capped rather than unbounded: 'all' on a board that has
 # been collecting for a year would draw 365 unreadable bars. KPIs still count

@@ -27,7 +27,7 @@ export function useFilters(meta: Meta | undefined) {
     };
     const range = params.get("range");
     return {
-      range: RANGES.includes(range as RangeKey) ? (range as RangeKey) : (meta?.defaults.range ?? "7d"),
+      range: RANGES.includes(range as RangeKey) ? (range as RangeKey) : (meta?.defaults.range ?? "all"),
       sources: list("sources", []),
       types: list("types", meta?.defaults.types ?? []),
       categories: list("categories", meta?.defaults.categories ?? []),

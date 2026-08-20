@@ -221,14 +221,32 @@ def stats(filters: Filters = Depends(filter_params), session: Session = Depends(
     tz_name = os.getenv("DASHBOARD_TZ", "Europe/Istanbul")
     local_day = func.date(func.timezone(tz_name, func.timezone("UTC", JobPost.created_at)))
 
-    series_start = start
+    unranged = q.conditions(filters, apply_range=False)
+
+    # Where the data actually begins.
+    #
+    # 'all' has no start date, and using the 90-day cap as one draws a flat
+    # line back to a date the board has never had a posting for - which reads
+    # as "the crawler was down for two months" rather than "this is all of
+    # it". A bounded range still shows its whole window, empty days included,
+    # because those empty days are the answer to a question that was asked.
+    earliest = session.scalar(select(func.min(JobPost.created_at)).where(and_(*unranged)))
+
+    if start is not None:
+        series_start = start
+    elif earliest is not None:
+        series_start = earliest
+    else:
+        # Nothing matches the filter. A week of zeroes says so compactly;
+        # ninety would look like an outage.
+        series_start = q.utcnow() - timedelta(days=6)
+
     floor = q.utcnow() - timedelta(days=q.MAX_SERIES_DAYS)
-    truncated = False
-    if series_start is None or series_start < floor:
-        truncated = series_start is None or series_start < floor
+    truncated = series_start < floor
+    if truncated:
         series_start = floor
 
-    series_clauses = q.conditions(filters, apply_range=False) + [JobPost.created_at >= series_start]
+    series_clauses = unranged + [JobPost.created_at >= series_start]
     daily_rows = session.execute(
         select(local_day, func.count(), func.count(distinct(JobPost.company)))
         .where(and_(*series_clauses))
