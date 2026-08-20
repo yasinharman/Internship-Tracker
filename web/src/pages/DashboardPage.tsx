@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useEffect, useRef } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Activity, AlertTriangle, Building2, Clock, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { api } from "../lib/api";
 import type { PageProps } from "../lib/shared";
 import { RANGE_DESCRIPTIONS, fmtDateTime, fmtNumber, fmtRelative, sourceTone } from "../lib/format";
@@ -10,7 +10,7 @@ import { PageHeader } from "../components/PageHeader";
 import { RangeToggle } from "../components/RangeToggle";
 import { FilterBar } from "../components/FilterBar";
 import { Panel } from "../components/Panel";
-import { StatCard } from "../components/StatCard";
+import { StatInline } from "../components/StatInline";
 import { RankedList, type Row } from "../components/RankedList";
 import { DataTable, type Column } from "../components/DataTable";
 import { CategoryBadge } from "../components/Badge";
@@ -178,42 +178,45 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
         title="Güncel İlanlar"
         tone={databaseEmpty ? "idle" : unclassified > 0 ? "warn" : "ok"}
         status={
-          databaseEmpty
-            ? "Veritabanı boş"
-            : `${meta?.sources.length ?? 0} kaynak · ${RANGE_DESCRIPTIONS[query.range]} · son ilan ${fmtRelative(meta?.last_crawl_at ?? null)}`
+          databaseEmpty ? (
+            "Veritabanı boş"
+          ) : (
+            <>
+              {`${meta?.sources.length ?? 0} kaynak · ${RANGE_DESCRIPTIONS[query.range]} · son ilan ${fmtRelative(meta?.last_crawl_at ?? null)}`}
+              {/*
+                The unclassified count used to be a fourth card. It is not the
+                same kind of number as the other three - it counts something
+                being wrong, not something being collected - so it belongs on
+                the status line with the indicator that already turns amber
+                for it, rather than in a row of totals.
+              */}
+              {unclassified > 0 && (
+                <span
+                  className="text-warn"
+                  title="Sınıflandırıcı bu ilanlara henüz bakmadı. Filtreden bağımsız gösteriliyorlar - LLM adımı başarısız olsa bile pano boş kalmasın diye."
+                >
+                  {` · ${fmtNumber(unclassified)} sınıflandırılmamış`}
+                </span>
+              )}
+            </>
+          )
+        }
+        stats={
+          databaseEmpty || stats.isError ? undefined : (
+            <>
+              <StatInline label="Toplam İlan" value={kpis?.total ?? 0} delta={kpis?.total_delta} />
+              <StatInline label="Bugün Eklenen" value={kpis?.today ?? 0} />
+              <StatInline
+                label="Farklı Şirket"
+                value={kpis?.companies ?? 0}
+                delta={kpis?.companies_delta}
+              />
+            </>
+          )
         }
       >
         <RangeToggle value={query.range} onChange={(next: RangeKey) => update({ range: next })} />
       </PageHeader>
-
-      {/*
-        The stat strip sits between the range toggle in the header above and
-        the filters below - both of them change these numbers, so the numbers
-        belong between the two controls that drive them rather than under both.
-      */}
-      {!databaseEmpty && !stats.isError && (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Toplam İlan" icon={Activity} value={kpis?.total ?? 0} delta={kpis?.total_delta} />
-            <StatCard label="Bugün Eklenen" icon={Clock} value={kpis?.today ?? 0} />
-            <StatCard
-              label="Farklı Şirket"
-              icon={Building2}
-              value={kpis?.companies ?? 0}
-              delta={kpis?.companies_delta}
-            />
-            <StatCard
-              label="Sınıflandırılmamış"
-              icon={AlertTriangle}
-              value={unclassified}
-              warn={unclassified > 0}
-              hint={
-                unclassified > 0
-                  ? "Sınıflandırıcı bu ilanlara henüz bakmadı. Filtreden bağımsız gösteriliyorlar - LLM adımı başarısız olsa bile pano boş kalmasın diye."
-                  : "Tüm ilanlar sınıflandırıldı."
-              }
-            />
-          </div>
-      )}
 
       {meta && !databaseEmpty && (
         <FilterBar meta={meta} query={query} update={update} reset={reset} touched={touched} />
@@ -259,7 +262,7 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
               // them and the top would put them out of reach entirely.
               <DataTable
                 stickyHeader
-                maxHeight="34rem"
+                maxHeight="38rem"
                 scrollRef={scrollBox}
                 columns={COLUMNS}
                 rows={rows}
