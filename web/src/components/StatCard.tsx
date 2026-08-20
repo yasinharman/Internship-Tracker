@@ -31,8 +31,8 @@ export function StatCard({ label, icon: Icon, value, delta, warn = false, hint }
     delta?.direction === "flat" ? "text-muted-2" : warn ? "text-warn" : "text-accent-soft";
 
   return (
-    <div className="border border-line bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.04]" title={hint}>
-      <div className="mb-2.5 flex items-center justify-between text-muted">
+    <div className="border border-line bg-white/[0.02] px-4 py-3 transition-colors hover:bg-white/[0.04]" title={hint}>
+      <div className="mb-1.5 flex items-center justify-between text-muted">
         <span className="truncate text-[13px] font-medium whitespace-nowrap">{label}</span>
         <Icon size={14} strokeWidth={2} className={`ml-2 shrink-0 ${warn ? "text-warn" : ""}`} />
       </div>

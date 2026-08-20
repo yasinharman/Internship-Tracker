@@ -8,7 +8,7 @@ import { RANGE_DESCRIPTIONS, fmtDateTime, fmtNumber, fmtRelative, sourceTone } f
 import type { Job, RangeKey } from "../lib/types";
 import { PageHeader } from "../components/PageHeader";
 import { RangeToggle } from "../components/RangeToggle";
-import { FilterBar, UNCLASSIFIED_NOTE } from "../components/FilterBar";
+import { FilterBar } from "../components/FilterBar";
 import { StatCard } from "../components/StatCard";
 import { Panel } from "../components/Panel";
 import { RankedList, type Row } from "../components/RankedList";
@@ -229,7 +229,7 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
           not a width - the column still shrinks below it when the channel is
           tight, and it only applies where the channel exists at all.
         */}
-        <div className="flex min-w-0 flex-col gap-4 min-[1500px]:max-w-[30rem]">
+        <div className="flex min-w-0 flex-col gap-4 min-[1560px]:max-w-[30rem]">
           <PageHeader
             title="Güncel İlanlar"
             tone={databaseEmpty ? "idle" : unclassified > 0 ? "warn" : "ok"}
@@ -259,28 +259,31 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
 
           min-w matching the grid is load-bearing. Without it this wrapper is
           the thing that shrinks when the row runs out of room, and the grid
-          inside it does not shrink with it - at 1500 it overflowed 50px into
+          inside it does not shrink with it - measured, it overflowed 50px into
           the columns on either side. With it the shrinking falls to the left
           column, which has min-w-0 and chips that wrap.
+
+          1560 rather than 1500 because that is where the left column stops
+          having to truncate its status line: at 1500 it gets 287px and the
+          line wants 274 of them after its padding, which is 3px short.
         */}
         {showCards && (
-          <div className="hidden min-w-[34rem] flex-1 justify-center min-[1500px]:flex">
-            <div className="grid w-[34rem] shrink-0 grid-cols-3 gap-3">{cards}</div>
+          <div className="hidden min-w-[40rem] flex-1 justify-center min-[1560px]:flex">
+            <div className="grid w-[40rem] shrink-0 grid-cols-3 gap-3">{cards}</div>
           </div>
         )}
 
         {/* Toggle at the top of the block, note at its foot - the two ends the
             marked screenshot shows them at. */}
-        <div className="ml-auto flex shrink-0 flex-col items-end justify-between gap-4 self-stretch min-[1500px]:ml-0">
+        {/* Just the toggle now, centred against the block like the cards - the
+            note that used to sit at the foot of this column is gone. */}
+        <div className="ml-auto flex shrink-0 items-center min-[1560px]:ml-0">
           <RangeToggle value={query.range} onChange={(next: RangeKey) => update({ range: next })} />
-          {!databaseEmpty && query.categories.length > 0 && (
-            <span className="max-w-64 text-right text-[11px] text-muted-2">{UNCLASSIFIED_NOTE}</span>
-          )}
         </div>
       </div>
 
       {showCards && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 min-[1500px]:hidden">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 min-[1560px]:hidden">
           {cards}
         </div>
       )}
