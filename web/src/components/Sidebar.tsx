@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { Activity, Bell, Building2, ChevronRight, Database, Globe, LayoutDashboard, List } from "lucide-react";
-import { fmtRelative } from "../lib/format";
+import type { Stats } from "../lib/types";
+import { fmtCompact, fmtRelative } from "../lib/format";
 
 /**
  * The reference's sidebar: a 64px brand block, two labelled nav groups, and a
@@ -30,10 +31,52 @@ const GROUPS = [
 
 interface Props {
   lastCrawlAt: string | null;
+  kpis?: Stats["kpis"];
   onNavigate?: () => void;
 }
 
-export function Sidebar({ lastCrawlAt, onNavigate }: Props) {
+/**
+ * Between the nav and the database block, so it sits with the other things
+ * that are true of the whole board rather than of one page.
+ *
+ * The filters live in the URL and every page reads the same ones, so these
+ * numbers stay meaningful wherever you navigate - they describe the current
+ * selection, not the current page.
+ */
+function Summary({ kpis }: { kpis?: Stats["kpis"] }) {
+  if (!kpis) return null;
+
+  const rows: { label: string; value: number; warn?: boolean }[] = [
+    { label: "Toplam İlan", value: kpis.total },
+    { label: "Bugün Eklenen", value: kpis.today },
+    { label: "Farklı Şirket", value: kpis.companies },
+    // Not a count of something collected but of something not yet looked at,
+    // so it goes amber the moment it is above zero.
+    { label: "Sınıflandırılmamış", value: kpis.unclassified, warn: kpis.unclassified > 0 },
+  ];
+
+  return (
+    <div className="shrink-0 border-t border-line px-4 py-4">
+      <p className="mb-2 px-3 text-xs font-medium text-muted-2">Özet</p>
+      <div className="space-y-0.5">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between gap-2 px-3 py-1">
+            <span className="truncate text-[13px] text-muted">{row.label}</span>
+            <span
+              className={`shrink-0 font-mono text-[13px] tabular-nums ${
+                row.warn ? "text-warn" : "text-ink"
+              }`}
+            >
+              {fmtCompact(row.value)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function Sidebar({ lastCrawlAt, kpis, onNavigate }: Props) {
   return (
     <div className="flex h-full flex-col border-r border-line bg-bg">
       <div className="flex h-16 shrink-0 items-center gap-3 border-b border-line px-6">
@@ -69,6 +112,8 @@ export function Sidebar({ lastCrawlAt, onNavigate }: Props) {
           </div>
         ))}
       </nav>
+
+      <Summary kpis={kpis} />
 
       <div className="shrink-0 border-t border-line p-4">
         <div className="flex items-center gap-3 p-2">

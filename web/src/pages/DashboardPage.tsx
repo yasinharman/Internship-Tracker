@@ -1,16 +1,15 @@
 import { Link } from "react-router-dom";
 import { useEffect, useRef } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Activity, Building2, Clock, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { api } from "../lib/api";
 import type { PageProps } from "../lib/shared";
-import { fmtDateTime, fmtNumber, fmtRelative, sourceTone } from "../lib/format";
+import { RANGE_DESCRIPTIONS, fmtDateTime, fmtNumber, fmtRelative, sourceTone } from "../lib/format";
 import type { Job, RangeKey } from "../lib/types";
 import { PageHeader } from "../components/PageHeader";
 import { RangeToggle } from "../components/RangeToggle";
 import { FilterBar } from "../components/FilterBar";
 import { Panel } from "../components/Panel";
-import { StatCard } from "../components/StatCard";
 import { RankedList, type Row } from "../components/RankedList";
 import { DataTable, type Column } from "../components/DataTable";
 import { CategoryBadge } from "../components/Badge";
@@ -178,68 +177,16 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
         title="Güncel İlanlar"
         tone={databaseEmpty ? "idle" : unclassified > 0 ? "warn" : "ok"}
         status={
-          databaseEmpty ? (
-            "Veritabanı boş"
-          ) : (
-            <>
-              {/* The range is deliberately not repeated here - the segmented
-                  control at the other end of this row already shows which one
-                  is selected, and the words it cost were the width the cards
-                  needed. */}
-              {`${meta?.sources.length ?? 0} kaynak · son ilan ${fmtRelative(meta?.last_crawl_at ?? null)}`}
-              {/*
-                The unclassified count used to be a fourth card. It is not the
-                same kind of number as the other three - it counts something
-                being wrong, not something being collected - so it belongs on
-                the status line with the indicator that already turns amber
-                for it, rather than in a row of totals.
-              */}
-              {unclassified > 0 && (
-                <span
-                  className="text-warn"
-                  title="Sınıflandırıcı bu ilanlara henüz bakmadı. Filtreden bağımsız gösteriliyorlar - LLM adımı başarısız olsa bile pano boş kalmasın diye."
-                >
-                  {` · ${fmtNumber(unclassified)} sınıflandırılmamış`}
-                </span>
-              )}
-            </>
-          )
+          databaseEmpty
+            ? "Veritabanı boş"
+            : `${meta?.sources.length ?? 0} kaynak · ${RANGE_DESCRIPTIONS[query.range]} · son ilan ${fmtRelative(meta?.last_crawl_at ?? null)}`
         }
       >
         <RangeToggle value={query.range} onChange={(next: RangeKey) => update({ range: next })} />
       </PageHeader>
 
       {meta && !databaseEmpty && (
-        <FilterBar
-          meta={meta}
-          query={query}
-          update={update}
-          reset={reset}
-          touched={touched}
-          trailing={
-            stats.isError ? undefined : (
-              // In the gap at the right end of the filter row, which is the
-              // widest space on the page that nothing else claims. They belong
-              // on this row rather than above it: the dropdowns to their left
-              // are what change these three numbers.
-              <div className="flex items-stretch gap-2">
-                <StatCard
-                  label="Toplam İlan"
-                  icon={Activity}
-                  value={kpis?.total ?? 0}
-                  delta={kpis?.total_delta}
-                />
-                <StatCard label="Bugün Eklenen" icon={Clock} value={kpis?.today ?? 0} />
-                <StatCard
-                  label="Farklı Şirket"
-                  icon={Building2}
-                  value={kpis?.companies ?? 0}
-                  delta={kpis?.companies_delta}
-                />
-              </div>
-            )
-          }
-        />
+        <FilterBar meta={meta} query={query} update={update} reset={reset} touched={touched} />
       )}
 
       {databaseEmpty ? (
@@ -282,7 +229,7 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
               // them and the top would put them out of reach entirely.
               <DataTable
                 stickyHeader
-                maxHeight="38rem"
+                maxHeight="30.4rem"
                 scrollRef={scrollBox}
                 columns={COLUMNS}
                 rows={rows}
