@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Activity, AlertTriangle, Building2, Clock, ExternalLink } from "lucide-react";
 import { api } from "../lib/api";
 import type { PageProps } from "../lib/shared";
@@ -101,17 +102,55 @@ const COLUMNS: Column<Job>[] = [
   },
 ];
 
+// Big enough that the first screenful never needs a second request, small
+// enough that a filter change is not a half-megabyte of JSON.
+const BOARD_PAGE_SIZE = 50;
+
 export function DashboardPage({ meta, query, update, reset, touched }: PageProps) {
   const stats = useQuery({
     queryKey: ["stats", query],
     queryFn: () => api.stats(query),
     enabled: Boolean(meta),
   });
-  const jobs = useQuery({
-    queryKey: ["jobs", query, "recent"],
-    queryFn: () => api.jobs(query, 8),
+  // Every posting the filter matches, fetched a page at a time as the box is
+  // scrolled. Eight rows was a preview of a list you then had to go and find;
+  // this is the list. Paging rather than one big request because "all" has no
+  // ceiling - a year of crawling is thousands of rows, and the API caps a
+  // single response at 500 anyway.
+  const jobs = useInfiniteQuery({
+    queryKey: ["jobs", query, "board"],
+    queryFn: ({ pageParam }) => api.jobs(query, BOARD_PAGE_SIZE, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (last) => {
+      const loaded = last.offset + last.rows.length;
+      return loaded < last.total ? loaded : undefined;
+    },
     enabled: Boolean(meta),
   });
+
+  const rows = jobs.data?.pages.flatMap((page) => page.rows) ?? [];
+  const totalJobs = jobs.data?.pages[0]?.total ?? 0;
+
+  // The sentinel sits below the last row; when it comes into view inside the
+  // scroll box, the next page is requested. rootMargin buys a screenful of
+  // warning so the rows are already there by the time they are scrolled to.
+  const scrollBox = useRef<HTMLDivElement>(null);
+  const sentinel = useRef<HTMLDivElement>(null);
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = jobs;
+
+  useEffect(() => {
+    const target = sentinel.current;
+    if (!target || !hasNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isFetchingNextPage) fetchNextPage();
+      },
+      { root: scrollBox.current, rootMargin: "300px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const kpis = stats.data?.kpis;
   const unclassified = kpis?.unclassified ?? 0;
@@ -184,6 +223,55 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
             />
           </div>
 
+          <Panel
+            flush
+            title="Son İlanlar"
+            action={
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-xs tabular-nums text-muted-2">
+                  {fmtNumber(rows.length)} / {fmtNumber(totalJobs)}
+                </span>
+                <Link
+                  to="/ilanlar"
+                  className="text-xs font-medium text-muted transition-colors hover:text-ink"
+                >
+                  Tüm ilanlar →
+                </Link>
+              </div>
+            }
+          >
+            {jobs.isPending ? (
+              <SkeletonRows rows={8} />
+            ) : jobs.isError ? (
+              <ErrorState error={jobs.error} />
+            ) : (
+              // A fixed-height box rather than a table that grows without
+              // limit: the chart and the source split still have to be
+              // reachable by scrolling the page, and a thousand rows between
+              // them and the top would put them out of reach entirely.
+              <DataTable
+                stickyHeader
+                maxHeight="26rem"
+                scrollRef={scrollBox}
+                columns={COLUMNS}
+                rows={rows}
+                rowKey={(row) => row.id}
+                empty="Bu filtreye uyan ilan yok. Filtreleri genişletmeyi deneyin."
+                footer={
+                  <>
+                    <div ref={sentinel} />
+                    {jobs.isFetchingNextPage && (
+                      <p className="py-3 text-center text-[11px] text-muted-2">yükleniyor...</p>
+                    )}
+                    {!jobs.hasNextPage && rows.length > BOARD_PAGE_SIZE && (
+                      <p className="py-3 text-center text-[11px] text-muted-3">listenin sonu</p>
+                    )}
+                  </>
+                }
+              />
+            )}
+          </Panel>
+
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <Panel
               title="Günlük İlan Akışı"
@@ -208,31 +296,6 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
             </Panel>
           </div>
 
-          <Panel
-            title="Son İlanlar"
-            flush
-            action={
-              <Link
-                to="/ilanlar"
-                className="text-xs font-medium text-muted transition-colors hover:text-ink"
-              >
-                Tüm ilanlar →
-              </Link>
-            }
-          >
-            {jobs.isPending ? (
-              <SkeletonRows />
-            ) : jobs.isError ? (
-              <ErrorState error={jobs.error} />
-            ) : (
-              <DataTable
-                columns={COLUMNS}
-                rows={jobs.data?.rows ?? []}
-                rowKey={(row) => row.id}
-                empty="Bu filtreye uyan ilan yok. Filtreleri genişletmeyi deneyin."
-              />
-            )}
-          </Panel>
         </>
       )}
     </>
