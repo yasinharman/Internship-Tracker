@@ -18,16 +18,6 @@ import { DailyFlowChart } from "../components/DailyFlowChart";
 
 const COLUMNS: Column<Job>[] = [
   {
-    key: "source",
-    header: "Kaynak",
-    width: "1%",
-    render: (row) => (
-      <span className={`font-mono text-xs whitespace-nowrap ${sourceTone(row.source_site)}`}>
-        {row.source_label}
-      </span>
-    ),
-  },
-  {
     key: "title",
     header: "Başlık",
     render: (row) => (
@@ -64,6 +54,16 @@ const COLUMNS: Column<Job>[] = [
     width: "1%",
     render: (row) => (
       <span className="font-mono text-xs whitespace-nowrap text-muted">{row.job_type_label ?? "—"}</span>
+    ),
+  },
+  {
+    key: "source",
+    header: "Kaynak",
+    width: "1%",
+    render: (row) => (
+      <span className={`font-mono text-xs whitespace-nowrap ${sourceTone(row.source_site)}`}>
+        {row.source_label}
+      </span>
     ),
   },
   {
