@@ -1,7 +1,19 @@
 import { NavLink } from "react-router-dom";
-import { Activity, Bell, Building2, ChevronRight, Database, Globe, LayoutDashboard, List } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  Bell,
+  Building2,
+  ChevronRight,
+  Clock,
+  Database,
+  Globe,
+  LayoutDashboard,
+  List,
+} from "lucide-react";
 import type { Stats } from "../lib/types";
-import { fmtCompact, fmtRelative } from "../lib/format";
+import { fmtRelative } from "../lib/format";
+import { StatCard } from "./StatCard";
 
 /**
  * The reference's sidebar: a 64px brand block, two labelled nav groups, and a
@@ -46,31 +58,24 @@ interface Props {
 function Summary({ kpis }: { kpis?: Stats["kpis"] }) {
   if (!kpis) return null;
 
-  const rows: { label: string; value: number; warn?: boolean }[] = [
-    { label: "Toplam İlan", value: kpis.total },
-    { label: "Bugün Eklenen", value: kpis.today },
-    { label: "Farklı Şirket", value: kpis.companies },
-    // Not a count of something collected but of something not yet looked at,
-    // so it goes amber the moment it is above zero.
-    { label: "Sınıflandırılmamış", value: kpis.unclassified, warn: kpis.unclassified > 0 },
-  ];
-
   return (
     <div className="shrink-0 border-t border-line px-4 py-4">
       <p className="mb-2 px-3 text-xs font-medium text-muted-2">Özet</p>
-      <div className="space-y-0.5">
-        {rows.map((row) => (
-          <div key={row.label} className="flex items-center justify-between gap-2 px-3 py-1">
-            <span className="truncate text-[13px] text-muted">{row.label}</span>
-            <span
-              className={`shrink-0 font-mono text-[13px] tabular-nums ${
-                row.warn ? "text-warn" : "text-ink"
-              }`}
-            >
-              {fmtCompact(row.value)}
-            </span>
-          </div>
-        ))}
+      <div className="space-y-2">
+        <StatCard label="Toplam İlan" icon={Activity} value={kpis.total} delta={kpis.total_delta} />
+        <StatCard label="Bugün Eklenen" icon={Clock} value={kpis.today} />
+        <StatCard
+          label="Farklı Şirket"
+          icon={Building2}
+          value={kpis.companies}
+          delta={kpis.companies_delta}
+        />
+        <StatCard
+          label="Sınıflandırılmamış"
+          icon={AlertTriangle}
+          value={kpis.unclassified}
+          warn={kpis.unclassified > 0}
+        />
       </div>
     </div>
   );
@@ -84,7 +89,16 @@ export function Sidebar({ lastCrawlAt, kpis, onNavigate }: Props) {
         <span className="text-sm font-medium tracking-tight text-white">Internship Tracker</span>
       </div>
 
-      <nav className="hide-scrollbar flex-1 space-y-6 overflow-y-auto px-4 py-6">
+      {/*
+        Nav and summary share one scroller rather than each taking a fixed
+        share of the column. The summary is 463px of card; left as its own
+        fixed block it squeezed the nav to 88px at a 768px window and pushed
+        the database block off the bottom entirely below 620px. Scrolling them
+        together means a short window loses the bottom of a list instead of
+        losing a whole section.
+      */}
+      <div className="hide-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <nav className="shrink-0 space-y-6 px-4 py-6">
         {GROUPS.map((group) => (
           <div key={group.label}>
             <p className="mb-2 px-3 text-xs font-medium text-muted-2">{group.label}</p>
@@ -113,7 +127,8 @@ export function Sidebar({ lastCrawlAt, kpis, onNavigate }: Props) {
         ))}
       </nav>
 
-      <Summary kpis={kpis} />
+        <Summary kpis={kpis} />
+      </div>
 
       <div className="shrink-0 border-t border-line p-4">
         <div className="flex items-center gap-3 p-2">
