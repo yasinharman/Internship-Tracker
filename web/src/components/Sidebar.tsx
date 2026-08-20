@@ -38,7 +38,7 @@ export function Sidebar({ lastCrawlAt, onNavigate }: Props) {
     <div className="flex h-full flex-col border-r border-line bg-bg">
       <div className="flex h-16 shrink-0 items-center gap-3 border-b border-line px-6">
         <Activity size={20} strokeWidth={2} className="text-white" />
-        <span className="text-sm font-medium tracking-tight text-white">İlan Panosu</span>
+        <span className="text-sm font-medium tracking-tight text-white">Internship Tracker</span>
       </div>
 
       <nav className="hide-scrollbar flex-1 space-y-6 overflow-y-auto px-4 py-6">

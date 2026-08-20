@@ -52,7 +52,7 @@ load_dotenv()
 
 WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
 
-app = FastAPI(title="İlan Panosu", docs_url="/api/docs", openapi_url="/api/openapi.json")
+app = FastAPI(title="Internship Tracker", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
 
 @app.exception_handler(DatabaseNotConfigured)
