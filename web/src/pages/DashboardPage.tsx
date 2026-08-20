@@ -205,31 +205,41 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
             </>
           )
         }
-        stats={
-          databaseEmpty || stats.isError ? undefined : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <StatCard
-                label="Toplam İlan"
-                icon={Activity}
-                value={kpis?.total ?? 0}
-                delta={kpis?.total_delta}
-              />
-              <StatCard label="Bugün Eklenen" icon={Clock} value={kpis?.today ?? 0} />
-              <StatCard
-                label="Farklı Şirket"
-                icon={Building2}
-                value={kpis?.companies ?? 0}
-                delta={kpis?.companies_delta}
-              />
-            </div>
-          )
-        }
       >
         <RangeToggle value={query.range} onChange={(next: RangeKey) => update({ range: next })} />
       </PageHeader>
 
       {meta && !databaseEmpty && (
-        <FilterBar meta={meta} query={query} update={update} reset={reset} touched={touched} />
+        <FilterBar
+          meta={meta}
+          query={query}
+          update={update}
+          reset={reset}
+          touched={touched}
+          trailing={
+            stats.isError ? undefined : (
+              // In the gap at the right end of the filter row, which is the
+              // widest space on the page that nothing else claims. They belong
+              // on this row rather than above it: the dropdowns to their left
+              // are what change these three numbers.
+              <div className="flex items-stretch gap-2">
+                <StatCard
+                  label="Toplam İlan"
+                  icon={Activity}
+                  value={kpis?.total ?? 0}
+                  delta={kpis?.total_delta}
+                />
+                <StatCard label="Bugün Eklenen" icon={Clock} value={kpis?.today ?? 0} />
+                <StatCard
+                  label="Farklı Şirket"
+                  icon={Building2}
+                  value={kpis?.companies ?? 0}
+                  delta={kpis?.companies_delta}
+                />
+              </div>
+            )
+          }
+        />
       )}
 
       {databaseEmpty ? (

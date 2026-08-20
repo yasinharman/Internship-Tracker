@@ -8,9 +8,9 @@ import { fmtCompact } from "../lib/format";
  * centred against it, which is what stops it looking like a subtitle.
  *
  * Tighter than the reference's card on purpose, because it does not get a
- * row of its own: these live in the page header, in the band between the
- * title and the range toggle, so the card has to fit a header rather than
- * fill a section.
+ * row of its own: these sit in the filter bar, in the gap between the last
+ * chip and the note at its right end. The card has to ride in a row of 32px
+ * controls, so it is about two thirds of the reference's height.
  */
 
 const ARROWS = { up: ArrowUp, down: ArrowDown, flat: Minus };
@@ -32,20 +32,20 @@ export function StatCard({ label, icon: Icon, value, delta, warn = false, hint }
     delta?.direction === "flat" ? "text-muted-2" : warn ? "text-warn" : "text-accent-soft";
 
   return (
-    <div className="border border-line bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.04]" title={hint}>
-      <div className="mb-2.5 flex items-center justify-between text-muted">
-        <span className="truncate text-[13px] font-medium whitespace-nowrap">{label}</span>
-        <Icon size={14} strokeWidth={2} className={`ml-2 shrink-0 ${warn ? "text-warn" : ""}`} />
+    <div className="border border-line bg-white/[0.02] px-3 py-2.5 transition-colors hover:bg-white/[0.04]" title={hint}>
+      <div className="mb-1 flex items-center justify-between text-muted">
+        <span className="truncate text-[11px] font-medium whitespace-nowrap">{label}</span>
+        <Icon size={12} strokeWidth={2} className={`ml-2 shrink-0 ${warn ? "text-warn" : ""}`} />
       </div>
       <div className="flex items-baseline gap-2">
         <span
-          className={`text-2xl font-medium tracking-tight tabular-nums ${warn ? "text-warn" : "text-ink"}`}
+          className={`text-lg leading-none font-medium tracking-tight tabular-nums ${warn ? "text-warn" : "text-ink"}`}
         >
           {fmtCompact(value)}
         </span>
         {delta && Arrow && (
-          <span className={`flex items-center text-xs font-medium ${deltaTone}`}>
-            <Arrow size={12} strokeWidth={2} className="mr-0.5" />
+          <span className={`flex items-center text-[11px] font-medium ${deltaTone}`}>
+            <Arrow size={10} strokeWidth={2} className="mr-0.5" />
             {delta.label}
           </span>
         )}

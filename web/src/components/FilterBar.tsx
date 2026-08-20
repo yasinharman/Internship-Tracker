@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, RotateCcw, X } from "lucide-react";
 import type { Meta, Option } from "../lib/types";
 import type { Query } from "../lib/api";
@@ -16,11 +16,14 @@ function Dropdown({
   options,
   selected,
   onChange,
+  note,
 }: {
   label: string;
   options: Option[];
   selected: string[];
   onChange: (next: string[]) => void;
+  /** Footnote inside the panel, for a rule that applies to this filter. */
+  note?: string;
 }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -104,6 +107,11 @@ function Dropdown({
               </button>
             );
           })}
+          {note && (
+            <p className="border-t border-line px-3 py-2 text-[11px] leading-relaxed text-muted-2">
+              {note}
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -116,12 +124,21 @@ export function FilterBar({
   update,
   reset,
   touched,
+  trailing,
 }: {
   meta: Meta;
   query: Query;
   update: (patch: Partial<Query>) => void;
   reset: () => void;
   touched: boolean;
+  /**
+   * Dropped into the gap at the right end of this row, before the note.
+   *
+   * The row is `items-center`, so whatever goes here sets the row's height
+   * and the controls centre themselves against it rather than sitting on its
+   * top edge.
+   */
+  trailing?: ReactNode;
 }) {
   const chips: { key: string; label: string; clear: () => void }[] = [];
   if (query.q) {
@@ -162,11 +179,18 @@ export function FilterBar({
         selected={query.types}
         onChange={(next) => update({ types: next })}
       />
+      {/*
+        The rule about unclassified rows used to be a sentence at the right end
+        of this row. It is about this filter and nothing else, so it moved
+        inside it - which is both where someone would look for it and the
+        224px the cards needed to fit on one line.
+      */}
       <Dropdown
         label="Alan"
         options={meta.categories}
         selected={query.categories}
         onChange={(next) => update({ categories: next })}
+        note="Sınıflandırılmamış ilanlar bu filtreden bağımsız olarak her zaman gösterilir."
       />
 
       <div className="mx-1 h-5 w-px bg-line" />
@@ -194,11 +218,7 @@ export function FilterBar({
         </button>
       )}
 
-      {query.categories.length > 0 && (
-        <span className="ml-auto text-[11px] text-muted-2">
-          Sınıflandırılmamış ilanlar alan filtresinden bağımsız gösterilir
-        </span>
-      )}
+      {trailing && <div className="ml-auto">{trailing}</div>}
     </div>
   );
 }
