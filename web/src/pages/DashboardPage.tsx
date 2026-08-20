@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, AlertTriangle, Building2, Clock } from "lucide-react";
+import { Activity, AlertTriangle, Building2, Clock, ExternalLink } from "lucide-react";
 import { api } from "../lib/api";
 import type { PageProps } from "../lib/shared";
 import { RANGE_DESCRIPTIONS, fmtDateTime, fmtNumber, fmtRelative, sourceTone } from "../lib/format";
@@ -25,7 +25,7 @@ const COLUMNS: Column<Job>[] = [
         href={row.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-xs text-ink-3 underline-offset-2 transition-colors hover:text-ink hover:underline"
+        className="text-xs text-ink-3 underline decoration-white/15 underline-offset-2 transition-colors hover:text-ink hover:decoration-white/60"
       >
         {row.job_title}
       </a>
@@ -75,6 +75,28 @@ const COLUMNS: Column<Job>[] = [
       <span className="font-mono text-xs whitespace-nowrap text-muted-2" title={fmtDateTime(row.created_at)}>
         {fmtRelative(row.created_at)}
       </span>
+    ),
+  },
+  // The title has always been a link, but nothing said so - it rendered as
+  // plain text with only a hover underline, so the way out to the actual
+  // posting was invisible until you happened to mouse over it. This is the
+  // affordance; the underline on the title is the reminder.
+  {
+    key: "open",
+    header: "",
+    align: "right",
+    width: "1%",
+    render: (row) => (
+      <a
+        href={row.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={`${row.job_title} ilanını yeni sekmede aç`}
+        className="inline-flex items-center gap-1.5 border border-line bg-white/[0.02] px-2.5 py-1 text-[11px] font-medium whitespace-nowrap text-muted transition-colors hover:border-line-strong hover:bg-white/[0.06] hover:text-ink"
+      >
+        İlana git
+        <ExternalLink size={11} strokeWidth={2} />
+      </a>
     ),
   },
 ];
