@@ -251,17 +251,27 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
           )}
         </div>
 
+        {/*
+          The channel takes the slack and centres the cards in it, so they sit
+          midway between the filters and the range toggle rather than against
+          either. flex-1 on this wrapper is what claims the space; the grid
+          inside keeps its own width and is centred within it.
+
+          min-w matching the grid is load-bearing. Without it this wrapper is
+          the thing that shrinks when the row runs out of room, and the grid
+          inside it does not shrink with it - at 1500 it overflowed 50px into
+          the columns on either side. With it the shrinking falls to the left
+          column, which has min-w-0 and chips that wrap.
+        */}
         {showCards && (
-          <div className="hidden w-[34rem] shrink-0 gap-3 min-[1500px]:grid min-[1500px]:grid-cols-3">
-            {cards}
+          <div className="hidden min-w-[34rem] flex-1 justify-center min-[1500px]:flex">
+            <div className="grid w-[34rem] shrink-0 grid-cols-3 gap-3">{cards}</div>
           </div>
         )}
 
         {/* Toggle at the top of the block, note at its foot - the two ends the
             marked screenshot shows them at. */}
-        {/* ml-auto takes the free space, which is what leaves the cards sitting
-            against the filters rather than against this column. */}
-        <div className="ml-auto flex shrink-0 flex-col items-end justify-between gap-4 self-stretch">
+        <div className="ml-auto flex shrink-0 flex-col items-end justify-between gap-4 self-stretch min-[1500px]:ml-0">
           <RangeToggle value={query.range} onChange={(next: RangeKey) => update({ range: next })} />
           {!databaseEmpty && query.categories.length > 0 && (
             <span className="max-w-64 text-right text-[11px] text-muted-2">{UNCLASSIFIED_NOTE}</span>
