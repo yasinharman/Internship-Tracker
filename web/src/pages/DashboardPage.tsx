@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useEffect, useRef } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Activity, AlertTriangle, Building2, Clock, ExternalLink } from "lucide-react";
+import { Activity, Building2, Clock, ExternalLink } from "lucide-react";
 import { api } from "../lib/api";
 import type { PageProps } from "../lib/shared";
 import { RANGE_DESCRIPTIONS, fmtDateTime, fmtNumber, fmtRelative, sourceTone } from "../lib/format";
@@ -177,6 +177,10 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
   // there is not. Only one is ever displayed - the other is display:none, so
   // it is out of the accessibility tree too - because a grid cannot move
   // between two different parents with CSS alone.
+  //
+  // Three of them, in one row. The unclassified count is not among them any
+  // more; the square on the status line still turns amber for it, and every
+  // unclassified posting carries its own badge in the table.
   const cards = (
     <>
       <StatCard
@@ -191,12 +195,6 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
         icon={Building2}
         value={kpis?.companies ?? 0}
         delta={kpis?.companies_delta}
-      />
-      <StatCard
-        label="Sınıflandırılmamış"
-        icon={AlertTriangle}
-        value={unclassified}
-        warn={unclassified > 0}
       />
     </>
   );
@@ -243,7 +241,7 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
         </div>
 
         {showCards && (
-          <div className="hidden shrink-0 gap-3 min-[1500px]:grid min-[1500px]:grid-cols-2">
+          <div className="hidden w-[34rem] shrink-0 gap-3 min-[1500px]:grid min-[1500px]:grid-cols-3">
             {cards}
           </div>
         )}
@@ -259,7 +257,7 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
       </div>
 
       {showCards && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 min-[1500px]:hidden">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 min-[1500px]:hidden">
           {cards}
         </div>
       )}
