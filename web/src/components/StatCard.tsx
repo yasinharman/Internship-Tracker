@@ -6,6 +6,11 @@ import { fmtCompact } from "../lib/format";
  * KPI card. Number and delta share a baseline-aligned row, exactly as the
  * reference does - the delta sits on the big number's baseline rather than
  * centred against it, which is what stops it looking like a subtitle.
+ *
+ * Tighter than the reference's card on purpose. Its four cards are the
+ * subject of the page; here they sit above the posting list, which is, and
+ * a 110px band of mostly empty card between the filters and the list was
+ * spending the reader's screen on the smaller thing.
  */
 
 const ARROWS = { up: ArrowUp, down: ArrowDown, flat: Minus };
@@ -27,14 +32,14 @@ export function StatCard({ label, icon: Icon, value, delta, warn = false, hint }
     delta?.direction === "flat" ? "text-muted-2" : warn ? "text-warn" : "text-accent-soft";
 
   return (
-    <div className="border border-line bg-white/[0.02] p-5 transition-colors hover:bg-white/[0.04]" title={hint}>
-      <div className="mb-4 flex items-center justify-between text-muted">
+    <div className="border border-line bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.04]" title={hint}>
+      <div className="mb-2.5 flex items-center justify-between text-muted">
         <span className="text-[13px] font-medium">{label}</span>
-        <Icon size={16} strokeWidth={2} className={warn ? "text-warn" : undefined} />
+        <Icon size={14} strokeWidth={2} className={warn ? "text-warn" : undefined} />
       </div>
       <div className="flex items-baseline gap-2">
         <span
-          className={`text-3xl font-medium tracking-tight tabular-nums ${warn ? "text-warn" : "text-ink"}`}
+          className={`text-2xl font-medium tracking-tight tabular-nums ${warn ? "text-warn" : "text-ink"}`}
         >
           {fmtCompact(value)}
         </span>

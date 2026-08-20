@@ -186,21 +186,12 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
         <RangeToggle value={query.range} onChange={(next: RangeKey) => update({ range: next })} />
       </PageHeader>
 
-      {meta && !databaseEmpty && (
-        <FilterBar meta={meta} query={query} update={update} reset={reset} touched={touched} />
-      )}
-
-      {databaseEmpty ? (
-        <Panel>
-          <EmptyState
-            title="Henüz veri yok"
-            detail="Scraper'ın ilk çalışmasını bekleyin; tamamlandığında bu sayfa otomatik dolar."
-          />
-        </Panel>
-      ) : stats.isError ? (
-        <ErrorState error={stats.error} />
-      ) : (
-        <>
+      {/*
+        The stat strip sits between the range toggle in the header above and
+        the filters below - both of them change these numbers, so the numbers
+        belong between the two controls that drive them rather than under both.
+      */}
+      {!databaseEmpty && !stats.isError && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard label="Toplam İlan" icon={Activity} value={kpis?.total ?? 0} delta={kpis?.total_delta} />
             <StatCard label="Bugün Eklenen" icon={Clock} value={kpis?.today ?? 0} />
@@ -222,6 +213,23 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
               }
             />
           </div>
+      )}
+
+      {meta && !databaseEmpty && (
+        <FilterBar meta={meta} query={query} update={update} reset={reset} touched={touched} />
+      )}
+
+      {databaseEmpty ? (
+        <Panel>
+          <EmptyState
+            title="Henüz veri yok"
+            detail="Scraper'ın ilk çalışmasını bekleyin; tamamlandığında bu sayfa otomatik dolar."
+          />
+        </Panel>
+      ) : stats.isError ? (
+        <ErrorState error={stats.error} />
+      ) : (
+        <>
 
           <Panel
             flush
@@ -251,7 +259,7 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
               // them and the top would put them out of reach entirely.
               <DataTable
                 stickyHeader
-                maxHeight="26rem"
+                maxHeight="34rem"
                 scrollRef={scrollBox}
                 columns={COLUMNS}
                 rows={rows}
