@@ -1,0 +1,218 @@
+import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { Activity, AlertTriangle, Building2, Clock } from "lucide-react";
+import { api } from "../lib/api";
+import type { PageProps } from "../lib/shared";
+import { RANGE_DESCRIPTIONS, fmtDateTime, fmtNumber, fmtRelative, sourceTone } from "../lib/format";
+import type { Job, RangeKey } from "../lib/types";
+import { PageHeader } from "../components/PageHeader";
+import { RangeToggle } from "../components/RangeToggle";
+import { FilterBar } from "../components/FilterBar";
+import { Panel } from "../components/Panel";
+import { StatCard } from "../components/StatCard";
+import { RankedList, type Row } from "../components/RankedList";
+import { DataTable, type Column } from "../components/DataTable";
+import { CategoryBadge } from "../components/Badge";
+import { EmptyState, ErrorState, SkeletonBlock, SkeletonRows } from "../components/States";
+import { DailyFlowChart } from "../components/DailyFlowChart";
+
+const COLUMNS: Column<Job>[] = [
+  {
+    key: "source",
+    header: "Kaynak",
+    width: "1%",
+    render: (row) => (
+      <span className={`font-mono text-xs whitespace-nowrap ${sourceTone(row.source_site)}`}>
+        {row.source_label}
+      </span>
+    ),
+  },
+  {
+    key: "title",
+    header: "Başlık",
+    render: (row) => (
+      <a
+        href={row.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-xs text-ink-3 underline-offset-2 transition-colors hover:text-ink hover:underline"
+      >
+        {row.job_title}
+      </a>
+    ),
+  },
+  {
+    key: "company",
+    header: "Şirket",
+    render: (row) => <span className="text-xs text-muted">{row.company ?? "—"}</span>,
+  },
+  {
+    key: "category",
+    header: "Alan",
+    width: "1%",
+    render: (row) => (
+      <CategoryBadge
+        category={row.job_category}
+        label={row.category_label}
+        reason={row.category_reason}
+      />
+    ),
+  },
+  {
+    key: "type",
+    header: "Tip",
+    width: "1%",
+    render: (row) => (
+      <span className="font-mono text-xs whitespace-nowrap text-muted">{row.job_type_label ?? "—"}</span>
+    ),
+  },
+  {
+    key: "date",
+    header: "Tarih",
+    align: "right",
+    width: "1%",
+    render: (row) => (
+      <span className="font-mono text-xs whitespace-nowrap text-muted-2" title={fmtDateTime(row.created_at)}>
+        {fmtRelative(row.created_at)}
+      </span>
+    ),
+  },
+];
+
+export function DashboardPage({ meta, query, update, reset, touched }: PageProps) {
+  const stats = useQuery({
+    queryKey: ["stats", query],
+    queryFn: () => api.stats(query),
+    enabled: Boolean(meta),
+  });
+  const jobs = useQuery({
+    queryKey: ["jobs", query, "recent"],
+    queryFn: () => api.jobs(query, 8),
+    enabled: Boolean(meta),
+  });
+
+  const kpis = stats.data?.kpis;
+  const unclassified = kpis?.unclassified ?? 0;
+
+  const sourceRows: Row[] = (() => {
+    const rows = stats.data?.sources ?? [];
+    const max = Math.max(...rows.map((r) => r.count), 1);
+    return rows.map((row) => ({
+      key: row.site,
+      label: row.label,
+      value: fmtNumber(row.count),
+      fraction: row.count / max,
+    }));
+  })();
+
+  // The database being empty and the current filter matching nothing are
+  // different problems with different fixes, so they get different messages.
+  // Streamlit only ever said "Henüz veri yok", which sent you to check the
+  // scraper when the real answer was a filter you had set two clicks earlier.
+  const databaseEmpty = meta?.total === 0;
+
+  return (
+    <>
+      <PageHeader
+        title="Güncel İlanlar"
+        tone={databaseEmpty ? "idle" : unclassified > 0 ? "warn" : "ok"}
+        status={
+          databaseEmpty
+            ? "Veritabanı boş"
+            : `${meta?.sources.length ?? 0} kaynak · ${RANGE_DESCRIPTIONS[query.range]} · son ilan ${fmtRelative(meta?.last_crawl_at ?? null)}`
+        }
+      >
+        <RangeToggle value={query.range} onChange={(next: RangeKey) => update({ range: next })} />
+      </PageHeader>
+
+      {meta && !databaseEmpty && (
+        <FilterBar meta={meta} query={query} update={update} reset={reset} touched={touched} />
+      )}
+
+      {databaseEmpty ? (
+        <Panel>
+          <EmptyState
+            title="Henüz veri yok"
+            detail="Scraper'ın ilk çalışmasını bekleyin; tamamlandığında bu sayfa otomatik dolar."
+          />
+        </Panel>
+      ) : stats.isError ? (
+        <ErrorState error={stats.error} />
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard label="Toplam İlan" icon={Activity} value={kpis?.total ?? 0} delta={kpis?.total_delta} />
+            <StatCard label="Bugün Eklenen" icon={Clock} value={kpis?.today ?? 0} />
+            <StatCard
+              label="Farklı Şirket"
+              icon={Building2}
+              value={kpis?.companies ?? 0}
+              delta={kpis?.companies_delta}
+            />
+            <StatCard
+              label="Sınıflandırılmamış"
+              icon={AlertTriangle}
+              value={unclassified}
+              warn={unclassified > 0}
+              hint={
+                unclassified > 0
+                  ? "Sınıflandırıcı bu ilanlara henüz bakmadı. Filtreden bağımsız gösteriliyorlar - LLM adımı başarısız olsa bile pano boş kalmasın diye."
+                  : "Tüm ilanlar sınıflandırıldı."
+              }
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <Panel
+              title="Günlük İlan Akışı"
+              className="flex h-[380px] flex-col lg:col-span-2"
+              action={
+                stats.data?.series_truncated ? (
+                  <span className="text-[11px] text-muted-2">son 90 gün</span>
+                ) : undefined
+              }
+            >
+              <div className="relative h-full min-h-0 w-full flex-1">
+                {stats.isPending ? <SkeletonBlock /> : stats.data && <DailyFlowChart stats={stats.data} />}
+              </div>
+            </Panel>
+
+            <Panel title="Kaynak Dağılımı" className="flex flex-col">
+              {stats.isPending ? (
+                <SkeletonBlock className="h-48" />
+              ) : (
+                <RankedList rows={sourceRows} empty="Bu filtreye uyan ilan yok." />
+              )}
+            </Panel>
+          </div>
+
+          <Panel
+            title="Son İlanlar"
+            flush
+            action={
+              <Link
+                to="/ilanlar"
+                className="text-xs font-medium text-muted transition-colors hover:text-ink"
+              >
+                Tüm ilanlar →
+              </Link>
+            }
+          >
+            {jobs.isPending ? (
+              <SkeletonRows />
+            ) : jobs.isError ? (
+              <ErrorState error={jobs.error} />
+            ) : (
+              <DataTable
+                columns={COLUMNS}
+                rows={jobs.data?.rows ?? []}
+                rowKey={(row) => row.id}
+                empty="Bu filtreye uyan ilan yok. Filtreleri genişletmeyi deneyin."
+              />
+            )}
+          </Panel>
+        </>
+      )}
+    </>
+  );
+}

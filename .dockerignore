@@ -9,6 +9,12 @@ __pycache__
 # Secrets: env vars are set in Coolify, never baked into a layer.
 .env
 
+# The front end is built inside the image by the `webbuild` stage; a local
+# node_modules is ~200MB of build context that would be thrown away, and a
+# local dist would be copied over by the stage that rebuilds it.
+web/node_modules
+web/dist
+
 # Local run artefacts
 debug/
 httpcache*/

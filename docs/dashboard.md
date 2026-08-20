@@ -1,0 +1,84 @@
+# The dashboard
+
+Two pieces, one container:
+
+- `api/` — FastAPI. Reads `job_posts` through `MultiwebsiteScraper/models.py`,
+  which stays the only description of the schema. Writes nothing.
+- `web/` — React (Vite, TypeScript, Tailwind v4). Builds to static files that
+  FastAPI serves, so the browser talks to one origin and there is no CORS
+  configuration between here and Coolify.
+
+It replaced a Streamlit script (`app.py`, in git history) that connected to
+Postgres from the page itself. A React front end cannot do that, which is why
+the reading half became an HTTP API.
+
+## Running it locally
+
+Two processes, because Vite serves the front end in development and proxies
+`/api` to uvicorn (see `web/vite.config.ts`):
+
+```bash
+uvicorn api.main:app --reload --port 8000    # reads DATABASE_URL from .env
+cd web && npm install && npm run dev         # http://localhost:5173
+```
+
+Production is one process — `docker compose up --build dashboard`, or the
+image's own `dashboard` build stage, both on port 8501.
+
+## The rules the API enforces
+
+These came from `app.py` and each one is load-bearing. They live in
+`api/queries.py` with their reasoning; the short version:
+
+1. Every query filters `is_active AND duplicate_of IS NULL`. Two separate soft
+   deletes with two separate owners (the classifier, and dedupe). Neither
+   removes a row.
+2. **`job_category IS NULL` rows are shown no matter what the field filter
+   says.** If the LLM step fails, the postings are still real. A silently
+   empty board is a worse failure than a few unsorted rows.
+3. Default job types are Internship + Part-Time, but every type stays
+   selectable — postings vanish from the sites within weeks and cannot be
+   re-fetched, so the data is kept and the view is narrowed.
+4. Default fields are `it` + `general_program`.
+5. `category_reason` is shown to the reader. A classifier's verdict should be
+   arguable, not silent.
+6. `DATABASE_URL` is required with no fallback, and the error names `.env`,
+   Coolify and the URL format.
+
+## Endpoints
+
+All of them accept `range` (`24h|7d|30d|all`), `sources`, `types`,
+`categories` (comma-separated) and `q`.
+
+| Path | Returns |
+|---|---|
+| `/api/health` | never raises; distinguishes unconfigured from unreachable |
+| `/api/meta` | filter options with counts, defaults, unclassified count, last posting |
+| `/api/stats` | KPIs with period-over-period deltas, daily series, source split |
+| `/api/jobs` | paginated postings |
+| `/api/companies` | per-company totals, sources, watchlist flag |
+| `/api/sources` | per-site health (ignores the source filter, on purpose) |
+| `/api/watchlist` | `watched_companies.yml` and what each entry caught |
+
+`/api/docs` serves the generated OpenAPI page.
+
+## Where the design comes from
+
+`docs/dashboard.html`, the "API Monitor" block (lines 430–811); the region
+that matters is marked in `docs/Screenshot_20260819_203031.png`.
+
+Read it before changing the visual language, and know that **it does not
+render as its classes say**. Two `<style>` blocks after the Tailwind CDN
+rewrite the page:
+
+- `border-radius: 0 !important` on everything (line 18). Every card, badge,
+  progress bar and status dot is a sharp rectangle. `web/src/index.css` gets
+  the same result by zeroing Tailwind's radius scale.
+- Every blue and emerald becomes a warm neutral (line 226 onward) — `#e7e5e4`
+  for fills, `#cfc9c2` for accent text. Amber `#fbbf24` and red `#f87171` are
+  untouched and are the only real hues in the markup.
+
+The chart is the exception: it is a canvas, which CSS cannot reach into, so
+its translucent blue bars and dashed purple line survive exactly as Chart.js
+drew them. That is why `DailyFlowChart.tsx` keeps those colours rather than
+matching the neutral palette.

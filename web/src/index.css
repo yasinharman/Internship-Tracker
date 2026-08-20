@@ -1,0 +1,116 @@
+@import "tailwindcss";
+
+/*
+  TOKENS TAKEN FROM docs/dashboard.html, AFTER ITS OWN OVERRIDES
+  ==============================================================
+
+  The reference is a Tailwind CDN page that then rewrites its own palette in
+  two <style> blocks (dashboard.html:17 and :226). What renders is NOT what
+  the utility classes say: every blue and emerald is replaced by a warm
+  neutral, and every rounded-* is flattened to zero. Copying the raw Tailwind
+  colours would produce a visibly different, bluer, softer page.
+
+  So these are the values that actually reach the screen. Amber and red were
+  left alone by that override and stay as the only real hues in the markup.
+*/
+@theme {
+  --color-bg: #0f0f10;              /* shell + sidebar   (--bg) */
+  --color-bg-alt: #151515;          /* main + topbar     (--bg-alt) */
+
+  --color-ink: #f3f4f6;             /* headings, KPI numbers, active nav */
+  --color-ink-2: #e5e7eb;           /* input text */
+  --color-ink-3: #d1d5db;           /* mono labels, table cells */
+  --color-muted: #9ca3af;           /* card labels, breadcrumb, idle nav */
+  --color-muted-2: #6b7280;         /* group labels, th, chart ticks */
+  --color-muted-3: #4b5563;         /* placeholder */
+
+  --color-accent: #e7e5e4;          /* fills: status square, progress bar */
+  --color-accent-soft: #cfc9c2;     /* accent text: deltas, values */
+  --color-warn: #fbbf24;            /* amber - the one warning colour */
+  --color-bad: #f87171;             /* red */
+
+  --color-line: rgba(255, 255, 255, 0.1);
+  --color-line-soft: rgba(255, 255, 255, 0.05);
+  --color-line-strong: rgba(255, 255, 255, 0.2);
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+
+  /*
+    Every corner is square. The reference kills border-radius globally with
+    `*, :before, :after { border-radius: 0 !important }`, which is why its
+    cards, its status indicator and its progress bars all read as sharp
+    rectangles in the screenshot. Zeroing the scale here gets the same result
+    without an !important sledgehammer, and leaves rounded-* usable as a
+    deliberate exception if one is ever wanted.
+  */
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
+}
+
+/*
+  The page background: a soft glow from the top plus a vertical ramp, and a
+  fixed 72px grid masked to a radial fade. Straight from dashboard.html:40-58.
+  It is what stops the large dark areas between panels reading as flat black.
+*/
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  color: var(--color-ink);
+  background:
+    radial-gradient(circle at top center, rgba(245, 245, 244, 0.08), transparent 32%),
+    linear-gradient(180deg, #141414 0%, #0f0f10 34%, #0b0b0c 100%);
+  background-attachment: fixed;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(circle at center, black 30%, transparent 82%);
+  -webkit-mask-image: radial-gradient(circle at center, black 30%, transparent 82%);
+  opacity: 0.4;
+}
+
+::selection {
+  background: rgba(231, 229, 228, 0.26);
+  color: #f5f5f4;
+}
+
+/* The reference hides its scrollbars inside the shell; the content still
+   scrolls, the chrome just does not intrude on a dark panel. */
+@utility hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Focus is drawn with the same hairline the design already uses for borders,
+   rather than the browser's blue ring which would be the only blue on screen.
+   Removing it outright would make the board unusable from a keyboard. */
+:focus-visible {
+  outline: 1px solid var(--color-line-strong);
+  outline-offset: 1px;
+}

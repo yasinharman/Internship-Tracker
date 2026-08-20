@@ -35,14 +35,24 @@ services:
     restart: unless-stopped
 
   # 3. START THE DASHBOARD SERVICE
+  #
+  # `target: dashboard` is required, not decorative. The Dockerfile's last
+  # stage is `worker` on purpose, so a plain `build: .` would produce the
+  # scraper image - which has no web/dist in it, and would serve a blank page
+  # while looking like a successful deploy.
   dashboard:
-    build: .
-    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0 --server.headless=true
+    build:
+      context: .
+      target: dashboard
     depends_on:
       db:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+    # Without this the board runs but is only reachable from inside the compose
+    # network - it was missing before and the dashboard was unreachable locally.
+    ports:
+      - "8501:8501"
     restart: unless-stopped
 
 volumes:
