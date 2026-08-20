@@ -1,16 +1,16 @@
 import { Link } from "react-router-dom";
 import { useEffect, useRef } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { ExternalLink } from "lucide-react";
+import { Activity, Building2, Clock, ExternalLink } from "lucide-react";
 import { api } from "../lib/api";
 import type { PageProps } from "../lib/shared";
-import { RANGE_DESCRIPTIONS, fmtDateTime, fmtNumber, fmtRelative, sourceTone } from "../lib/format";
+import { fmtDateTime, fmtNumber, fmtRelative, sourceTone } from "../lib/format";
 import type { Job, RangeKey } from "../lib/types";
 import { PageHeader } from "../components/PageHeader";
 import { RangeToggle } from "../components/RangeToggle";
 import { FilterBar } from "../components/FilterBar";
 import { Panel } from "../components/Panel";
-import { StatInline } from "../components/StatInline";
+import { StatCard } from "../components/StatCard";
 import { RankedList, type Row } from "../components/RankedList";
 import { DataTable, type Column } from "../components/DataTable";
 import { CategoryBadge } from "../components/Badge";
@@ -182,7 +182,11 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
             "Veritabanı boş"
           ) : (
             <>
-              {`${meta?.sources.length ?? 0} kaynak · ${RANGE_DESCRIPTIONS[query.range]} · son ilan ${fmtRelative(meta?.last_crawl_at ?? null)}`}
+              {/* The range is deliberately not repeated here - the segmented
+                  control at the other end of this row already shows which one
+                  is selected, and the words it cost were the width the cards
+                  needed. */}
+              {`${meta?.sources.length ?? 0} kaynak · son ilan ${fmtRelative(meta?.last_crawl_at ?? null)}`}
               {/*
                 The unclassified count used to be a fourth card. It is not the
                 same kind of number as the other three - it counts something
@@ -203,15 +207,21 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
         }
         stats={
           databaseEmpty || stats.isError ? undefined : (
-            <>
-              <StatInline label="Toplam İlan" value={kpis?.total ?? 0} delta={kpis?.total_delta} />
-              <StatInline label="Bugün Eklenen" value={kpis?.today ?? 0} />
-              <StatInline
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <StatCard
+                label="Toplam İlan"
+                icon={Activity}
+                value={kpis?.total ?? 0}
+                delta={kpis?.total_delta}
+              />
+              <StatCard label="Bugün Eklenen" icon={Clock} value={kpis?.today ?? 0} />
+              <StatCard
                 label="Farklı Şirket"
+                icon={Building2}
                 value={kpis?.companies ?? 0}
                 delta={kpis?.companies_delta}
               />
-            </>
+            </div>
           )
         }
       >
