@@ -10,7 +10,7 @@ import { RangeToggle } from "../components/RangeToggle";
 import { FilterBar } from "../components/FilterBar";
 import { Panel } from "../components/Panel";
 import { DataTable, type Column } from "../components/DataTable";
-import { CategoryBadge } from "../components/Badge";
+import { CategoryBadge, ClosedMark } from "../components/Badge";
 import { EmptyState, ErrorState, SkeletonRows } from "../components/States";
 
 const PAGE_SIZE = 50;
@@ -40,15 +40,21 @@ const COLUMNS: Column<Job>[] = [
     width: "30%",
     minWidth: "12.5rem",
     render: (row) => (
-      <a
-        href={row.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="group inline-flex items-start gap-1.5 text-xs text-ink-3 transition-colors hover:text-ink"
-      >
-        <span className="underline-offset-2 group-hover:underline">{row.job_title}</span>
-        <ExternalLink size={11} strokeWidth={2} className="mt-0.5 shrink-0 text-muted-3" />
-      </a>
+      <span className="inline-flex flex-wrap items-start gap-x-2 gap-y-1">
+        <a
+          href={row.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={row.closed_at ? "İlan yayından kalkmış - sayfa hâlâ açılabilir" : undefined}
+          className={`group inline-flex items-start gap-1.5 text-xs transition-colors hover:text-ink ${
+            row.closed_at ? "text-muted-2" : "text-ink-3"
+          }`}
+        >
+          <span className="underline-offset-2 group-hover:underline">{row.job_title}</span>
+          <ExternalLink size={11} strokeWidth={2} className="mt-0.5 shrink-0 text-muted-3" />
+        </a>
+        <ClosedMark closedAt={row.closed_at} when={fmtRelative(row.closed_at)} />
+      </span>
     ),
   },
   {

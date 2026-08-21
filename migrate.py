@@ -69,6 +69,30 @@ MIGRATIONS = [
         "job_posts.notified_at",
         "ALTER TABLE job_posts ADD COLUMN IF NOT EXISTS notified_at TIMESTAMP",
     ),
+    # Whether the posting is still on offer, decided by the *_check spiders.
+    # NOT folded into is_active: that column has two writers already
+    # (classify_jobs sets it False, pipelines sets it back True on every
+    # re-crawl) and a third would have them resurrecting each other's rows.
+    # See models.JobPost.
+    (
+        "job_posts.closed_at",
+        "ALTER TABLE job_posts ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP",
+    ),
+    (
+        "job_posts.checked_at",
+        "ALTER TABLE job_posts ADD COLUMN IF NOT EXISTS checked_at TIMESTAMP",
+    ),
+    (
+        "job_posts.last_seen_at",
+        "ALTER TABLE job_posts ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP",
+    ),
+    # Every dashboard query now carries `closed_at IS NULL`, and the check
+    # spiders select on it too. Same reasoning as the two indexes above.
+    (
+        "index on job_posts.closed_at",
+        "CREATE INDEX IF NOT EXISTS ix_job_posts_closed_at "
+        "ON job_posts (closed_at)",
+    ),
 ]
 
 

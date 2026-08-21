@@ -13,7 +13,7 @@ import { StatCard } from "../components/StatCard";
 import { Panel } from "../components/Panel";
 import { RankedList, type Row } from "../components/RankedList";
 import { DataTable, type Column } from "../components/DataTable";
-import { CategoryBadge } from "../components/Badge";
+import { CategoryBadge, ClosedMark } from "../components/Badge";
 import { EmptyState, ErrorState, SkeletonBlock, SkeletonRows } from "../components/States";
 import { DailyFlowChart } from "../components/DailyFlowChart";
 
@@ -39,16 +39,24 @@ const COLUMNS: Column<Job>[] = [
           href={row.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs text-ink-3 underline decoration-white/15 underline-offset-2 transition-colors hover:text-ink hover:decoration-white/60"
+          className={`text-xs underline decoration-white/15 underline-offset-2 transition-colors hover:text-ink hover:decoration-white/60 ${
+            // Dimmed rather than struck through: a closed posting is still
+            // worth reading, it just cannot be applied to any more.
+            row.closed_at ? "text-muted-2" : "text-ink-3"
+          }`}
         >
           {row.job_title}
         </a>{" "}
+        <ClosedMark closedAt={row.closed_at} when={fmtRelative(row.closed_at)} />{" "}
         <a
           href={row.url}
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`${row.job_title} ilanını yeni sekmede aç`}
-          className="ml-1 inline-flex items-center gap-1.5 border border-line bg-white/[0.02] px-2.5 py-1 text-[11px] font-medium whitespace-nowrap text-muted transition-colors hover:border-line-strong hover:bg-white/[0.06] hover:text-ink"
+          title={row.closed_at ? "İlan yayından kalkmış - sayfa hâlâ açılabilir" : undefined}
+          className={`ml-1 inline-flex items-center gap-1.5 border border-line bg-white/[0.02] px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-colors hover:border-line-strong hover:bg-white/[0.06] hover:text-ink ${
+            row.closed_at ? "text-muted-3" : "text-muted"
+          }`}
         >
           İlana git
           <ExternalLink size={11} strokeWidth={2} />

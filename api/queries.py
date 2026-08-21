@@ -35,6 +35,25 @@ VISIBLE = (JobPost.is_active.is_(True), JobPost.duplicate_of.is_(None))
 
 
 #####################################################
+# THE THIRD HIDE, AND THE ONLY SWITCHABLE ONE       #
+#####################################################
+# closed_at   the *_check spiders (MultiwebsiteScraper/openings.py) - the
+#             posting is no longer on offer at the board it came from.
+#
+# Deliberately not is_active either, for a reason that is not just tidiness:
+# pipelines.py sets is_active back to True on every re-crawl, so a posting
+# closed here would come back to life on the next run. Its own column, its own
+# single writer - the same answer duplicate_of got.
+#
+# Unlike the other two, this one has a switch. "Kapandi" and "baska alan" are
+# different things to a person: a job that closed yesterday is still worth
+# knowing about, while one the classifier judged to be somebody else's field
+# is not. So the board hides closed postings by default and the toggle brings
+# them back - and it brings back ONLY these, never the classifier's pile.
+OPEN = (JobPost.closed_at.is_(None),)
+
+
+#####################################################
 # JOB TYPE                                          #
 #####################################################
 # The types actually being looked for. Everything the scrapers find is still
@@ -203,6 +222,10 @@ def conditions(filters, *, apply_range=True):
     supplies its own bounds.
     """
     clauses = list(VISIBLE)
+
+    # Closed postings are out unless they were explicitly asked for.
+    if not filters.closed:
+        clauses.extend(OPEN)
 
     if filters.sources:
         clauses.append(JobPost.source_site.in_(filters.sources))

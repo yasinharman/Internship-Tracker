@@ -30,9 +30,10 @@ image's own `dashboard` build stage, both on port 8501.
 These came from `app.py` and each one is load-bearing. They live in
 `api/queries.py` with their reasoning; the short version:
 
-1. Every query filters `is_active AND duplicate_of IS NULL`. Two separate soft
-   deletes with two separate owners (the classifier, and dedupe). Neither
-   removes a row.
+1. Every query filters `is_active AND duplicate_of IS NULL`, and
+   `closed_at IS NULL` unless `closed=1` was asked for. Three separate soft
+   deletes with three separate owners (the classifier, dedupe, and the
+   `*_check` spiders). None of them removes a row.
 2. **`job_category IS NULL` rows are shown no matter what the field filter
    says.** If the LLM step fails, the postings are still real. A silently
    empty board is a worse failure than a few unsorted rows.
@@ -44,16 +45,23 @@ These came from `app.py` and each one is load-bearing. They live in
    arguable, not silent.
 6. `DATABASE_URL` is required with no fallback, and the error names `.env`,
    Coolify and the URL format.
+7. A posting the checks found gone is hidden by default and revealed by
+   `closed=1` — and **only** those. The classifier's `other` pile stays hidden
+   either way. "Kapandı" and "başka alan" are different things to a reader,
+   and one button that opened both would bury the handful of jobs that closed
+   under two hundred that were never relevant.
 
 ## Endpoints
 
 All of them accept `range` (`24h|7d|30d|all`), `sources`, `types`,
-`categories` (comma-separated) and `q`.
+`categories` (comma-separated), `q`, and `closed` (`1` to include postings
+that closed at their source; absent means the default board). The KPIs and the
+chart follow `closed` too — a job that closed is not part of "Toplam İlan".
 
 | Path | Returns |
 |---|---|
 | `/api/health` | never raises; distinguishes unconfigured from unreachable |
-| `/api/meta` | filter options with counts, defaults, unclassified count, last posting |
+| `/api/meta` | filter options with counts, defaults, unclassified count, **closed count**, last posting |
 | `/api/stats` | KPIs with period-over-period deltas, daily series, source split |
 | `/api/jobs` | paginated postings |
 | `/api/companies` | per-company totals, sources, watchlist flag |
@@ -82,3 +90,25 @@ The chart is the exception: it is a canvas, which CSS cannot reach into, so
 its translucent blue bars and dashed purple line survive exactly as Chart.js
 drew them. That is why `DailyFlowChart.tsx` keeps those colours rather than
 matching the neutral palette.
+
+## Postings that closed at their source
+
+`MultiwebsiteScraper/openings.py` and the three `*_check` spiders decide this;
+`docs/sites.md` has the per-site signal and the measurements behind it. What
+matters on this side is the shape:
+
+| Column | Owner | Meaning |
+|---|---|---|
+| `closed_at` | the `*_check` spiders | NULL = still on offer |
+| `checked_at` | the `*_check` spiders | last CONCLUSIVE answer; NULL after a blocked probe, on purpose |
+| `last_seen_at` | `pipelines.py` | the url was in a search result at this moment |
+
+It is **not** `is_active`. That column already has two writers — the
+classifier sets it False for another field, and `pipelines.py` sets it back to
+True on every re-crawl — so a posting closed there would come back to life on
+the next crawl. Same reasoning that kept `duplicate_of` separate.
+
+On the board it is one toggle in the filter bar, "Kapananlar", carrying
+`meta.closed_count` so the button says what it would reveal before it is
+pressed. Closed rows appear mixed in with the open ones rather than in a
+section of their own, so each carries a `kapandı` badge and a dimmed title.

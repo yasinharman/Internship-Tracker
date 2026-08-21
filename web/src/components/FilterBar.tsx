@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, RotateCcw, X } from "lucide-react";
+import { Archive, Check, ChevronDown, RotateCcw, X } from "lucide-react";
 import type { Meta, Option } from "../lib/types";
 import type { Query } from "../lib/api";
 
@@ -119,6 +119,52 @@ function Dropdown({
   );
 }
 
+/**
+ * The fourth control, and the only one that is not a multi-select.
+ *
+ * It reveals postings the *_check spiders found gone from their source site -
+ * and ONLY those. The classifier's `other` pile stays hidden either way:
+ * "kapandi" and "baska alan" are different things, and a single button that
+ * opened both would bury the handful of jobs that closed under two hundred
+ * that were never relevant.
+ *
+ * The count is on the button so it says what it would reveal before it is
+ * pressed. Disabled at zero rather than hidden, so the control does not
+ * appear and disappear as the board changes underneath it.
+ */
+function ClosedToggle({
+  active,
+  count,
+  onChange,
+}: {
+  active: boolean;
+  count: number;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!active)}
+      disabled={count === 0 && !active}
+      aria-pressed={active}
+      title={
+        count === 0
+          ? "Kapanmış ilan yok"
+          : "Kaynağında yayından kalkmış ilanları da listele"
+      }
+      className={`flex items-center gap-2 border px-3 py-1.5 text-[13px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        active
+          ? "border-line-strong bg-white/10 text-ink"
+          : "border-line bg-white/[0.03] text-muted hover:text-ink-2"
+      }`}
+    >
+      <Archive size={14} strokeWidth={2} className={active ? "text-ink" : "text-muted-2"} />
+      <span>Kapananlar</span>
+      <span className="tabular-nums text-muted-2">{count}</span>
+    </button>
+  );
+}
+
 export function FilterBar({
   meta,
   query,
@@ -179,6 +225,12 @@ export function FilterBar({
         options={meta.categories}
         selected={query.categories}
         onChange={(next) => update({ categories: next })}
+      />
+
+      <ClosedToggle
+        active={query.closed}
+        count={meta.closed_count}
+        onChange={(next) => update({ closed: next })}
       />
 
       <div className="mx-1 h-5 w-px bg-line" />

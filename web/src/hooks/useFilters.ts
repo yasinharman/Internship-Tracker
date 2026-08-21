@@ -32,6 +32,7 @@ export function useFilters(meta: Meta | undefined) {
       types: list("types", meta?.defaults.types ?? []),
       categories: list("categories", meta?.defaults.categories ?? []),
       q: params.get("q") ?? "",
+      closed: params.get("closed") === "1",
     };
   }, [params, meta]);
 
@@ -45,7 +46,15 @@ export function useFilters(meta: Meta | undefined) {
             // "nothing selected", which is different from "not set" (the
             // defaults). "" in the URL is how that difference is written down.
             if (Array.isArray(value)) next.set(key, value.join(","));
-            else if (value) next.set(key, String(value));
+            // Booleans get "1" rather than String(value): "closed=1" is what
+            // the API reads and what a person scanning a url can parse.
+            // Falling through to the truthy branch below would write
+            // "closed=true", which the server does accept but nothing else
+            // in this url speaks.
+            else if (typeof value === "boolean") {
+              if (value) next.set(key, "1");
+              else next.delete(key);
+            } else if (value) next.set(key, String(value));
             else next.delete(key);
           }
           return next;
@@ -59,7 +68,7 @@ export function useFilters(meta: Meta | undefined) {
   const reset = useCallback(() => setParams(new URLSearchParams(), { replace: true }), [setParams]);
 
   const touched = useMemo(
-    () => ["range", "sources", "types", "categories", "q"].some((key) => params.has(key)),
+    () => ["range", "sources", "types", "categories", "q", "closed"].some((key) => params.has(key)),
     [params],
   );
 

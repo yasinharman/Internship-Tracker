@@ -106,15 +106,33 @@ with Session(engine) as s:
         for _ in range(random.randint(1, 9)):
             n += 1
             cat = random.choice(CATS)
+            created = now - timedelta(days=day, hours=random.randint(0, 23))
+            # Some of the older ones have closed, so the "Kapananlar" toggle
+            # has something to reveal. Weighted by age because that is how it
+            # actually goes: a posting from last week is usually still open,
+            # one from six weeks ago usually is not.
+            closed = (
+                now - timedelta(days=random.randint(0, max(day - 1, 0)))
+                if day > 7 and random.random() < day / 60
+                else None
+            )
+            # last_seen_at must be OLDER than closed_at on a closed row.
+            # Newer means "a crawl saw it after we closed it", which is the
+            # signal the checks read to undo a wrong verdict - a demo row
+            # asking to be reopened would be a lie about its own state.
+            last_seen = closed - timedelta(hours=6) if closed else now - timedelta(days=random.randint(0, 2))
             rows.append(JobPost(
                 job_title=random.choice(TITLES), company=random.choice(COMPANIES),
                 location=random.choice(["İstanbul", "Ankara", "İzmir", "Remote"]),
                 url=f"https://example.test/ilan/{n}", source_site=random.choice(SITES),
-                created_at=now - timedelta(days=day, hours=random.randint(0, 23)),
+                created_at=created,
                 is_active=True, job_type=random.choice(TYPES), job_category=cat,
                 category_reason=None if cat is None else f"Başlık '{cat}' alanına işaret ediyor.",
                 classified_at=None if cat is None else now,
                 notified_at=now if random.random() < 0.3 else None,
+                closed_at=closed,
+                checked_at=now - timedelta(hours=random.randint(0, 30)),
+                last_seen_at=last_seen,
             ))
     s.add_all(rows)
     s.commit()

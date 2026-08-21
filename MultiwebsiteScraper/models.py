@@ -73,6 +73,47 @@ class JobPost(Base):
     # job_category above.
     notified_at = Column(DateTime)
 
+    ###################################################################
+    # STILL ON OFFER?                                                 #
+    ###################################################################
+    # Owned by the three *_check spiders (MultiwebsiteScraper/openings.py).
+    # NULL means "still open"; a value is the moment a check found the
+    # posting gone from the board it came from.
+    #
+    # Deliberately NOT folded into is_active, for the same reason
+    # duplicate_of is not: that column already has two writers - the
+    # classifier sets it False for another field, and pipelines.py sets it
+    # back to True on every re-crawl. A third writer would have them
+    # resurrecting each other's rows, and a closed posting would come back to
+    # life on the next run. It also has to stay separate for the dashboard:
+    # "kapandi" and "baska alan" are different things to a person, and the
+    # board's toggle only reveals the first.
+    #
+    # index=True because every dashboard query now carries
+    # `closed_at IS NULL` - same reasoning as job_category above, and
+    # migrate.py adds the matching index to an existing database.
+    closed_at = Column(DateTime, index=True)
+
+    # When a check last got a CONCLUSIVE answer. A blocked or timed-out probe
+    # leaves this alone on purpose, so "checked and open" stays
+    # distinguishable from "never successfully checked" - which is the whole
+    # database on the day this ships.
+    checked_at = Column(DateTime)
+
+    # Written by pipelines.py on every upsert: this url was in a search
+    # result at this moment, so the posting was definitely open then.
+    #
+    # Not updated_at, which looks like it would do: SQLAlchemy's onupdate
+    # only fires when some other field actually changes value, so a re-crawl
+    # that finds nothing different leaves it untouched. Nothing reads
+    # updated_at either.
+    #
+    # Used in ONE direction only. Being in a search result proves a posting
+    # is open; being absent from one proves nothing, because the searches are
+    # narrow (Istanbul, nine departments) and measured 21.08.2026 only 14 of
+    # 36 stored kariyer.net postings appear in them on any given day.
+    last_seen_at = Column(DateTime)
+
 ##############################
 # CONNECTION TO THE DATABASE #
 ##############################

@@ -1,6 +1,7 @@
 from itemadapter import ItemAdapter
 from sqlalchemy.orm import sessionmaker
 from .models import JobPost, db_connect, create_table
+from datetime import datetime
 import re
 
 ########################################
@@ -209,6 +210,13 @@ class JobScraperPipeline:
                 if existing_job.job_category != "other":
                     existing_job.is_active = True
 
+                # The url was in a search result just now, so the posting is
+                # open. The *_check spiders read this and nothing else to undo
+                # a closed_at they wrote earlier - see models.JobPost. They own
+                # closed_at; this side only leaves the evidence, so the two
+                # writers never touch the same column.
+                existing_job.last_seen_at = datetime.utcnow()
+
                 spider.logger.info(f"Existing job post updated: {item.get('url')}")
             
             # If the job application is not in the database we are adding its data to database
@@ -221,6 +229,7 @@ class JobScraperPipeline:
                     url = item.get('url'),
                     source_site = item.get('source_site'),
                     job_type = normalized_job_type,
+                    last_seen_at = datetime.utcnow(),
                     # For created_at and is_active fields we created default values
                 )
                 session.add(new_job)

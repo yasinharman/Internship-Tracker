@@ -27,6 +27,9 @@ class Filters:
     types: list = field(default_factory=list)
     categories: list = field(default_factory=list)
     q: Optional[str] = None
+    # Include postings the checks found gone from their source site. Off by
+    # default: the board is a noticeboard, not an archive.
+    closed: bool = False
 
 
 def filter_params(
@@ -35,6 +38,7 @@ def filter_params(
     types: Optional[str] = Query(None, description="Virgülle ayrılmış iş tipi listesi"),
     categories: Optional[str] = Query(None, description="Virgülle ayrılmış alan listesi"),
     q: Optional[str] = Query(None, description="Başlık veya şirket adında arama"),
+    closed: bool = Query(False, description="Kapanmış ilanları da göster"),
 ) -> Filters:
     """
     FastAPI dependency.
@@ -49,4 +53,5 @@ def filter_params(
         types=_split(types),
         categories=_split(categories),
         q=q,
+        closed=closed,
     )

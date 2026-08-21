@@ -85,6 +85,19 @@ PARKED_SPIDERS = []
 # jooble, which handed urls to detail_worker through a file. Both are gone.
 FOLLOW_UP_SPIDERS = {}
 
+###################################################################
+# IS EACH STORED POSTING STILL ON OFFER?                          #
+###################################################################
+# One checker per crawl spider, subclassing it so the proxy, the handshake
+# ladder, the session and the throttle all come along - see
+# MultiwebsiteScraper/openings.py. They run after the crawl, not with it.
+#
+# Deliberately NOT in SPIDERS: these fetch urls the database already holds,
+# they add no postings, and folding them in would make run_spiders' "every
+# spider found nothing = failed run" rule fire on a checker that legitimately
+# had nothing left to check.
+CHECK_SPIDERS = ["kariyernet_check", "techcareer_check", "indeed_check"]
+
 # A wedged spider must not hold the scheduled task open forever.
 SPIDER_TIMEOUT = int(os.getenv("SPIDER_TIMEOUT", "1800"))
 
@@ -99,6 +112,15 @@ DEDUPE_TIMEOUT = int(os.getenv("DEDUPE_TIMEOUT", "120"))
 # (notify_watchlist.py) - this is the ceiling for the whole batch, not one
 # call, in case a run has an unusually large number of watchlist matches.
 NOTIFY_TIMEOUT = int(os.getenv("NOTIFY_TIMEOUT", "300"))
+
+# One request per posting the board can still show, spaced by each site's own
+# DOWNLOAD_DELAY. Measured 21.08.2026: 60 Indeed postings at 6s is about six
+# minutes, kariyer.net's 14 at 4s about one, techcareer's 5 at 1.5s a few
+# seconds. This is the per-SITE ceiling (run_spider applies it to each), so it
+# is generous on purpose - a checker that gets killed halfway leaves the rest
+# unchecked, which is harmless, but it should take a genuinely wedged process
+# to get there.
+CHECK_TIMEOUT = int(os.getenv("CHECK_TIMEOUT", "1200"))
 
 
 ####################################
@@ -135,11 +157,16 @@ def _read_spider_stats(stats_path):
             pass
 
 
-def run_spider(spider_name):
+def run_spider(spider_name, timeout=None):
     """
     Returns (ok, stats). stats is the dict from _read_spider_stats(), or
     None when the spider did not report one.
+
+    timeout defaults to SPIDER_TIMEOUT. The check spiders pass CHECK_TIMEOUT
+    instead: they make one request per stored posting rather than a handful of
+    listing pages, so they are a different shape of long.
     """
+    timeout = SPIDER_TIMEOUT if timeout is None else timeout
     print(f"\n=== {spider_name}: starting ===", flush=True)
     started = time.monotonic()
 
@@ -157,15 +184,15 @@ def run_spider(spider_name):
         result = subprocess.run(
             command,
             cwd=SCRAPY_PROJECT_FOLDER,
-            timeout=SPIDER_TIMEOUT,
+            timeout=timeout,
             env=env,
         )
         exit_code = result.returncode
 
     except subprocess.TimeoutExpired:
         print(
-            f"=== {spider_name}: KILLED after {SPIDER_TIMEOUT}s "
-            f"(raise SPIDER_TIMEOUT if this is legitimate) ===",
+            f"=== {spider_name}: KILLED after {timeout}s "
+            f"(raise SPIDER_TIMEOUT / CHECK_TIMEOUT if this is legitimate) ===",
             flush=True,
         )
         return False, _read_spider_stats(stats_path)
@@ -366,6 +393,39 @@ def run_step(label, script, timeout):
     return False
 
 
+def run_checks():
+    """
+    Ask each site whether the postings we hold are still on offer.
+
+    Reuses run_spider() rather than run_step(): these ARE spiders, and that
+    gets the per-spider timeout, the stats handoff and the log formatting for
+    free. The checkers lend item_scraped_count to mean "verdicts we could act
+    on", so the "0 postings" line run_spider prints keeps its meaning - zero
+    verdicts is a site that refused us, which is exactly what it means for a
+    crawl spider too.
+
+    A failure here is reported and moved past. The worst case is a board that
+    still lists something that closed, which is where it was before any of
+    this existed.
+    """
+    ok = True
+    for spider in CHECK_SPIDERS:
+        succeeded, stats = run_spider(spider, timeout=CHECK_TIMEOUT)
+        if not succeeded:
+            ok = False
+        elif stats and stats.get("items") == 0:
+            # Not a crash, so nothing else says it: the spider opened, was
+            # refused on every request and closed tidily. No posting was
+            # closed on the strength of that, by design - but the check did
+            # not happen and the log should say so rather than imply it did.
+            print(
+                f"  ({spider}: no conclusive verdicts - the site refused us, or "
+                f"there was nothing left to check)",
+                flush=True,
+            )
+    return ok
+
+
 def run_post_crawl():
     """
     Everything that happens after the postings are in the database.
@@ -382,14 +442,22 @@ def run_post_crawl():
     trading a slightly earlier Telegram ping for nothing classify would have
     added.
 
-    None of dedupe, notify or classify failing stops the others. A job listed
-    twice, a missed Telegram ping, or an unsorted posting are each worth far
-    less than leaving everything the crawl just found untouched.
+    Checking whether the stored postings are still open runs LAST, and that
+    ordering is what makes it affordable. By this point classify has moved
+    this crawl's `other` postings out of the board, so the set to check is the
+    set the board can actually show - 79 rows on 21.08.2026 rather than 290.
+    The cost scales with the board, not with the archive.
+
+    None of dedupe, notify, classify or the checks failing stops the others. A
+    job listed twice, a missed Telegram ping, an unsorted posting or a board
+    that still lists a job that closed yesterday are each worth far less than
+    leaving everything the crawl just found untouched.
     """
     deduped = run_step("dedupe", "dedupe_jobs.py", DEDUPE_TIMEOUT)
     notified = run_step("notify", "notify_watchlist.py", NOTIFY_TIMEOUT)
     classified = run_step("classify", "classify_jobs.py", CLASSIFY_TIMEOUT)
-    return deduped and notified and classified
+    checked = run_checks()
+    return deduped and notified and classified and checked
 
 
 ############################################
@@ -436,9 +504,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--skip-classify",
         action="store_true",
-        help="Crawl only - skip both the dedupe and the classify step. New "
-             "postings stay unsorted and remain visible on the dashboard "
-             "until a later run picks them up.",
+        help="Crawl only - skip dedupe, notify, classify and the "
+             "still-open checks. New postings stay unsorted and remain "
+             "visible on the dashboard until a later run picks them up, and "
+             "no posting is marked closed.",
     )
     args = parser.parse_args()
 
@@ -451,6 +520,11 @@ if __name__ == "__main__":
         # runnable with --spider, it just does not run on a schedule.
         for name in PARKED_SPIDERS:
             print(f"{name}  (parked - see the comment on SPIDERS)")
+        # Run after every crawl, and by hand as `scrapy crawl <name>` from
+        # MultiwebsiteScraper/ - not through --spider, which is for the
+        # spiders that bring postings IN.
+        for name in CHECK_SPIDERS:
+            print(f"{name}  (post-crawl check, run it with: scrapy crawl {name})")
         sys.exit(0)
 
     if args.schedule:
@@ -481,8 +555,9 @@ if __name__ == "__main__":
     if not args.skip_classify:
         if not run_post_crawl():
             print(
-                "  (post-crawl step did not finish - postings are stored and "
-                "visible, just unsorted)",
+                "  (a post-crawl step did not finish - postings are stored and "
+                "visible; they may be unsorted, or a closed one may still be "
+                "listed)",
                 flush=True,
             )
 

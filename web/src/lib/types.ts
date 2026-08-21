@@ -15,6 +15,9 @@ export interface Meta {
   categories: Option[];
   defaults: { range: RangeKey; types: string[]; categories: string[] };
   unclassified_count: number;
+  /** Postings a check found gone from their source site - the number on the
+   *  "Kapananlar" toggle, so the button says what it would reveal. */
+  closed_count: number;
   last_crawl_at: string | null;
   total: number;
 }
@@ -55,6 +58,10 @@ export interface Job {
   category_label: string | null;
   category_reason: string | null;
   created_at: string;
+  /** null = still on offer. Only ever non-null when closed=1 was asked for. */
+  closed_at: string | null;
+  checked_at: string | null;
+  last_seen_at: string | null;
 }
 
 export interface JobPage {

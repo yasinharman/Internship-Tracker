@@ -55,3 +55,25 @@ export function CategoryBadge({
     </Badge>
   );
 }
+
+/**
+ * Shown next to the title of a posting the checks found gone from its source
+ * site. Renders nothing for an open one, so the tables can drop it into the
+ * title cell unconditionally.
+ *
+ * These rows only appear at all when "Kapananlar" is on, but they appear
+ * MIXED IN with the open ones rather than in a section of their own - so the
+ * row has to say which it is by itself. `title` carries the date, because
+ * "closed" and "closed three weeks ago" are different amounts of bad news.
+ */
+export function ClosedMark({ closedAt, when }: { closedAt: string | null; when?: string }) {
+  if (!closedAt) return null;
+  return (
+    <Badge
+      tone="neutral"
+      title={when ? `Bu ilan kaynağında yayından kalkmış (${when})` : "Bu ilan kaynağında yayından kalkmış"}
+    >
+      kapandı
+    </Badge>
+  );
+}

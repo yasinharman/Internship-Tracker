@@ -43,6 +43,8 @@ export interface Query {
   types: string[];
   categories: string[];
   q: string;
+  /** Include postings that closed at their source. Off is the default view. */
+  closed: boolean;
 }
 
 /** Multi-selects travel comma-joined so a copied URL stays readable. */
@@ -53,6 +55,9 @@ function toParams(query: Query) {
     types: query.types.join(","),
     categories: query.categories.join(","),
     q: query.q,
+    // Sent only when on: an absent parameter is what "the default board"
+    // looks like in a copied url.
+    closed: query.closed ? "1" : "",
   };
 }
 

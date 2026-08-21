@@ -940,3 +940,87 @@ To undo one, clear the link - the next run re-evaluates it:
 ```sql
 update job_posts set duplicate_of = null where id = <id>;
 ```
+
+---
+
+## Is the posting still open? - measured 21.08.2026
+
+Nothing used to mark a posting as gone, so the board was an archive pretending
+to be a noticeboard: three weeks of crawling piled up and the only way to find
+out whether a job was still open was to click it. `*_check` spiders now ask
+each site, once per crawl. See `MultiwebsiteScraper/openings.py`.
+
+**Only the board is checked, not the table.** On 21.08.2026 the database held
+297 postings but only **79** were visible (60 Indeed, 14 kariyer.net, 5
+techcareer.net) - the other 211 are the classifier's `other` pile, hidden
+either way. Checking those too would have quadrupled the cost to re-confirm
+postings nobody will ever see.
+
+### The signal, per site
+
+Every one of these is the site's own answer, not a marker that happens to
+correlate.
+
+| Site | Signal | Measured on |
+|---|---|---|
+| kariyer.net | `[data-test="apply-button"]` is absent | 2 live (4487444 Eczacıbaşı, 4502891 BASF) had one each; 2 closed (4469047 PepsiCo, 4498903 TK Asansör) had none, and grew a "Benzer İlanlar" block instead |
+| techcareer.net | `head.isCompleted` in the detail JSON | true + `endDate 2026-08-15` (past) vs false + `endDate 2026-08-26` (future). The list endpoint filters on the same field (`jobs[isCompleted]=false`) |
+| Indeed | `"isJobExpired":true` in `window._initialData` | 12 stored postings: 9 false, 3 true, none ambiguous |
+
+### Three things that look like signals and are not
+
+1. **HTTP status.** kariyer.net returns **200 for a closed posting**. So does
+   Indeed. A status-code check finds nothing at all.
+2. **The words "expired" / "no longer" on an Indeed page.** They are on every
+   page, expired or not - localisation entries in the bundle ("This job has
+   expired on Indeed" -> "Indeed'de bu iş ilanının süresi doldu"), not state.
+   `expiredJobMetadataModel` was `null` on all 12, live and expired alike.
+3. **Absence from a search result.** Only 14 of 36 stored kariyer.net postings
+   appeared in the live searches that day. The searches are narrow (İstanbul,
+   nine departments) and the site's own ordering shifts between requests, so
+   absence proves nothing. Presence proves the posting is open - which is the
+   one direction `last_seen_at` is used in.
+
+### Failing in the safe direction
+
+`CLOSED` is written only on a positive signal from a page we recognise as a
+real posting page. A block, a redirect, a timeout or an unfamiliar shape is
+`UNKNOWN` and writes **nothing** - not even `checked_at`, because stamping it
+would hide a site that has started refusing us behind a fresh timestamp.
+
+This was tested by accident on 21.08.2026: kariyer.net began answering 403
+mid-development, the block ladder walked all four handshakes, the domain block
+budget stopped the run - and the checker reported `0 open, 0 closed, 0
+inconclusive, 14 unanswered`. Not one posting was closed on the strength of a
+blocked run.
+
+A wrong verdict is self-healing. `pipelines.py` stamps `last_seen_at` on every
+upsert, and the next check clears `closed_at` on any row whose `last_seen_at`
+is newer than it - the crawl saw the posting in a search result after we
+declared it gone, so we were wrong.
+
+To undo one by hand, or to force a re-check:
+
+```sql
+update job_posts set closed_at = null, checked_at = null where id = <id>;
+```
+
+### The throttle bug this uncovered
+
+Two middlewares fetch requests themselves and return the Response from
+`process_request`: `CurlImpersonateMiddleware` (kariyer.net) and
+`PlaywrightMiddleware` (Indeed). That short-circuits the downloader entirely -
+`Downloader._enqueue_request` owns the per-domain slot and is never reached -
+so **`DOWNLOAD_DELAY`, `CONCURRENT_REQUESTS_PER_DOMAIN` and AutoThrottle
+silently stopped applying to those two spiders.**
+
+Measured on `kariyernet_check`: 14 requests in 3.3s against a configured delay
+of 4, which should have taken 56. The giveaway is in the stats -
+`downloader/request_count` is missing entirely while
+`downloader/response_count` is 14, because the counter lives in the method
+that was skipped.
+
+It hid because the crawl spiders make few requests. The checkers make one per
+posting - 60 against Indeed, the site most likely to refuse us - which is
+where it stopped being a technicality. `MultiwebsiteScraper/throttle.py` now
+keeps the delay for both.

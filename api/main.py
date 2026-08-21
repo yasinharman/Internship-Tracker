@@ -166,6 +166,7 @@ def meta(session: Session = Depends(get_session)):
             categories=default_categories or [option.value for option in categories],
         ),
         unclassified_count=q.count_where(session, visible + [JobPost.job_category.is_(None)]),
+        closed_count=q.count_where(session, visible + [JobPost.closed_at.is_not(None)]),
         last_crawl_at=session.scalar(select(func.max(JobPost.created_at)).where(and_(*visible))),
         total=q.count_where(session, visible),
     )
@@ -319,6 +320,9 @@ def _job(row: JobPost) -> Job:
         category_label=q.CATEGORY_LABELS.get(row.job_category) if row.job_category else None,
         category_reason=row.category_reason,
         created_at=row.created_at,
+        closed_at=row.closed_at,
+        checked_at=row.checked_at,
+        last_seen_at=row.last_seen_at,
     )
 
 
@@ -405,7 +409,8 @@ def sources(filters: Filters = Depends(filter_params), session: Session = Depend
     have wanted to see had stopped producing.
     """
     unfiltered = Filters(
-        range=filters.range, sources=[], types=filters.types, categories=filters.categories, q=filters.q
+        range=filters.range, sources=[], types=filters.types, categories=filters.categories,
+        q=filters.q, closed=filters.closed,
     )
     clauses = q.conditions(unfiltered)
     day_start = q.local_day_start()

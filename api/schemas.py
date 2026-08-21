@@ -40,6 +40,10 @@ class Meta(BaseModel):
     # Postings the classifier has not looked at yet. Surfaced because they are
     # shown regardless of the category filter and the board should say so.
     unclassified_count: int
+    # Postings the checks found gone from their source site. Drives the count
+    # on the "Kapananlar" toggle, so the button can say what it would reveal
+    # before it is pressed.
+    closed_count: int
     last_crawl_at: Optional[datetime]
     total: int
 
@@ -107,6 +111,15 @@ class Job(BaseModel):
     # moment its reason reads wrong.
     category_reason: Optional[str]
     created_at: datetime
+    # NULL means still on offer. A value is when a check found it gone - the
+    # row is only ever sent when the caller asked for closed postings.
+    closed_at: Optional[datetime]
+    # When a check last got a conclusive answer, and when a crawl last saw
+    # this url in a search result. Both None across the board until the first
+    # run of the checks, which is why "never checked" has to stay tellable
+    # apart from "checked and open".
+    checked_at: Optional[datetime]
+    last_seen_at: Optional[datetime]
 
 
 class JobPage(BaseModel):
