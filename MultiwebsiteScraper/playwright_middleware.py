@@ -54,6 +54,8 @@ from scrapy import signals
 from scrapy.responsetypes import responsetypes
 from scrapy.utils.python import to_unicode
 
+from .throttle import SlotThrottle
+
 logger = logging.getLogger(__name__)
 
 # Cloudflare's managed challenge resolves itself via JS in a few seconds when
@@ -85,6 +87,10 @@ class PlaywrightMiddleware:
                 f"or unset INDEED_STORAGE_STATE to fall back to INDEED_COOKIES."
             )
         self.storage_state_path = raw_path or None
+
+        # See process_request: this transport bypasses the downloader's own
+        # slot, so it has to keep the delay itself.
+        self.throttle = SlotThrottle(crawler.settings)
 
         self._worker = None
         self._spider = None
@@ -272,6 +278,14 @@ class PlaywrightMiddleware:
             return None
 
         self._ensure_worker(spider)
+
+        # Playwright answers the request here and returns the Response, which
+        # short-circuits the downloader and takes DOWNLOAD_DELAY with it - so
+        # indeed_cards' configured 6s between requests was never actually
+        # being waited. See throttle.py for the measurement. This matters more
+        # here than anywhere else in the project: Indeed is the site most
+        # likely to refuse us and the only independent source left.
+        self.throttle.wait_turn(request)
 
         future = Future()
         self._job_queue.put((request, future))

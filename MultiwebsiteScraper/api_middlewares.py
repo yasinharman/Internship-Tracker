@@ -44,6 +44,7 @@ from scrapy.utils.response import response_status_message
 
 from .browser_session import profile_for_impersonate
 from .proxy import ProxyConfig, new_session_id
+from .throttle import SlotThrottle
 
 logger = logging.getLogger(__name__)
 
@@ -604,6 +605,11 @@ class CurlImpersonateMiddleware:
         self.crawler = crawler
         self.timeout = crawler.settings.getfloat("DOWNLOAD_TIMEOUT", 180)
 
+        # This transport never reaches Downloader._enqueue_request, so
+        # DOWNLOAD_DELAY does not apply to it on its own. See throttle.py -
+        # the same hole exists in playwright_middleware.py.
+        self.throttle = SlotThrottle(crawler.settings)
+
     @classmethod
     def from_crawler(cls, crawler):
         return cls(crawler)
@@ -624,6 +630,8 @@ class CurlImpersonateMiddleware:
 
         proxy = request.meta.get("proxy")
         proxies = {"http": proxy, "https": proxy} if proxy else None
+
+        self.throttle.wait_turn(request)
 
         try:
             reply = curl_requests.request(
