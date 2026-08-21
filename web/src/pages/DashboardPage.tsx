@@ -18,18 +18,42 @@ import { EmptyState, ErrorState, SkeletonBlock, SkeletonRows } from "../componen
 import { DailyFlowChart } from "../components/DailyFlowChart";
 
 const COLUMNS: Column<Job>[] = [
+  // The title has always been a link, but nothing said so - it rendered as
+  // plain text with only a hover underline, so the way out to the actual
+  // posting was invisible until you happened to mouse over it. This is the
+  // affordance; the underline on the title is the reminder.
+  //
+  // It sits in the text flow directly after the title rather than in a column
+  // of its own at the far edge of the row. As a column it was lined up with
+  // the dates, five columns away from the title it belonged to, and the
+  // shorter the title the wider that gap got. Inline, it is always the next
+  // thing after the title - and because it is in the flow rather than a flex
+  // row beside it, it follows the last line when a long title wraps instead
+  // of floating up beside the first.
   {
     key: "title",
     header: "Başlık",
     render: (row) => (
-      <a
-        href={row.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-xs text-ink-3 underline decoration-white/15 underline-offset-2 transition-colors hover:text-ink hover:decoration-white/60"
-      >
-        {row.job_title}
-      </a>
+      <>
+        <a
+          href={row.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-ink-3 underline decoration-white/15 underline-offset-2 transition-colors hover:text-ink hover:decoration-white/60"
+        >
+          {row.job_title}
+        </a>{" "}
+        <a
+          href={row.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`${row.job_title} ilanını yeni sekmede aç`}
+          className="ml-1 inline-flex items-center gap-1.5 border border-line bg-white/[0.02] px-2.5 py-1 text-[11px] font-medium whitespace-nowrap text-muted transition-colors hover:border-line-strong hover:bg-white/[0.06] hover:text-ink"
+        >
+          İlana git
+          <ExternalLink size={11} strokeWidth={2} />
+        </a>
+      </>
     ),
   },
   {
@@ -76,28 +100,6 @@ const COLUMNS: Column<Job>[] = [
       <span className="font-mono text-xs whitespace-nowrap text-muted-2" title={fmtDateTime(row.created_at)}>
         {fmtRelative(row.created_at)}
       </span>
-    ),
-  },
-  // The title has always been a link, but nothing said so - it rendered as
-  // plain text with only a hover underline, so the way out to the actual
-  // posting was invisible until you happened to mouse over it. This is the
-  // affordance; the underline on the title is the reminder.
-  {
-    key: "open",
-    header: "",
-    align: "right",
-    width: "1%",
-    render: (row) => (
-      <a
-        href={row.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label={`${row.job_title} ilanını yeni sekmede aç`}
-        className="inline-flex items-center gap-1.5 border border-line bg-white/[0.02] px-2.5 py-1 text-[11px] font-medium whitespace-nowrap text-muted transition-colors hover:border-line-strong hover:bg-white/[0.06] hover:text-ink"
-      >
-        İlana git
-        <ExternalLink size={11} strokeWidth={2} />
-      </a>
     ),
   },
 ];
