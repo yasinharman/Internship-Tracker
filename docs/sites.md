@@ -435,6 +435,20 @@ full scan. `workPlaces` across the board: 169 on-site, 23 hybrid, 2 remote.
 
 ## Indeed - RUNNING, un-parked 30.07.2026
 
+> **HOW THIS ACTUALLY RUNS, 21.08.2026.** `python main.py` is started by hand
+> on a local machine, writing to the remote Postgres. There is no server-side
+> crawler and **no proxy**: `.env` carries `PROXY_MODE=off` and no `PROXY_URL`
+> or `IPROYAL_*` at all, so every request goes direct from a home connection.
+> That connection is residential, which is the property the measurements below
+> actually depended on - the proxy was only ever one way of getting one.
+>
+> Everything below was measured on 28-30.07.2026 through a static residential
+> proxy on the server, a setup that no longer exists. The conclusions still
+> hold and the mechanisms they explain are all still in the code; the
+> addresses and the machine are not. **Re-measure on the machine you actually
+> run from** - the one lesson from those three days that survives its own
+> environment.
+
 **Status 30.07.2026.** Back in `main.py`'s SPIDERS list. The proving run
 happened on the server, through the static residential proxy, with the
 exported session: **61 requests, 61 HTTP 200**, no challenges, no handshake
@@ -606,15 +620,22 @@ So the honest statement is narrower than "a session must wear its own
 browser": the accepted combination is (client × handshake × session), it is
 not stable across machines, and the ladder exists precisely because none of
 it stays decided. Leading with the session's browser is what measured right
-**on the server, which is where this runs**. Re-measure there, never here -
-the same lesson that cost 28.07, and again on 30.07.
+on the server, which is where it ran at the time. Re-measure wherever you
+actually run it - the same lesson that cost 28.07, and again on 30.07. As of
+21.08.2026 that is a local machine, so the "server" in this paragraph is no
+longer the place to measure.
 
 ### Why it stayed parked so long
 
 Not because it failed - because the server did not have what the measurements
 were made on. The static address and the session lived in a local `.env`
-while Coolify had the rotating pool that never worked. Both are now set there
-(`PROXY_URL`, `INDEED_COOKIES_B64`) and the spider is un-parked.
+while Coolify had the rotating pool that never worked.
+
+That was resolved by setting both on the server, and the spider was un-parked.
+**Since 21.08.2026 the arrangement is simpler and the proxy is out of it
+entirely:** the crawl runs by hand from a local machine whose own connection
+is residential, with `INDEED_COOKIES_B64` for the session and
+`PROXY_MODE=off`. `PROXY_URL` is not set anywhere.
 
 `INDEED_COOKIES` must be an **absolute** path: `main.py:137` runs the spider
 with `cwd=MultiwebsiteScraper`, so a bare filename resolves in the wrong
@@ -684,8 +705,14 @@ with escaped quotes and braces inside string values.
 
 **A plain request from a residential IP returns HTTP 200 with the full page** -
 no challenge, despite Cloudflare fronting the site. Worth noting: the old
-spider pays ScrapeOps for JS rendering that may not be needed. The datacenter
-case should be covered by the residential proxy in `api_middlewares`.
+spider pays ScrapeOps for JS rendering that may not be needed.
+
+This is the property the whole arrangement rests on, and as of 21.08.2026 it
+comes from the home connection the crawl is run on rather than from a proxy.
+`ResidentialProxyMiddleware` is still in the code and still works, but it is
+inert while `PROXY_MODE=off`. If the crawl ever moves to a datacenter address
+- a VPS, CI, anywhere - it will be refused on every handshake, and turning the
+proxy back on is the fix.
 
 Pagination is `start=0,10,20,...`; `l=` accepts `İstanbul`, `ıstanbul` and
 `istanbul` interchangeably - all three return identical results, verified.

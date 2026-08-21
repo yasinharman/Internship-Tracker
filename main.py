@@ -58,19 +58,25 @@ SCRAPY_PROJECT_FOLDER = "MultiwebsiteScraper"
 SPIDERS = ["kariyernet_cards", "techcareer_api", "indeed_cards"]
 
 # indeed_cards was parked from 28.07.2026 to 30.07.2026. Un-parked on the
-# terms the parking comment itself set: the server got the static PROXY_URL
-# and the session, `python main.py --spider indeed_cards` was run there once,
-# and it returned postings - 61 requests, 61 answered, 335 postings, four
-# searches into the page ceiling with results still coming.
+# terms the parking comment itself set: a static residential address and the
+# session, after which `python main.py --spider indeed_cards` returned
+# postings - 61 requests, 61 answered, 335 postings, four searches into the
+# page ceiling with results still coming.
+#
+# THAT PROXY IS GONE. Since 21.08.2026 the crawl runs by hand from a local
+# machine with PROXY_MODE=off, and the residential address is simply the home
+# connection it runs on. Same property, one fewer moving part - but it is a
+# property of WHERE YOU RUN THIS. On a VPS or in CI the address is a
+# datacenter one, Indeed refuses it on every handshake, and the proxy has to
+# come back.
 #
 # Three things had to be true at once, and each was mistaken for the others
 # at some point (docs/sites.md has the measurements):
 #
 #   - a TLS handshake Cloudflare accepts today, which changes without notice
 #     and is why IMPERSONATE_CANDIDATES is a ladder rather than a value
-#   - a residential exit address, static, so the account and the address stay
-#     consistent - the datacenter address the server sits on is refused on
-#     every handshake
+#   - a residential address, stable, so the account and the address stay
+#     consistent - a datacenter address is refused on every handshake
 #   - a signed-in session, carried under the handshake of the browser that
 #     created it. The pairing is the part that took longest to see: the
 #     tokens measured clean WITHOUT cookies were the ones being challenged
