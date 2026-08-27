@@ -247,6 +247,54 @@ own `cf-mitigated` header is read directly now too.
 
 Everything below describes the spider as built.
 
+## Still challenged, and two bugs were hiding behind it - 27.08.2026
+
+The first full run after the database was wiped got **0 postings in 18.6
+minutes**. Three responses out of twelve requests: the warm-up 200, two
+searches 403 with `cf-mitigated=challenge`, and nine
+`playwright/navigation_timeout`. That reads as "the site has locked us out",
+and it was two separate faults on top of a real one.
+
+**The nine timeouts were not Indeed.** They were the reused-page wedge found
+on LinkedIn the same day (see `linkedin.md`, "CURED 27.08.2026"): the
+middleware handed one `page` object to every navigation for the whole crawl,
+and a renderer that stops answering protocol calls blocks them forever. With a
+fresh page per navigation the timeouts disappeared entirely and every
+navigation completed in 0.1s.
+
+**The searches were running backwards.** Scrapy's default queue is LIFO, so
+the dict order that the note above SEARCHES carefully argues for was inverted
+in practice. On a challenged domain that is not a tidiness problem:
+
+    warm-up                     200
+    yari-zamanli  (last listed)  200  -> 15 postings, 6 kept
+    the other eight              403  cf-mitigated=challenge
+
+The first request after the warm-up goes through on the warm-up's credit and
+Cloudflare challenges what follows, so the order decided the ONE search that
+ran - and it was running the least valuable one. `_search_priority()` fixes it.
+
+**What that leaves.** With both fixed, an unrestricted run:
+
+| | before | after |
+|---|---|---|
+| postings | 0 | **25** |
+| wall clock | 18.6 min | **70s** |
+| 200 / 403 | 1 / 2 | 4 / 8 |
+| navigation timeouts | 9 | **0** |
+
+and the three searches that got through were `yazilim-stajyer` (9),
+`bilgisayar-muhendisligi-stajyer` (7) and `software-intern` (9) - the three the
+ordering note wanted protected.
+
+**The challenge itself is unchanged and is still the real constraint.**
+Cloudflare starts refusing after three or four searches and the block budget
+ends the run. `PROXY_MODE=off`, so every request leaves from a home
+connection; the fix for this is the residential proxy this file has always
+said it needs, not more code. What changed is that the crawl now takes real
+value out of the window it gets, instead of spending it on the wrong terms and
+then burning sixteen minutes on wedged navigations.
+
 ## Search terms - measured 30.07.2026
 
 Five field terms were added on top of the four broad ones, because depth was

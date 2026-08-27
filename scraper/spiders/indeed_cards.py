@@ -171,12 +171,32 @@ class IndeedCardsSpider(BaseApiSpider):
     # term that stops earning its request can be measured out rather than
     # guessed out - and note that on 30.07 EVERY term was the sole finder of
     # something, including the two the field terms most overlap with.
-    # ORDER MATTERS, and not for tidiness. Searches enter the queue in this
-    # order, and DOMAIN_BLOCK_BUDGET can end a run partway through - it did on
-    # 30.07, eight refusals in, with two of the four searches never started.
-    # Whatever is last is what gets lost, so the precise terms go first and
-    # the broad ones - which mostly re-find what is already stored - absorb
-    # the loss.
+    # ORDER MATTERS, and not for tidiness. DOMAIN_BLOCK_BUDGET can end a run
+    # partway through - it did on 30.07, eight refusals in, with two of the
+    # four searches never started. Whatever runs last is what gets lost, so
+    # the precise terms go first and the broad ones - which mostly re-find
+    # what is already stored - absorb the loss.
+    #
+    # WRITING THEM IN ORDER WAS NOT ENOUGH, AND FOR TWO YEARS OF RUNS IT DID
+    # THE OPPOSITE. Scrapy's default in-memory queue is LIFO, so yielding
+    # these in order runs them BACKWARDS: the broad terms this comment wanted
+    # to sacrifice went first, and the field terms it wanted to protect were
+    # the ones that never got their turn.
+    #
+    # Measured 27.08.2026, and it is not academic on a challenged domain -
+    # exactly one search got through:
+    #
+    #     warm-up                     200
+    #     yari-zamanli  (LAST here)   200  -> 15 postings, 6 kept
+    #     the other eight             403  cf-mitigated=challenge
+    #
+    # The first request after the warm-up goes through on the warm-up's
+    # credit and Cloudflare challenges everything after it. So on a bad day
+    # the order does not decide what is lost, it decides the ONE search that
+    # runs - and it was running the least valuable one.
+    #
+    # _search_priority() below makes the written order the actual order. Same
+    # fix as linkedin_cards, and found there first.
     SEARCHES = {
         # field: the job-shape term plus what we actually want it to be about
         "yazilim-stajyer": "yazılım stajyer",
@@ -658,6 +678,18 @@ class IndeedCardsSpider(BaseApiSpider):
         for search_key in self.SEARCHES:
             yield self._search_request(search_key, page=1)
 
+    def _search_priority(self, search_key):
+        """
+        Higher runs first. See the note above SEARCHES for why the dict order
+        alone did the opposite of what it said.
+
+        Every page of a search shares its search's priority, so a high one is
+        followed to its end before a lower one starts. On a run that gets cut
+        short that is what we want: complete searches beat nine half-crawled
+        ones.
+        """
+        return (len(self.SEARCHES) - list(self.SEARCHES).index(search_key)) * 10
+
     def _search_request(self, search_key, page, referer=None):
         from urllib.parse import urlencode
 
@@ -680,6 +712,7 @@ class IndeedCardsSpider(BaseApiSpider):
             callback=self.parse_search,
             referer=referer or self.warmup_url,
             meta={"page": page, "search_key": search_key},
+            priority=self._search_priority(search_key),
             dont_filter=True,
         )
 
