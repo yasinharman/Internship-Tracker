@@ -252,9 +252,47 @@ Two containments, neither of which is a cure:
     instead of a `concurrent.futures.TimeoutError` with an empty message,
     which is what made this take an hour to find.
 
-While one navigation is wedged the browser thread cannot take the next one, so
-the requests behind it wait. A run with a few of these is a slow site, not a
-broken crawler.
+### CURED 27.08.2026 - it was the page being reused, not the javascript
+
+The theory above named `page.evaluate()` and `locator.count()`. It was the
+right family and the wrong call. Reproduced with per-phase logging on
+`linkedin_check`:
+
+    15:19:33  worker dequeued .../jobs/view/4452210240/
+    15:26:15  Received SIGTERM              <- an external timeout, 7 min later
+    15:26:35  worker dequeued (the next one)
+
+No `headers done` line was ever printed, so the wedge was in
+`page.set_extra_http_headers()` - before the navigation had even started - and
+it did not end on its own. It ended when SIGTERM broke the driver connection.
+
+That call takes no timeout. Neither do `content()` or `evaluate()`, and
+`set_default_timeout` does not help: Playwright applies it only to "methods
+accepting a timeout option", which none of these are. So any page whose
+renderer has stopped servicing protocol calls blocks every one of them
+forever, and since the worker is a single OS thread, every request behind it
+waits forever too.
+
+The cause was that the middleware opened ONE page at start-up and handed the
+same object to every navigation for the whole crawl. LinkedIn's job pages
+leave enough running to get a renderer into that state within two or three
+visits. `_run_job_loop` now opens a fresh page per navigation and closes it
+afterwards, keeping the context - the cookies and storage state are the
+expensive part. A page costs about 10ms.
+
+Measured on the same 8 postings, before and after:
+
+| | navigations completed | verdicts | wall clock |
+|---|---|---|---|
+| one page, reused | 2 of 9 | — (killed) | 20 min, then SIGTERM |
+| a page per navigation | 9 of 9 | 8 | 79s |
+
+Then over 25 postings: **25 open, 0 closed, 0 inconclusive, 0 unanswered** in
+212s, `playwright/navigation_timeout` absent from the stats entirely.
+
+Indeed's 9 navigation timeouts in the 27.08 run are unexplained by anything
+else and are very likely the same bug; that has not been confirmed, because
+Indeed was being challenged that day and never got far enough to test it.
 
 ## Is the posting still open - UNMEASURED
 
@@ -269,19 +307,36 @@ When `linkedin/closed_marker_seen` first appears in a run's stats, that is the
 measurement. Record the id and the date here, and this section joins the other
 three.
 
-**The detail page stalls far more often than the search page.** First dry run,
-five postings, `OPENINGS_MAX_PER_SITE=5`: **1 open, 0 closed, 0 inconclusive,
-4 unanswered** - four of five navigations spent the whole Playwright budget
-(`playwright/navigation_timeout: 4`). Nothing was written for those four,
-which is the design working, but a checker that answers one posting in five is
-not yet worth running over the whole board. Before turning it loose, the thing
-to try is blocking images/fonts/analytics on this transport so the page has
-less to wedge on - not a longer timeout.
+The closed marker is still unmeasured as of 27.08.2026: the run that fixed
+everything below answered 25 postings and every one of them was open, which is
+what a board crawled the same morning should look like.
+
+### THERE ARE THREE APPLY AFFORDANCES, NOT TWO - measured 27.08.2026
+
+The checker knew about `Easy Apply to this job` and `Apply to this job`. A
+posting that applies on the employer's own site says neither:
+
+    aria-label="Easy Apply to this job"      apply inside LinkedIn
+    aria-label="Apply on company website"    apply elsewhere - just as open
+
+Missing the third form cost half the board. On a dry run over eight postings
+the result was 4 open, 4 inconclusive, and the phase log gave it away before
+the pages did: the four that resolved matched the apply selector in 0.0s, the
+four that did not spent 0.9s falling through to the description box. Fetching
+three of them directly confirmed it - `Apply on company website` and
+`Save the job` on the inconclusive ones, `Easy Apply to this job` on an open
+one, and not a word about being closed on any of them.
+
+With the third marker added, 25 of 25 resolve.
+
+**The detail page used to stall far more often than the search page**, and
+that is fixed - see "CURED 27.08.2026" above. The first dry run, before the
+fix, answered 1 posting in 5 (`playwright/navigation_timeout: 4`).
 
 The detail page is a DIFFERENT design system from the search page: search
 cards still use semantic classes (`job-card-container`), while the job page
 has build-hashed ones (`_59162b76`, `b424a163`). The stable anchors there are
-`aria-label="Easy Apply to this job"` and the `<h2>` headings.
+the apply `aria-label`s above and `[data-testid="expandable-text-box"]`.
 
 ---
 

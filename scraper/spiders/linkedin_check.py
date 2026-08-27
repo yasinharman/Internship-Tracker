@@ -49,8 +49,22 @@ from .linkedin_cards import LinkedinCardsSpider
 # ("_59162b76", "b424a163"), so they are worthless as anchors; the aria-label
 # is user-facing accessibility text and is what was actually measured present
 # on a live posting on 26.08.2026.
+# MEASURED 27.08.2026 over three live postings: LinkedIn has THREE of these,
+# not two, and the third is not a variation on the wording - it is what a
+# posting that applies on the employer's own site says instead.
+#
+#     Easy Apply to this job     apply inside LinkedIn
+#     Apply on company website   apply elsewhere - just as open
+#
+# Missing the third one cost half the board. On the run that found it, four
+# of eight postings came back UNKNOWN, and the tell was in the phase log: the
+# four that resolved matched the apply selector in 0.0s, the four that did not
+# spent 0.9s falling through to the description box. All four were open; none
+# of them said anything about being closed. "Apply to this job" is kept as
+# well - it was measured 26.08.2026 and costs nothing.
 APPLY_MARKERS = (
     'aria-label="Easy Apply to this job"',
+    'aria-label="Apply on company website"',
     'aria-label="Apply to this job"',
 )
 

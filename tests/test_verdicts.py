@@ -129,8 +129,13 @@ class TestLinkedIn:
     def verdict(self, make_checker, body):
         return make_checker(LinkedinCheckSpider).verdict(html(body))
 
-    @pytest.mark.parametrize("label", ["Easy Apply to this job", "Apply to this job"])
-    def test_either_apply_affordance_means_open(self, make_checker, label):
+    @pytest.mark.parametrize("label", [
+        "Easy Apply to this job",
+        "Apply on company website",   # measured 27.08.2026 - a third form,
+                                      # and half the board applies this way
+        "Apply to this job",
+    ])
+    def test_any_apply_affordance_means_open(self, make_checker, label):
         assert self.verdict(make_checker, f'<button aria-label="{label}"></button>'.encode()) == OPEN
 
     @pytest.mark.parametrize("phrase", [

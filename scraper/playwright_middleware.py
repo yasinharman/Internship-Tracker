@@ -215,9 +215,8 @@ class PlaywrightMiddleware:
                         for name, value in cookies.items()
                     ])
 
-                page = context.new_page()
                 self._ready.set()
-                self._run_job_loop(page)
+                self._run_job_loop(context)
 
                 context.close()
                 browser.close()
@@ -225,7 +224,35 @@ class PlaywrightMiddleware:
             self._startup_error = error
             self._ready.set()
 
-    def _run_job_loop(self, page):
+    def _run_job_loop(self, context):
+        """
+        ONE PAGE PER NAVIGATION, NOT ONE PAGE PER CRAWL.
+
+        This used to open a single page at start-up and hand the same object
+        to every navigation. MEASURED 27.08.2026, linkedin_check: the warm-up
+        and the first job page returned in under a second each; the second job
+        page dequeued and never came back. Not slowly - at all. The only
+        reason the log ever moved again was a SIGTERM breaking the driver
+        connection seven minutes later.
+
+        The wedge was in `page.set_extra_http_headers()`, before the
+        navigation had even started, and that call is representative rather
+        than special: it takes no timeout, and neither do `content()` or
+        `evaluate()`. `set_default_timeout` does not cover them either -
+        Playwright applies it only to "methods accepting a timeout option".
+        So a page whose renderer has stopped servicing protocol calls blocks
+        every one of them forever, and since the worker is a single OS thread,
+        every request behind it waits forever too. Today that turned a 77-page
+        check into a 20-minute timeout with two verdicts in it.
+
+        LinkedIn's job pages leave enough running to get a renderer into that
+        state within two or three visits. A page is cheap - about 10ms - and a
+        fresh one per navigation means a renderer that stops answering dies
+        with the page it belongs to instead of poisoning the rest of the run.
+
+        The CONTEXT is kept: it holds the cookies and the storage state, which
+        are the expensive part and the whole reason we are signed in.
+        """
         while True:
             job = self._job_queue.get()
             if job is None:
@@ -236,10 +263,22 @@ class PlaywrightMiddleware:
             # worker is wedged inside one navigation, which is what a
             # message-less TimeoutError upstream looks like from here.
             logger.debug("worker dequeued %s", request.url[:80])
+            page = None
             try:
+                page = context.new_page()
                 future.set_result(self._navigate(page, request))
             except Exception as error:
                 future.set_exception(error)
+            finally:
+                if page is not None:
+                    try:
+                        page.close()
+                    except Exception as error:
+                        # A page that cannot be closed is the wedged case
+                        # again. Nothing to do about it here, but it must not
+                        # take the loop down with it - the next job gets a new
+                        # page and has every chance of working.
+                        logger.debug("could not close page: %s", error)
 
     ###################################################################
     # ONE NAVIGATION, RUNS ON THE WORKER THREAD                       #
@@ -310,9 +349,17 @@ class PlaywrightMiddleware:
         ):
             headers.pop(owned_by_the_browser, None)
 
+        # set_extra_http_headers takes NO timeout and is not covered by
+        # set_default_timeout either - Playwright's default applies only to
+        # "methods accepting a timeout option", and this is not one. So it can
+        # block for as long as the driver connection does. Logged separately
+        # from goto because on 27.08.2026 a wedge landed between "worker
+        # dequeued" and "goto done", and those two lines could not tell which
+        # of the two calls it was.
         page.set_extra_http_headers(headers)
 
         phase["headers"] = round(_time.monotonic() - _t0, 1)
+        logger.debug("  headers done in %ss", phase["headers"])
         _t = _time.monotonic()
         response = page.goto(
             request.url, referer=referer, wait_until="domcontentloaded",
