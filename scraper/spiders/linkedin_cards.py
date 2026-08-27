@@ -383,9 +383,9 @@ class LinkedinCardsSpider(BaseApiSpider):
 
         Two ways to hold a session, checked in the order the middleware reads
         them: the storage_state file (cookies + localStorage, what
-        save_session.py writes) or the cookie-only export. The file is opened
+        tools/save_session.py writes) or the cookie-only export. The file is opened
         and looked INTO rather than merely existing, because a run of
-        save_session.py that timed out on the login still leaves a perfectly
+        tools/save_session.py that timed out on the login still leaves a perfectly
         valid JSON file with no li_at in it.
         """
         state_path = (os.getenv(self.STORAGE_STATE_ENV) or "").strip()
@@ -397,7 +397,7 @@ class LinkedinCardsSpider(BaseApiSpider):
                 raise ValueError(
                     f"{self.STORAGE_STATE_ENV} points at {state_path!r} but it "
                     f"could not be read as a Playwright storage state "
-                    f"({type(error).__name__}). Re-run: python save_session.py "
+                    f"({type(error).__name__}). Re-run: python -m tools.save_session "
                     f"linkedin"
                 ) from error
             if self.SIGNED_IN_COOKIE in names:
@@ -410,7 +410,7 @@ class LinkedinCardsSpider(BaseApiSpider):
             raise ValueError(
                 f"{state_path!r} holds {len(names)} cookie(s) but not "
                 f"{self.SIGNED_IN_COOKIE} - that file is a browser that was "
-                f"never signed in. Re-run: python save_session.py linkedin"
+                f"never signed in. Re-run: python -m tools.save_session linkedin"
             )
 
         if self.SIGNED_IN_COOKIE in self.session_cookies:
@@ -420,7 +420,7 @@ class LinkedinCardsSpider(BaseApiSpider):
             f"LinkedIn needs a signed-in session and there is none. LinkedIn "
             f"refuses guests outright, so unlike Indeed there is no anonymous "
             f"mode to fall back to - a run without this collects nothing and "
-            f"reports success. Fix: python save_session.py linkedin, then put "
+            f"reports success. Fix: python -m tools.save_session linkedin, then put "
             f"the path it prints in {self.STORAGE_STATE_ENV}."
         )
 
@@ -449,7 +449,7 @@ class LinkedinCardsSpider(BaseApiSpider):
             "LinkedIn asked us to sign in. The session has expired - or the "
             "burner account has been closed, which looks identical from here. "
             "Open it in a browser before changing anything in the crawler: if "
-            "it still signs in, re-run `python save_session.py linkedin`; if "
+            "it still signs in, re-run `python -m tools.save_session linkedin`; if "
             "it does not, the account is gone and LinkedIn stops until there "
             "is a new one. This is NOT the address being blocked. (%s)",
             url[:100],

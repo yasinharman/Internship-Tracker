@@ -16,16 +16,16 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import Select, and_, distinct, func, or_, select
 
-from MultiwebsiteScraper.models import JobPost
+from scraper.models import JobPost
 
 #####################################################
 # THE TWO HIDES THAT ARE NOT DELETES                #
 #####################################################
 # Deliberately kept apart, because they have different owners:
 #
-#   is_active     the classifier's soft delete (classify_jobs.py) - a posting
+#   is_active     the classifier's soft delete (pipeline/classify_jobs.py) - a posting
 #                 it judged to be somebody else's field
-#   duplicate_of  dedupe_jobs.py - the same opening advertised on a second
+#   duplicate_of  pipeline/dedupe_jobs.py - the same opening advertised on a second
 #                 board, pointing at the row that should be shown instead
 #
 # Neither deletes anything; both are one UPDATE away from reversal. Folding
@@ -37,7 +37,7 @@ VISIBLE = (JobPost.is_active.is_(True), JobPost.duplicate_of.is_(None))
 #####################################################
 # THE THIRD HIDE, AND THE ONLY SWITCHABLE ONE       #
 #####################################################
-# closed_at   the *_check spiders (MultiwebsiteScraper/openings.py) - the
+# closed_at   the *_check spiders (scraper/openings.py) - the
 #             posting is no longer on offer at the board it came from.
 #
 # Deliberately not is_active either, for a reason that is not just tidiness:

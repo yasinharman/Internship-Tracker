@@ -22,7 +22,7 @@ away when we get blocked.
 
 Quick credential check (no Scrapy involved):
 
-    python -m MultiwebsiteScraper.proxy
+    python -m scraper.proxy
 """
 
 import os

@@ -220,7 +220,7 @@ class KariyerNetCardsSpider(BaseApiSpider):
         reversed twice in two days - safari184 and chrome124 were carrying it
         on 30.07 and are the ones refused here on 31.07. Re-measure with
 
-            python -m MultiwebsiteScraper.tls_probe --proxy \
+            python -m scraper.tls_probe --proxy \
                 --url "<a search URL from SEARCHES>" --expect "ad-card"
 
         and reorder from what it prints. KARIYERNET_IMPERSONATE pins one

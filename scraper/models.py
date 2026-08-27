@@ -34,7 +34,7 @@ class JobPost(Base):
     ###################################################################
     # LLM CLASSIFICATION                                              #
     ###################################################################
-    # Filled in by classify_jobs.py after the crawl. NULL means "not looked
+    # Filled in by pipeline/classify_jobs.py after the crawl. NULL means "not looked
     # at yet", which the dashboard treats as visible - an outage of the LLM
     # API must not empty the board.
     #
@@ -42,10 +42,10 @@ class JobPost(Base):
     # a wrong call can be undone with one UPDATE. reason is kept so that the
     # decision can be read back and argued with.
     # index=True so a database created from scratch by create_all() ends up
-    # with the same indexes migrate.py adds to an existing one. Without it the
+    # with the same indexes tools/migrate.py adds to an existing one. Without it the
     # two paths diverge silently: a fresh deploy gets the columns but not the
     # indexes, and classify_jobs scans the whole table on every run.
-    # SQLAlchemy names these ix_job_posts_<column>, matching migrate.py.
+    # SQLAlchemy names these ix_job_posts_<column>, matching tools/migrate.py.
     job_category = Column(String(32), index=True)  # it|general_program|other
     category_reason = Column(Text)
     classified_at = Column(DateTime)
@@ -67,7 +67,7 @@ class JobPost(Base):
     ###################################################################
     # WATCHLIST NOTIFICATION (Hermes agent / Telegram)                #
     ###################################################################
-    # Set by notify_watchlist.py once a matching posting has been handed to
+    # Set by pipeline/notify_watchlist.py once a matching posting has been handed to
     # the Hermes webhook successfully. NULL means "not tried yet, or the last
     # attempt failed" - either way the next run will retry it, same shape as
     # job_category above.
@@ -76,7 +76,7 @@ class JobPost(Base):
     ###################################################################
     # STILL ON OFFER?                                                 #
     ###################################################################
-    # Owned by the three *_check spiders (MultiwebsiteScraper/openings.py).
+    # Owned by the three *_check spiders (scraper/openings.py).
     # NULL means "still open"; a value is the moment a check found the
     # posting gone from the board it came from.
     #
@@ -91,7 +91,7 @@ class JobPost(Base):
     #
     # index=True because every dashboard query now carries
     # `closed_at IS NULL` - same reasoning as job_category above, and
-    # migrate.py adds the matching index to an existing database.
+    # tools/migrate.py adds the matching index to an existing database.
     closed_at = Column(DateTime, index=True)
 
     # When a check last got a CONCLUSIVE answer. A blocked or timed-out probe

@@ -2,10 +2,10 @@
 PING HERMES/TELEGRAM WHEN A WATCHED COMPANY POSTS A JOB
 ========================================================
 
-    python notify_watchlist.py             notify and WRITE notified_at
-    python notify_watchlist.py --dry-run   print what would be sent, write nothing
+    python -m pipeline.notify_watchlist             notify and WRITE notified_at
+    python -m pipeline.notify_watchlist --dry-run   print what would be sent
 
-Company names to watch live in watched_companies.yml, not here - see that
+Company names to watch live in config/watched_companies.yml, not here - see that
 file for the matching rule (case-insensitive substring) and why editing it
 does not retroactively notify about postings already in the database.
 
@@ -17,7 +17,7 @@ matched but whose delivery failed is left NULL on purpose, so the next run
 retries just that send instead of rescanning the whole table's non-matches
 every time.
 
-Duplicates are skipped like classify_jobs.py skips them: the same job on a
+Duplicates are skipped like pipeline/classify_jobs.py skips them: the same job on a
 second board would ping Telegram twice for one real opening.
 """
 
@@ -36,15 +36,20 @@ import yaml
 from dotenv import load_dotenv
 from sqlalchemy.orm import sessionmaker
 
-from MultiwebsiteScraper.models import JobPost, db_connect
-from MultiwebsiteScraper.pipelines import canonical_forms
+from scraper.models import JobPost, db_connect
+from scraper.pipelines import canonical_forms
 
 load_dotenv()
 
 for stream in (sys.stdout, sys.stderr):
     stream.reconfigure(encoding="utf-8", errors="replace")
 
-WATCHLIST_FILE = Path(__file__).parent / "watched_companies.yml"
+# Two levels up, because this file moved into pipeline/ on 27.08.2026 and the
+# list moved to config/ at the same time. Worth spelling out: load_watchlist()
+# returns [] for a path that does not exist rather than raising, so a wrong
+# path here does not crash - it prints "nothing to match against", exits 0 and
+# quietly notifies nobody. Anything that moves this file must re-check it.
+WATCHLIST_FILE = Path(__file__).resolve().parent.parent / "config" / "watched_companies.yml"
 
 # Per-call ceiling so one unreachable Hermes gateway does not stall the rest
 # of the batch - NOTIFY_TIMEOUT (main.py) is the ceiling for the whole
@@ -143,7 +148,7 @@ def main():
 
     watchlist = load_watchlist()
     if not watchlist:
-        print("watched_companies.yml is empty or missing - nothing to match against.")
+        print("config/watched_companies.yml is empty or missing - nothing to match against.")
         return
 
     url = os.getenv("HERMES_WEBHOOK_URL")

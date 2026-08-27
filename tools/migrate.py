@@ -2,7 +2,7 @@
 SCHEMA MIGRATIONS
 =================
 
-    python migrate.py
+    python -m tools.migrate
 
 Why this file exists at all: `Base.metadata.create_all()` only ever CREATES
 missing tables. It looks at a table that already exists, sees the name, and
@@ -24,7 +24,7 @@ import sys
 from dotenv import load_dotenv
 from sqlalchemy import text
 
-from MultiwebsiteScraper.models import db_connect
+from scraper.models import db_connect
 
 load_dotenv()
 
@@ -44,7 +44,7 @@ MIGRATIONS = [
         "job_posts.classified_at",
         "ALTER TABLE job_posts ADD COLUMN IF NOT EXISTS classified_at TIMESTAMP",
     ),
-    # classify_jobs.py selects `WHERE job_category IS NULL` on every run, and
+    # pipeline/classify_jobs.py selects `WHERE job_category IS NULL` on every run, and
     # main.py runs it after every crawl. Cheap to have, and it keeps that scan
     # from walking the whole table as it grows.
     (
@@ -63,7 +63,7 @@ MIGRATIONS = [
         "CREATE INDEX IF NOT EXISTS ix_job_posts_duplicate_of "
         "ON job_posts (duplicate_of)",
     ),
-    # notify_watchlist.py selects `WHERE notified_at IS NULL` on every run.
+    # pipeline/notify_watchlist.py selects `WHERE notified_at IS NULL` on every run.
     # See models.JobPost.
     (
         "job_posts.notified_at",

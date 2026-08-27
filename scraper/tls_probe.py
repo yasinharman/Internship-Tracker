@@ -2,9 +2,9 @@
 WHICH BROWSER HANDSHAKES IS THIS SITE ACCEPTING TODAY?
 ======================================================
 
-    python -m MultiwebsiteScraper.tls_probe                # from here, direct
-    python -m MultiwebsiteScraper.tls_probe --proxy        # through IPRoyal
-    python -m MultiwebsiteScraper.tls_probe --both         # and the comparison
+    python -m scraper.tls_probe                # from here, direct
+    python -m scraper.tls_probe --proxy        # through IPRoyal
+    python -m scraper.tls_probe --both         # and the comparison
 
 Cloudflare scores the TLS ClientHello, so the browser curl_cffi replays for
 us decides whether a request is answered or challenged - and that decision is

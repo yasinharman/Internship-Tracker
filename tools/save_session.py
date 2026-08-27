@@ -2,8 +2,8 @@
 LOG INTO A JOB BOARD BY HAND, SAVE THE WHOLE SESSION - NOT JUST THE COOKIES
 ============================================================================
 
-    python save_session.py indeed
-    python save_session.py linkedin
+    python -m tools.save_session indeed
+    python -m tools.save_session linkedin
 
 The cookie-only export (`<SITE>_COOKIES_B64`, see session_cookies.py) captures
 one thing: the Cookie header a browser would send. MEASURED 05.08.2026 on
@@ -53,7 +53,13 @@ import time
 
 from playwright.sync_api import sync_playwright
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+# The REPOSITORY ROOT, not this file's directory. The session files belong
+# next to .env, which is what LINKEDIN_STORAGE_STATE / INDEED_STORAGE_STATE
+# point at and what .gitignore names. This script moved into tools/ on
+# 27.08.2026; dirname(__file__) would now write tools/linkedin-storage-state.json
+# while .env still read the old path, and the crawl would go on using a stale
+# session while this printed "saved" - no error anywhere.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # The actually-installed browser, not Playwright's bundled Chromium build -
 # see the module docstring for why that matters to Google specifically.
@@ -119,13 +125,12 @@ def _signed_in(cookies, groups):
 
 def main():
     if len(sys.argv) != 2 or sys.argv[1] not in SITES:
-        print(f"kullanim: python {os.path.basename(__file__)} "
-              f"<{'|'.join(SITES)}>")
+        print(f"kullanim: python -m tools.save_session <{'|'.join(SITES)}>")
         return 1
 
     site_key = sys.argv[1]
     site = SITES[site_key]
-    output_path = os.path.join(HERE, site["output"])
+    output_path = os.path.join(REPO_ROOT, site["output"])
 
     with sync_playwright() as p:
         launch_kwargs = {

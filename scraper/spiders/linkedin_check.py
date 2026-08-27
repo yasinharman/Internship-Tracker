@@ -6,7 +6,7 @@ IS THIS LINKEDIN POSTING STILL OPEN?
 
 Subclasses linkedin_cards, so the burner session, the browser profile, the
 throttle and the block budget all apply unchanged - see
-MultiwebsiteScraper/openings.py for why each checker is a spider rather than a
+scraper/openings.py for why each checker is a spider rather than a
 script.
 
 THE SIGNAL IS NOT MEASURED YET, AND THIS SPIDER IS WRITTEN AROUND THAT

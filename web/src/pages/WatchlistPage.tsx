@@ -13,9 +13,9 @@ import { EmptyState, ErrorState, SkeletonRows } from "../components/States";
 type Entry = Watchlist["entries"][number];
 
 /**
- * watched_companies.yml, with what each entry actually caught.
+ * config/watched_companies.yml, with what each entry actually caught.
  *
- * "Bildirilen" is notified_at being set, which means notify_watchlist.py
+ * "Bildirilen" is notified_at being set, which means pipeline/notify_watchlist.py
  * handed the posting to the Hermes webhook successfully. A watched company
  * with postings but nothing notified is the visible symptom of the webhook
  * being wrong or unreachable - it is not otherwise visible anywhere.
@@ -87,7 +87,7 @@ export function WatchlistPage({ meta, query, update }: PageProps) {
         tone={watchlist.data?.configured === false ? "warn" : matched > 0 ? "ok" : "idle"}
         status={
           watchlist.data?.configured === false
-            ? "watched_companies.yml boş veya yok"
+            ? "config/watched_companies.yml boş veya yok"
             : `${entries.length} şirket izleniyor · ${matched} tanesi ${RANGE_DESCRIPTIONS[query.range]} içinde ilan verdi`
         }
       >
@@ -95,7 +95,7 @@ export function WatchlistPage({ meta, query, update }: PageProps) {
       </PageHeader>
 
       <p className="max-w-3xl text-[13px] leading-relaxed text-muted-2">
-        Bu liste <span className="font-mono text-muted">watched_companies.yml</span> dosyasından okunur.
+        Bu liste <span className="font-mono text-muted">config/watched_companies.yml</span> dosyasından okunur.
         Eşleşen ilanlar her taramadan sonra Hermes webhook'una gönderilir ve Telegram'a düşer.
         Listeyi değiştirmek için dosyayı düzenleyip yeniden deploy edin.
       </p>
@@ -109,7 +109,7 @@ export function WatchlistPage({ meta, query, update }: PageProps) {
           ) : entries.length === 0 ? (
             <EmptyState
               title="İzlenen şirket yok"
-              detail="watched_companies.yml içindeki 'companies' listesine şirket adı ekleyin. Eşleşme büyük/küçük harf duyarsız ve kısmi yapılır."
+              detail="config/watched_companies.yml içindeki 'companies' listesine şirket adı ekleyin. Eşleşme büyük/küçük harf duyarsız ve kısmi yapılır."
             />
           ) : (
             <DataTable columns={COLUMNS} rows={entries} rowKey={(row) => row.name} />

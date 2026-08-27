@@ -2,7 +2,7 @@
 
 Two pieces, one container:
 
-- `api/` — FastAPI. Reads `job_posts` through `MultiwebsiteScraper/models.py`,
+- `api/` — FastAPI. Reads `job_posts` through `scraper/models.py`,
   which stays the only description of the schema. Writes nothing.
 - `web/` — React (Vite, TypeScript, Tailwind v4). Builds to static files that
   FastAPI serves, so the browser talks to one origin and there is no CORS
@@ -70,14 +70,14 @@ chart follow `closed` too — a job that closed is not part of "Aktif İlan".
 | `/api/jobs` | paginated postings |
 | `/api/companies` | per-company totals, sources, watchlist flag |
 | `/api/sources` | per-site health (ignores the source filter, on purpose) |
-| `/api/watchlist` | `watched_companies.yml` and what each entry caught |
+| `/api/watchlist` | `config/watched_companies.yml` and what each entry caught |
 
 `/api/docs` serves the generated OpenAPI page.
 
 ## Where the design comes from
 
-`docs/dashboard.html`, the "API Monitor" block (lines 430–811); the region
-that matters is marked in `docs/Screenshot_20260819_203031.png`.
+`docs/design/dashboard.html`, the "API Monitor" block (lines 430–811); the region
+that matters is marked in `docs/design/dashboard-reference.png`.
 
 Read it before changing the visual language, and know that **it does not
 render as its classes say**. Two `<style>` blocks after the Tailwind CDN
@@ -97,7 +97,7 @@ matching the neutral palette.
 
 ## Postings that closed at their source
 
-`MultiwebsiteScraper/openings.py` and the three `*_check` spiders decide this;
+`scraper/openings.py` and the three `*_check` spiders decide this;
 `docs/sites.md` has the per-site signal and the measurements behind it. What
 matters on this side is the shape:
 

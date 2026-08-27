@@ -1,7 +1,7 @@
 # COMPANIES TO GET A TELEGRAM PING ABOUT
 # =======================================
 #
-# Read by notify_watchlist.py after every crawl. Each entry is matched
+# Read by pipeline/notify_watchlist.py after every crawl. Each entry is matched
 # case-insensitively as a SUBSTRING against JobPost.company - so "Trendyol"
 # below also matches "Trendyol Teknoloji A.S." or "TRENDYOL GROUP". Keep
 # entries short and specific enough that they do not accidentally match an

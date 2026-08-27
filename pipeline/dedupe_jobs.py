@@ -2,8 +2,8 @@
 LINK THE SAME OPENING ADVERTISED ON TWO BOARDS
 ==============================================
 
-    python dedupe_jobs.py             mark duplicates
-    python dedupe_jobs.py --dry-run   show what would be marked, change nothing
+    python -m pipeline.dedupe_jobs             mark duplicates
+    python -m pipeline.dedupe_jobs --dry-run   show what would be marked, change nothing
 
 techcareer.net belongs to kariyer.net and carries the same ads, so one opening
 arrives under two different urls. `url` is UNIQUE and correctly so - the two
@@ -45,8 +45,8 @@ from collections import defaultdict
 from dotenv import load_dotenv
 from sqlalchemy.orm import sessionmaker
 
-from MultiwebsiteScraper.models import JobPost, db_connect
-from MultiwebsiteScraper.pipelines import canonical
+from scraper.models import JobPost, db_connect
+from scraper.pipelines import canonical
 
 load_dotenv()
 

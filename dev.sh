@@ -78,7 +78,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
-from MultiwebsiteScraper.models import Base, JobPost, db_connect
+from scraper.models import Base, JobPost, db_connect
 
 engine = db_connect()
 Base.metadata.create_all(engine)

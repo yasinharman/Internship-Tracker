@@ -22,7 +22,7 @@ at least two independent routes**, typically the site's own category or
 search page plus a broader scan matched on the title. One route's blind spot
 is the other's ordinary result. Overlap is free - the pipeline upserts on url.
 
-Shared title vocabulary lives in `MultiwebsiteScraper/job_filters.py`; add new
+Shared title vocabulary lives in `scraper/job_filters.py`; add new
 phrasings there and every spider gets them.
 
 ### Measuring the leak
@@ -490,7 +490,7 @@ variable rescues the other.
 
 `IMPERSONATE_CANDIDATES` is now a fallback ladder rather than one pinned
 value, and `BlockDetectionMiddleware` climbs it. **Re-measure with `python -m
-MultiwebsiteScraper.tls_probe`** rather than reasoning about it - that script
+scraper.tls_probe`** rather than reasoning about it - that script
 exists because this will go stale again.
 
 It went stale again the next afternoon, which is how fast this moves. Measured
@@ -638,7 +638,7 @@ is residential, with `INDEED_COOKIES_B64` for the session and
 `PROXY_MODE=off`. `PROXY_URL` is not set anywhere.
 
 `INDEED_COOKIES` must be an **absolute** path: `main.py:137` runs the spider
-with `cwd=MultiwebsiteScraper`, so a bare filename resolves in the wrong
+with `cwd=scraper`, so a bare filename resolves in the wrong
 directory. That mistake cost a run and eight refusals on 30.07 before anyone
 read the first log line; `load_cookies` now raises instead of quietly
 crawling anonymously.
@@ -959,7 +959,7 @@ reads `aria-label="Web & Mobile Design Intern with verification"` while the
 element text is the clean title. Measured on the first real crawl: **103 of
 230 stored titles carried " with verification"**.
 
-That was not cosmetic. `dedupe_jobs.py` pairs postings across boards on
+That was not cosmetic. `pipeline/dedupe_jobs.py` pairs postings across boards on
 normalised title AND company, so the badge silently disabled duplicate
 detection for those rows - stripping it opened **25 previously invisible
 cross-board duplicates** (Siemens, PepsiCo, PVH, AstraZeneca, TikTok postings
@@ -972,7 +972,7 @@ url on every run.
 
 ### First classification, 26.08.2026
 
-207 postings (230 minus the 25 duplicates) through `classify_jobs.py`:
+207 postings (230 minus the 25 duplicates) through `pipeline/classify_jobs.py`:
 **it 36, general_program 32, other 139**. The 67% "other" rate is in line with
 Indeed's own (112 of 157 on a sampled run) - a general job board filtered only
 by internship/part-time is mostly not software work, on every site so far.
@@ -1128,9 +1128,9 @@ model's reason beside it, visible in the dashboard's "Neden" column.
 
 | File | Role |
 |---|---|
-| `MultiwebsiteScraper/classifier.py` | Schema, prompt, one call per provider |
-| `classify_jobs.py` | Reads `job_category IS NULL`, writes results |
-| `migrate.py` | Adds the three columns (idempotent) |
+| `scraper/classifier.py` | Schema, prompt, one call per provider |
+| `pipeline/classify_jobs.py` | Reads `job_category IS NULL`, writes results |
+| `tools/migrate.py` | Adds the three columns (idempotent) |
 
 Runs from `main.py` after the crawl. A failure there does **not** fail the
 scheduled task: the postings are already stored, and unclassified rows stay
@@ -1138,7 +1138,7 @@ visible on the dashboard.
 
 ### Choosing the model
 
-Decided by measurement, not by price list. `classify_jobs.py --compare` runs
+Decided by measurement, not by price list. `pipeline/classify_jobs.py --compare` runs
 the same postings through several models and prints only the disagreements.
 Result on the 130 real rows (28.07.2026):
 
@@ -1228,7 +1228,7 @@ link is lost.
 
 ### Where it runs
 
-`dedupe_jobs.py`, from `main.py` **before** the classifier: a duplicate is
+`pipeline/dedupe_jobs.py`, from `main.py` **before** the classifier: a duplicate is
 never sent to the LLM, which saves a call and removes the chance of the two
 copies coming back with different verdicts. Re-runnable - a pairing that no
 longer holds is cleared. `--dry-run` shows what would change.
@@ -1253,7 +1253,7 @@ update job_posts set duplicate_of = null where id = <id>;
 Nothing used to mark a posting as gone, so the board was an archive pretending
 to be a noticeboard: three weeks of crawling piled up and the only way to find
 out whether a job was still open was to click it. `*_check` spiders now ask
-each site, once per crawl. See `MultiwebsiteScraper/openings.py`.
+each site, once per crawl. See `scraper/openings.py`.
 
 **Only the board is checked, not the table.** On 21.08.2026 the database held
 297 postings but only **79** were visible (60 Indeed, 14 kariyer.net, 5
@@ -1327,5 +1327,5 @@ that was skipped.
 
 It hid because the crawl spiders make few requests. The checkers make one per
 posting - 60 against Indeed, the site most likely to refuse us - which is
-where it stopped being a technicality. `MultiwebsiteScraper/throttle.py` now
+where it stopped being a technicality. `scraper/throttle.py` now
 keeps the delay for both.

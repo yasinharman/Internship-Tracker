@@ -15,7 +15,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from MultiwebsiteScraper.models import normalize_db_url
+from scraper.models import normalize_db_url
 
 
 class DatabaseNotConfigured(RuntimeError):

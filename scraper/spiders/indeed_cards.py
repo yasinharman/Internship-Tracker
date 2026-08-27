@@ -393,7 +393,7 @@ class IndeedCardsSpider(BaseApiSpider):
         the whole crawl. Ordered by what measured cleanest, with a Chrome
         entry last so we are not betting everything on one engine.
 
-        Re-measure with `python -m MultiwebsiteScraper.tls_probe` - it prints
+        Re-measure with `python -m scraper.tls_probe` - it prints
         this table fresh - and reorder from what it says. Do not "fix" this
         by pinning the one token that works today; that is the bug above.
 

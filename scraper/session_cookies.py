@@ -227,7 +227,7 @@ def load_cookies(env_var):
         #
         # Measured the hard way on 30.07.2026: INDEED_COOKIES was set to a
         # bare filename while main.py runs the spider with
-        # cwd=MultiwebsiteScraper (main.py:137), so it resolved against the
+        # cwd=scraper (main.py:137), so it resolved against the
         # wrong directory. The run went out anonymous and spent eight refusals
         # before anyone read the first line of the log. Hence absolute paths,
         # and hence this.

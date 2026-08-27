@@ -25,7 +25,7 @@ TWO PROVIDERS, ONE PROMPT
 -------------------------
 The schema, the prompt, and the parsing are shared; only the API call differs
 (~40 lines each). That seam exists because the provider is chosen by
-measurement - classify_jobs.py --compare runs the same postings through
+measurement - pipeline/classify_jobs.py --compare runs the same postings through
 several models and prints only the disagreements. It is not an abstraction
 kept "in case we switch" later.
 

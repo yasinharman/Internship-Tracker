@@ -7,7 +7,7 @@ IS THIS Indeed POSTING STILL OPEN?
 The expensive one - 60 of the board's 79 postings are Indeed's, and Indeed is
 the site most likely to refuse us. It subclasses indeed_cards so the residential
 proxy, the signed-in session, the handshake pairing and the block budget all
-apply unchanged; see MultiwebsiteScraper/openings.py.
+apply unchanged; see scraper/openings.py.
 
 docs/sites.md:733 turned down fetching /viewjob?jk= per posting for
 DESCRIPTIONS, at "roughly 75 extra requests a day". This is the same endpoint

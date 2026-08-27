@@ -47,7 +47,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SCRAPY_PROJECT_FOLDER = "MultiwebsiteScraper"
+SCRAPY_PROJECT_FOLDER = "scraper"
 
 # One site is deliberately absent, and its spider has been deleted.
 # See docs/sites.md for the full reasoning; the code is in git history.
@@ -110,7 +110,7 @@ FOLLOW_UP_SPIDERS = {}
 ###################################################################
 # One checker per crawl spider, subclassing it so the proxy, the handshake
 # ladder, the session and the throttle all come along - see
-# MultiwebsiteScraper/openings.py. They run after the crawl, not with it.
+# scraper/openings.py. They run after the crawl, not with it.
 #
 # Deliberately NOT in SPIDERS: these fetch urls the database already holds,
 # they add no postings, and folding them in would make run_spiders' "every
@@ -130,7 +130,7 @@ CLASSIFY_TIMEOUT = int(os.getenv("CLASSIFY_TIMEOUT", "900"))
 DEDUPE_TIMEOUT = int(os.getenv("DEDUPE_TIMEOUT", "120"))
 
 # A handful of HTTP calls to Hermes, each with its own REQUEST_TIMEOUT
-# (notify_watchlist.py) - this is the ceiling for the whole batch, not one
+# (pipeline/notify_watchlist.py) - this is the ceiling for the whole batch, not one
 # call, in case a run has an unusually large number of watchlist matches.
 NOTIFY_TIMEOUT = int(os.getenv("NOTIFY_TIMEOUT", "300"))
 
@@ -381,9 +381,15 @@ def run_spiders(spiders=None):
 ############################################
 # CLASSIFY WHAT THE CRAWL JUST BROUGHT IN  #
 ############################################
-def run_step(label, script, timeout):
+def run_step(label, module, timeout):
     """
-    Run one post-crawl script. Returns True when it exited cleanly.
+    Run one post-crawl step. Returns True when it exited cleanly.
+
+    `module` is a dotted module name, run with -m rather than as a file path:
+    the steps live in pipeline/ and import scraper.models, and running
+    `python pipeline/dedupe_jobs.py` would put pipeline/ on sys.path instead
+    of the repository root, so the import would fail. -m puts the working
+    directory there, which is where both packages are.
 
     Deliberately NOT part of the crawl's pass/fail: by the time these run the
     postings are already stored. A failure here leaves them unsorted, which
@@ -394,7 +400,7 @@ def run_step(label, script, timeout):
     started = time.monotonic()
 
     try:
-        result = subprocess.run([sys.executable, script], timeout=timeout)
+        result = subprocess.run([sys.executable, "-m", module], timeout=timeout)
         exit_code = result.returncode
     except subprocess.TimeoutExpired:
         print(f"=== {label}: KILLED after {timeout}s ===", flush=True)
@@ -476,9 +482,9 @@ def run_post_crawl():
     that still lists a job that closed yesterday are each worth far less than
     leaving everything the crawl just found untouched.
     """
-    deduped = run_step("dedupe", "dedupe_jobs.py", DEDUPE_TIMEOUT)
-    notified = run_step("notify", "notify_watchlist.py", NOTIFY_TIMEOUT)
-    classified = run_step("classify", "classify_jobs.py", CLASSIFY_TIMEOUT)
+    deduped = run_step("dedupe", "pipeline.dedupe_jobs", DEDUPE_TIMEOUT)
+    notified = run_step("notify", "pipeline.notify_watchlist", NOTIFY_TIMEOUT)
+    classified = run_step("classify", "pipeline.classify_jobs", CLASSIFY_TIMEOUT)
     checked = run_checks()
     return deduped and notified and classified and checked
 
@@ -546,7 +552,7 @@ if __name__ == "__main__":
         for name in PARKED_SPIDERS:
             print(f"{name}  (parked - see the comment on SPIDERS)")
         # Run after every crawl, and by hand as `scrapy crawl <name>` from
-        # MultiwebsiteScraper/ - not through --spider, which is for the
+        # scraper/ - not through --spider, which is for the
         # spiders that bring postings IN.
         for name in CHECK_SPIDERS:
             print(f"{name}  (post-crawl check, run it with: scrapy crawl {name})")

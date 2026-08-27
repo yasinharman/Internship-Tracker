@@ -236,7 +236,7 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
         belonging to either row.
 
         This is the shape the marked screenshot asks for
-        (docs/Screenshot_20260820_152958-1.png): two vertical rules just past
+        (docs/design/header-layout-marked.png): two vertical rules just past
         the last filter and just before the toggle, spanning both rows. The
         earlier attempts each put the cards inside one row or the other, which
         is why they kept running out of width - the channel is only wide

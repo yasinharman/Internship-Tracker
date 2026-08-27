@@ -48,7 +48,7 @@ from api.schemas import (
     Watchlist,
     WatchlistEntry,
 )
-from MultiwebsiteScraper.models import JobPost
+from scraper.models import JobPost
 
 load_dotenv()
 
@@ -456,7 +456,7 @@ def sources(filters: Filters = Depends(filter_params), session: Session = Depend
 #####################################################
 def _watchlist_names():
     """
-    notify_watchlist.py owns this file; importing its loader rather than
+    pipeline/notify_watchlist.py owns this file; importing its loader rather than
     re-reading the YAML keeps one parser and one set of rules about what an
     entry means.
     """

@@ -2,11 +2,12 @@
 CLASSIFY POSTINGS THAT HAVE NOT BEEN CLASSIFIED YET
 ===================================================
 
-    python classify_jobs.py                     classify and WRITE to the database
-    python classify_jobs.py --dry-run           classify and print, write nothing
-    python classify_jobs.py --compare a b c     run several models, print only
-                                                the postings they disagree on
-    python classify_jobs.py --limit 20          only the first N rows
+    python -m pipeline.classify_jobs                     classify and WRITE to the database
+    python -m pipeline.classify_jobs --dry-run           classify and print, write nothing
+    python -m pipeline.classify_jobs --compare a b c     run several models,
+                                                        print only the postings
+                                                        they disagree on
+    python -m pipeline.classify_jobs --limit 20          only the first N rows
 
 Only rows with `job_category IS NULL` are read, so re-running is free: a second
 run finds nothing to do. That also means a bad batch can be redone by clearing
@@ -26,8 +27,8 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from sqlalchemy.orm import sessionmaker
 
-from MultiwebsiteScraper.classifier import DEFAULT_MODELS, classify
-from MultiwebsiteScraper.models import JobPost, db_connect
+from scraper.classifier import DEFAULT_MODELS, classify
+from scraper.models import JobPost, db_connect
 
 load_dotenv()
 

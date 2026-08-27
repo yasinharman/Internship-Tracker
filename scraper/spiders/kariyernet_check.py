@@ -6,7 +6,7 @@ IS THIS kariyer.net POSTING STILL OPEN?
 
 Subclasses the crawl spider so the curl_cffi transport, the impersonation
 ladder and the 4s delay all come along; only the urls and the verdict differ.
-See MultiwebsiteScraper/openings.py for why this is a spider at all.
+See scraper/openings.py for why this is a spider at all.
 """
 
 from ..openings import CLOSED, OPEN, UNKNOWN, OpeningCheckMixin

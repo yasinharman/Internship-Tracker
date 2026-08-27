@@ -11,7 +11,7 @@
 # USE_PLAYWRIGHT = True. Run `playwright install chromium` once after
 # installing this file - the package alone does not ship the browser binary.
 #
-# openai + pydantic drive the field classifier (MultiwebsiteScraper/
+# openai + pydantic drive the field classifier (scraper/
 # classifier.py). anthropic is deliberately absent: the file keeps a seam for
 # it so models can be compared, but production settled on gpt-5.4-mini, and
 # the import only happens if LLM_PROVIDER=anthropic.

@@ -25,7 +25,7 @@ Everything else - a block, a redirect, a timeout, a page shape we do not
 recognise - is UNKNOWN and writes NOTHING. That asymmetry is the whole design.
 A false CLOSED silently removes a real job from the board; a missed one leaves a
 dead posting up for another two days, which the user finds out about by clicking
-it. This project has always failed in that direction (dedupe_jobs.py:30,
+it. This project has always failed in that direction (pipeline/dedupe_jobs.py:30,
 api/queries.py:69) and this is no different.
 
 Two traps that a simpler check would fall into, both measured:

@@ -166,6 +166,6 @@ class WatchlistEntry(BaseModel):
 
 class Watchlist(BaseModel):
     entries: list[WatchlistEntry]
-    # notify_watchlist.py reads this file at crawl time; if it is missing the
+    # pipeline/notify_watchlist.py reads this file at crawl time; if it is missing the
     # Telegram ping is simply not happening and the page should say that.
     configured: bool

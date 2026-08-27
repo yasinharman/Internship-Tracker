@@ -154,7 +154,7 @@ class PlaywrightMiddleware:
             raise RuntimeError(
                 f"{env_var}={raw_path!r} but nothing is there (resolved from "
                 f"cwd {os.getcwd()!r}). Use an absolute path - the spider does "
-                f"not run from the project root. Run `python save_session.py "
+                f"not run from the project root. Run `python -m tools.save_session "
                 f"<site>` if the file does not exist yet, or unset {env_var} "
                 f"to fall back to the cookie-only export."
             )
@@ -186,7 +186,7 @@ class PlaywrightMiddleware:
                 }
 
                 # storage_state carries cookies AND localStorage/sessionStorage
-                # from an actual by-hand login (see save_session.py) -
+                # from an actual by-hand login (see tools/save_session.py) -
                 # takes priority because a plain cookie replay was measured
                 # 05.08.2026 to get every search's page 1 through cleanly and
                 # then hit a sign-in wall on page 2 every time, which reads

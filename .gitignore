@@ -11,9 +11,6 @@ playwright_browser_profiles
 httpcache/
 .scrapy/
 
-#__init__
-.__init__
-
 #Passwords
 .env
 
@@ -31,9 +28,6 @@ web/dist
 
 #tsc's incremental build cache - local state, rebuilt on every machine
 *.tsbuildinfo
-
-#json files
-urller.jsonl
 
 #raw API response dumps (API_DEBUG_DUMP=1)
 debug/

@@ -7,10 +7,10 @@ load_dotenv()
 
 SCRAPEOPS_API_KEY = os.getenv("SCRAPEOPS_API_KEY")
 
-BOT_NAME = "MultiwebsiteScraper"
+BOT_NAME = "scraper"
 
-SPIDER_MODULES = ["MultiwebsiteScraper.spiders"]
-NEWSPIDER_MODULE = "MultiwebsiteScraper.spiders"
+SPIDER_MODULES = ["scraper.spiders"]
+NEWSPIDER_MODULE = "scraper.spiders"
 
 ADDONS = {}
 
@@ -62,11 +62,9 @@ COOKIES_ENABLED = True
 #    "Accept-Language": "en",
 #}
 
-# Enable or disable spider middlewares
-# See https://docs.scrapy.org/en/latest/topics/spider-middleware.html
-#SPIDER_MIDDLEWARES = {
-#    "MultiwebsiteScraper.middlewares.MultiwebsitescraperSpiderMiddleware": 543,
-#}
+# No spider middlewares. Scrapy's generated stub was deleted on 27.08.2026 -
+# it was 100 lines of unmodified boilerplate that nothing referenced. The
+# downloader middlewares below are the ones this project actually uses.
 
 ##########################################################
 # DOWNLOADER MIDDLEWARES FOR THE JSON API SCRAPING MODE  #
@@ -87,13 +85,13 @@ COOKIES_ENABLED = True
     extra configuration.
 '''
 DOWNLOADER_MIDDLEWARES = {
-    "MultiwebsiteScraper.api_middlewares.BlockDetectionMiddleware": 590,
-    "MultiwebsiteScraper.api_middlewares.ResidentialProxyMiddleware": 725,
-    "MultiwebsiteScraper.playwright_middleware.PlaywrightMiddleware": 729,
+    "scraper.api_middlewares.BlockDetectionMiddleware": 590,
+    "scraper.api_middlewares.ResidentialProxyMiddleware": 725,
+    "scraper.playwright_middleware.PlaywrightMiddleware": 729,
     # 730: after ResidentialProxyMiddleware puts the proxy url in meta, before
     # HttpProxyMiddleware (750) moves its credentials into a header that
     # curl_cffi never sees. Only spiders with IMPERSONATE_WITH_CURL use it.
-    "MultiwebsiteScraper.api_middlewares.CurlImpersonateMiddleware": 730,
+    "scraper.api_middlewares.CurlImpersonateMiddleware": 730,
     # 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
     # 'scrapy_user_agents.middlewares.RandomUserAgentMiddleware': 400,
 }
@@ -125,7 +123,7 @@ DOWNLOAD_TIMEOUT = 60
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 ITEM_PIPELINES = {
-   "MultiwebsiteScraper.pipelines.JobScraperPipeline": 300,
+   "scraper.pipelines.JobScraperPipeline": 300,
 }
 
 # Enable and configure the AutoThrottle extension (disabled by default)
