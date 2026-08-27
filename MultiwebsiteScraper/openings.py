@@ -94,7 +94,7 @@ class OpeningCheckMixin:
     # `scrapy crawl <name> -a dry_run=1` decides verdicts and prints them
     # without touching the database. Worth doing once per site before trusting
     # a new signal - the first real run on a three-week backlog will close a
-    # lot of rows at once, and "Toplam Ilan" dropping by half should be a
+    # lot of rows at once, and "Aktif Ilan" dropping by half should be a
     # thing you expected.
     dry_run = False
 

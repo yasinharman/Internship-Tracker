@@ -56,7 +56,7 @@ These came from `app.py` and each one is load-bearing. They live in
 All of them accept `range` (`24h|7d|30d|all`), `sources`, `types`,
 `categories` (comma-separated), `q`, and `closed` (`1` to include postings
 that closed at their source; absent means the default board). The KPIs and the
-chart follow `closed` too — a job that closed is not part of "Toplam İlan".
+chart follow `closed` too — a job that closed is not part of "Aktif İlan".
 
 | Path | Returns |
 |---|---|

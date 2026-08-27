@@ -191,13 +191,28 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
   // Three of them, in one row. The unclassified count is not among them any
   // more; the square on the status line still turns amber for it, and every
   // unclassified posting carries its own badge in the table.
+
+  // The number follows the Kapananlar toggle - api/main.py:203 counts whatever
+  // the current filter matches - so the label has to follow it too. Leaving it
+  // on "Aktif İlan" while the count includes closed postings would be the same
+  // lie "Toplam İlan" told, pointing the other way.
+  //
+  // And still not "Toplam" in either state: the classifier's `other` pile and
+  // the cross-board duplicates are hidden from both numbers and have no toggle
+  // (api/queries.py:34 VISIBLE), so neither one is the size of the table.
+  const totalLabel = query.closed ? "Aktif + Kapalı" : "Aktif İlan";
+  const totalHint = query.closed
+    ? "Kaynağında yayından kalkmış ilanlar da sayıya dahil"
+    : "Kaynağında hâlâ yayında olan ilanlar";
+
   const cards = (
     <>
       <StatCard
-        label="Toplam İlan"
+        label={totalLabel}
         icon={Activity}
         value={kpis?.total ?? 0}
         delta={kpis?.total_delta}
+        hint={totalHint}
       />
       <StatCard label="Bugün Eklenen" icon={Clock} value={kpis?.today ?? 0} />
       <StatCard
