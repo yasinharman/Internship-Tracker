@@ -9,28 +9,39 @@ throttle and the block budget all apply unchanged - see
 scraper/openings.py for why each checker is a spider rather than a
 script.
 
-THE SIGNAL IS NOT MEASURED YET, AND THIS SPIDER IS WRITTEN AROUND THAT
-======================================================================
+THE SIGNAL WAS A GUESS FOR A DAY, AND THIS SPIDER IS STILL WRITTEN AROUND THAT
+=============================================================================
 Every other checker in this project quotes a measurement: kariyer.net's
 missing apply-button over four postings, techcareer's `isCompleted` over two,
-Indeed's `"isJobExpired":true` over twelve. This one cannot yet. On 26.08.2026
-LinkedIn was crawled for the first time and the database held no LinkedIn
-posting old enough to have closed, so there was nothing to read a closed page
-off. Guessing the marker and shipping it would be the one mistake openings.py
-exists to prevent: a false CLOSED silently removes a real job from the board.
+Indeed's `"isJobExpired":true` over twelve. This one could not, at first: on
+26.08.2026 LinkedIn was crawled for the first time and the database held no
+posting old enough to have closed. Rather than guess a marker and ship it -
+the one mistake openings.py exists to prevent, since a false CLOSED silently
+removes a real job from the board - it was written to say UNKNOWN until a real
+closure proved otherwise.
 
-So the asymmetry is turned up rather than down:
+MEASURED 27.08.2026. id=59, "Machine Learning Analyst (Remote)",
+jobs/view/4459636725/, in a run of 77 that came back 76 open / 1 closed /
+0 inconclusive / 0 unanswered. Fetched straight afterwards to see which of the
+four guessed phrases actually matched:
+
+    <... aria-label="Error"> No longer accepting applications
+
+English, under locale="tr-TR". The closed page carried no apply affordance of
+any kind, so both halves of the verdict agreed. Full write-up in
+docs/sites/linkedin.md.
+
+The asymmetry stays exactly as turned up as it was:
 
   * CLOSED requires the page to say so, in words, in a place we recognise.
   * OPEN requires the apply affordance to be there.
   * ANYTHING ELSE is UNKNOWN and writes nothing at all - not even checked_at,
     so a posting that could not be read stays first in line for next time.
 
-Until the first real closure comes through, the expected outcome of a run is
-"N open, 0 closed, M inconclusive", and that is a correct result rather than a
-broken one. When one does close, `linkedin/closed_marker_seen` in the stats is
-the confirmation, and the marker below should then be recorded in
-docs/sites/linkedin.md with the id and the date - the way the other three are.
+`linkedin/closed_marker_seen` in the stats counts these. Most postings on a
+board crawled the same morning are still open, so "N open, 1 closed, 0
+inconclusive" is the expected shape of a result rather than a sign of
+something wrong.
 
 WHY IT NEEDS ITS OWN page_actions
 ---------------------------------
@@ -68,9 +79,12 @@ APPLY_MARKERS = (
     'aria-label="Apply to this job"',
 )
 
-# What a closed posting is expected to say. UNMEASURED - see the module
-# docstring. English and Turkish because the burner account's interface
-# language can change without anyone touching this file.
+# What a closed posting says. The FIRST entry is MEASURED - 27.08.2026, see
+# the module docstring - and the page renders it inside an element carrying
+# aria-label="Error". The three Turkish ones have never been observed: the
+# page came back in English under locale="tr-TR". They stay because the
+# burner account's interface language can change without anyone touching
+# this file, and a phrase that never matches costs nothing.
 CLOSED_MARKERS = (
     "no longer accepting applications",
     "artık başvuru kabul etmiyor",

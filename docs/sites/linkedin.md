@@ -294,7 +294,7 @@ Indeed's 9 navigation timeouts in the 27.08 run are unexplained by anything
 else and are very likely the same bug; that has not been confirmed, because
 Indeed was being challenged that day and never got far enough to test it.
 
-## Is the posting still open - UNMEASURED
+## Is the posting still open - MEASURED 27.08.2026
 
 `spiders/linkedin_check.py` exists and is deliberately written around not
 knowing the answer yet: on 26.08.2026 the database held no LinkedIn posting
@@ -307,9 +307,39 @@ When `linkedin/closed_marker_seen` first appears in a run's stats, that is the
 measurement. Record the id and the date here, and this section joins the other
 three.
 
-The closed marker is still unmeasured as of 27.08.2026: the run that fixed
-everything below answered 25 postings and every one of them was open, which is
-what a board crawled the same morning should look like.
+### The marker, at last
+
+The first real closure came through on 27.08.2026, on the second full run of
+the day - the same day the section below fixed the checker enough to reach the
+whole board.
+
+| | |
+|---|---|
+| posting | id=59, "Machine Learning Analyst (Remote)" |
+| url | `https://www.linkedin.com/jobs/view/4459636725/` |
+| stat | `linkedin/closed_marker_seen: 1` |
+| run | 77 postings: **76 open, 1 closed, 0 inconclusive, 0 unanswered** |
+
+Fetched directly afterwards to see which of the four guessed phrases actually
+matched, and how the page renders it:
+
+    <... aria-label="Error"> No longer accepting applications
+
+So `"no longer accepting applications"` is confirmed, verbatim. Two things
+worth keeping:
+
+  * **The string is English even under `locale="tr-TR"`.** The three Turkish
+    phrases in `CLOSED_MARKERS` remain guesses and have never been observed;
+    they cost nothing and are left in place against an interface that changes
+    its mind.
+  * **The closed page carries no apply affordance at all** - no
+    `Easy Apply to this job`, no `Apply on company website`, no
+    `Save the job`. The two halves of the verdict agree, which is what the
+    OPEN/CLOSED/UNKNOWN split was built to rely on.
+
+`aria-label="Error"` looks like a sturdier anchor than the sentence and may
+well be one. It has been seen exactly once, so it is written down here rather
+than put in the code.
 
 ### THERE ARE THREE APPLY AFFORDANCES, NOT TWO - measured 27.08.2026
 
