@@ -14,7 +14,7 @@ run finds nothing to do. That also means a bad batch can be redone by clearing
 the column for those rows.
 
 Postings judged `other` are NOT deleted - `is_active` is set to False and the
-row stays, with the model's reason next to it. See docs/sites.md for what to do
+row stays, with the model's reason next to it. See docs/pipeline.md for what to do
 when a decision looks wrong.
 """
 

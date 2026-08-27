@@ -579,7 +579,7 @@ class CurlImpersonateMiddleware:
 
         So this replaces the library rather than fixing the setting, and it
         depends on nothing but curl_cffi - the same call tls_probe already
-        makes, which is how every handshake measurement in docs/sites.md was
+        makes, which is how every handshake measurement in docs/sites/indeed.md was
         taken.
 
         OPT-IN, PER SPIDER. A spider gets this transport only by setting

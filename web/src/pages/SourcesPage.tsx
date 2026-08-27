@@ -17,7 +17,7 @@ import { EmptyState, ErrorState, SkeletonBlock, SkeletonRows } from "../componen
  *
  * A source having fewer postings than another is not a fault - the boards are
  * different sizes. A source that has stopped producing IS one, and it is the
- * failure this project actually hits: docs/sites.md is largely a record of
+ * failure this project actually hits: docs/sites/ is largely a record of
  * Indeed's spider going quiet for three days because a TLS fingerprint, an
  * exit address and a session have to be right at the same time. So the
  * threshold is on staleness, not volume.

@@ -71,7 +71,7 @@ class ApiTemplateSpider(BaseApiSpider):
 
         Every value here is site-specific and has to be read off DevTools -
         each board invents its own ids ("3", "INTERNSHIP", "staj", 25, ...).
-        Record what you find in docs/sites.md so the magic numbers stay
+        Record what you find in docs/sites/ so the magic numbers stay
         explainable six months from now.
     '''
 

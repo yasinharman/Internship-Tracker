@@ -2,7 +2,7 @@
 LINKEDIN - THE SIGNED-IN SEARCH PAGE, READ THE WAY A PERSON SEES IT
 ====================================================================
 
-LinkedIn was out of scope from 27.07.2026 to 26.08.2026 and docs/sites.md said
+LinkedIn was out of scope from 27.07.2026 to 26.08.2026 and docs/sites/linkedin.md said
 so in as many words: "Do not add LinkedIn back." That entry has not been
 deleted, and the reasoning in it has not been refuted - it has been paid for.
 Its API answers nobody who is not signed in, and pointing a bot at an account
@@ -162,7 +162,7 @@ class LinkedinCardsSpider(BaseApiSpider):
     # TWO ROUTES, BECAUSE ONE HAS ALWAYS LEAKED                       #
     ###################################################################
     '''
-        docs/sites.md's standing rule: every posting must be reachable by at
+        docs/sites/README.md's standing rule: every posting must be reachable by at
         least two independent routes. On kariyer.net the site's own working
         type hid 85% of the internships; on techcareer the typeOfWork filter
         did not know about "Bilgisayar Muhendisligi Stajyeri". There is no

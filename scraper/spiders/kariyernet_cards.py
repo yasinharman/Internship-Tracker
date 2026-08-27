@@ -4,7 +4,7 @@ KARIYER.NET - LISTING CARD SPIDER
 
 kariyer.net has no JSON listing endpoint. Its pagination is plain
 `<a href="/is-ilanlari?cp=2">` navigation and the page is server-rendered, so
-there is no XHR to intercept - see docs/sites.md.
+there is no XHR to intercept - see docs/sites/kariyernet.md.
 
 That turned out not to matter, because every ad card on the listing page is a
 `<div data-test="ad-card">` carrying the data as attributes:

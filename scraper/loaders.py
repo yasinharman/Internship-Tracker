@@ -50,7 +50,7 @@ class KariyerNetLoader(BaseJobLoader):
     TechCareerLoader, IndeedLoader, LinkedInLoader and JoobleLoader used to
     live here, one per DOM-parsing spider. Those spiders are gone: TechCareer
     and Indeed now read embedded JSON and use JsonJobLoader, while LinkedIn and
-    Jooble are out of scope entirely (see docs/sites.md). Only kariyer.net is
+    Jooble are out of scope entirely (see docs/sites/). Only kariyer.net is
     still parsed from markup, so only its loader remains.
 '''
 

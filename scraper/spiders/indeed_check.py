@@ -9,9 +9,10 @@ the site most likely to refuse us. It subclasses indeed_cards so the residential
 proxy, the signed-in session, the handshake pairing and the block budget all
 apply unchanged; see scraper/openings.py.
 
-docs/sites.md:733 turned down fetching /viewjob?jk= per posting for
-DESCRIPTIONS, at "roughly 75 extra requests a day". This is the same endpoint
-for a different question, and the arithmetic is different: only the postings the
+docs/sites/indeed.md, "The first investigation" > "Description", turned down
+fetching /viewjob?jk= per posting for DESCRIPTIONS, at "roughly 75 extra
+requests a day". This is the same endpoint for a different question, and the
+arithmetic is different: only the postings the
 board can still show are checked (60, not 252), and the crawl runs every two
 days - about 30 requests a day. OPENINGS_MAX_PER_SITE caps it if that stops
 being true.
@@ -42,7 +43,13 @@ class IndeedCheckSpider(OpeningCheckMixin, IndeedCardsSpider):
         """
         MEASURED 21.08.2026 over 12 stored postings: 9 "isJobExpired":false,
         3 true, none ambiguous. Every page answered HTTP 200 from a residential
-        address with no challenge, matching docs/sites.md:687.
+        address with no challenge, matching the note at the top of
+        docs/sites/indeed.md.
+
+        (Both citations here used to be line numbers into a single 1331-line
+        docs/sites.md. By the time that file was split on 27.08.2026 they had
+        drifted onto unrelated paragraphs, which is the argument for naming a
+        section instead.)
 
         Two neighbouring fields were tried first and are NOT usable, which is
         worth writing down so nobody reaches for them again:

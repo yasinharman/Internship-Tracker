@@ -18,7 +18,7 @@ The Dockerfile, the idle container and the scheduled-task wiring below are
 kept rather than stripped out: they still work and they describe the target to
 go back to. Going back is not a matter of redeploying, though - the image has
 no Chromium and PROXY_MODE is off, so Indeed and LinkedIn cannot run there as
-it stands (docs/sites.md).
+it stands (docs/sites/).
 
 The schedule living OUTSIDE this script is still the design, and exiting when
 the work is done is the whole point of it - a scheduled task that never
@@ -50,7 +50,7 @@ load_dotenv()
 SCRAPY_PROJECT_FOLDER = "scraper"
 
 # One site is deliberately absent, and its spider has been deleted.
-# See docs/sites.md for the full reasoning; the code is in git history.
+# See docs/sites/jooble.md for the full reasoning; the code is in git history.
 #
 #   jooble    An aggregator: its postings are collected from kariyer.net and
 #             the like, so they arrive as duplicates under a jooble url - a
@@ -61,12 +61,12 @@ SCRAPY_PROJECT_FOLDER = "scraper"
 #             most fragile piece of the pipeline.
 
 # Their DOM-parsing predecessors (kariyerNet, TechCareer, indeed_html) have
-# been deleted - see docs/sites.md for what each site actually turned out to
+# been deleted - see docs/sites/ for what each site actually turned out to
 # need, and git history for the old code.
 # LinkedIn came back on 26.08.2026 after a month out of scope. What changed is
 # not the risk - its API still answers nobody who is not signed in, and it
 # still closes accounts that automate - but WHOSE account carries it: a burner
-# opened for this and nothing else. Read the LinkedIn section of docs/sites.md
+# opened for this and nothing else. Read docs/sites/linkedin.md
 # before touching that spider; the reasoning that kept it out is still there,
 # and still correct, and this is the exception to it rather than a refutation.
 SPIDERS = ["kariyernet_cards", "techcareer_api", "indeed_cards", "linkedin_cards"]
@@ -85,7 +85,7 @@ SPIDERS = ["kariyernet_cards", "techcareer_api", "indeed_cards", "linkedin_cards
 # come back.
 #
 # Three things had to be true at once, and each was mistaken for the others
-# at some point (docs/sites.md has the measurements):
+# at some point (docs/sites/ has the measurements):
 #
 #   - a TLS handshake Cloudflare accepts today, which changes without notice
 #     and is why IMPERSONATE_CANDIDATES is a ladder rather than a value

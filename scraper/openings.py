@@ -15,7 +15,7 @@ currently show, and a verdict written to job_posts.closed_at.
 WHAT COUNTS AS EVIDENCE
 -----------------------
 CLOSED is written ONLY on a positive, site-specific signal, measured against
-the live sites on 21.08.2026 and recorded in docs/sites.md:
+the live sites on 21.08.2026 and recorded in docs/pipeline.md:
 
     kariyer.net     [data-test="apply-button"] is gone from the detail page
     techcareer.net  head.isCompleted is true in the detail JSON
@@ -70,7 +70,7 @@ UNKNOWN = "unknown"
 
 # 0 = no ceiling, which is the right default: the set to check is the BOARD,
 # not the archive - 79 rows on 21.08.2026, of which 60 are Indeed. That is
-# under the ~75 requests a day docs/sites.md balked at for fetching Indeed
+# under the ~75 requests a day docs/sites/indeed.md balked at for fetching Indeed
 # descriptions, on a crawl that runs every two days.
 #
 # The knob exists for the day Indeed starts refusing us: set it and the oldest

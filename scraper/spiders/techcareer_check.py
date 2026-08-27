@@ -53,7 +53,7 @@ class TechCareerCheckSpider(OpeningCheckMixin, TechCareerApiSpider):
             a slug that does not exist -> HTTP 200, 105-byte body, no head
 
         isCompleted is the site's own word for it - the list endpoint filters
-        on the same field (jobs[isCompleted]=false, docs/sites.md) - so this is
+        on the same field (jobs[isCompleted]=false, docs/sites/techcareer.md) - so this is
         not a marker that happens to correlate, it is the answer.
 
         An empty head on a 200 means the posting is gone rather than that

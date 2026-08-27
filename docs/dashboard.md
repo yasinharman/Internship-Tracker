@@ -98,7 +98,7 @@ matching the neutral palette.
 ## Postings that closed at their source
 
 `scraper/openings.py` and the three `*_check` spiders decide this;
-`docs/sites.md` has the per-site signal and the measurements behind it. What
+`docs/pipeline.md` has the per-site signal and the measurements behind it. What
 matters on this side is the shape:
 
 | Column | Owner | Meaning |

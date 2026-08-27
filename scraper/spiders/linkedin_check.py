@@ -30,7 +30,7 @@ Until the first real closure comes through, the expected outcome of a run is
 "N open, 0 closed, M inconclusive", and that is a correct result rather than a
 broken one. When one does close, `linkedin/closed_marker_seen` in the stats is
 the confirmation, and the marker below should then be recorded in
-docs/sites.md with the id and the date - the way the other three are.
+docs/sites/linkedin.md with the id and the date - the way the other three are.
 
 WHY IT NEEDS ITS OWN page_actions
 ---------------------------------
@@ -119,10 +119,10 @@ class LinkedinCheckSpider(OpeningCheckMixin, LinkedinCardsSpider):
         if any(marker in body for marker in CLOSED_MARKERS):
             # Worth a line of its own: this is the first time the marker has
             # ever fired, and it is the measurement the module docstring says
-            # is missing. Record the id and put it in docs/sites.md.
+            # is missing. Record the id and put it in docs/sites/linkedin.md.
             self.logger.info(
                 "closed-marker matched on %s - this is the evidence the "
-                "checker was written without; record it in docs/sites.md.",
+                "checker was written without; record it in docs/sites/linkedin.md.",
                 response.url[:100],
             )
             self.crawler.stats.inc_value("linkedin/closed_marker_seen")
