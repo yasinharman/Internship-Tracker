@@ -1,5 +1,13 @@
 # TWO SERVICES, ONE IMAGE
 # ========================
+# NOT CURRENTLY DEPLOYED. The Coolify application that built this image was
+# deleted on 17.08.2026 and the crawl has run from a laptop by hand ever
+# since; only the database stayed on the server (see main.py). The file is
+# kept because it still builds and it is the shape to go back to - but going
+# back needs work first: no Chromium layer, and PROXY_MODE off, so the two
+# Playwright sites cannot run in it. Everything below describes that target,
+# in the present tense it was written in.
+#
 # Coolify offers no start-command box for a Dockerfile application, so the
 # image's CMD decides what a container does - and this repo has two jobs:
 # the crawler, which runs on a schedule inside an idle container, and the
@@ -63,7 +71,7 @@ RUN npm run build
 # --- dashboard ------------------------------------------------------------
 # FastAPI serves the JSON API and the built front end from one process, so
 # the browser talks to a single origin and there is no CORS configuration to
-# get wrong between here and Coolify.
+# get wrong between here and the hosting panel.
 #
 # --host 0.0.0.0 is what makes it reachable from outside the container rather
 # than only from inside it. The port stays 8501, the one Streamlit used, so
@@ -74,9 +82,10 @@ EXPOSE 8501
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8501"]
 
 # --- worker (default) -----------------------------------------------------
-# The container does nothing on its own: it just stays up so Coolify can run
-# scheduled tasks inside it (`python main.py`). Scheduling lives in Coolify,
-# not in this image.
+# The container does nothing on its own: it just stays up so a scheduler on
+# the host can run `python main.py` inside it. Scheduling lives outside the
+# image on purpose - it was Coolify's scheduled task while this was hosted,
+# and it is a human typing the command today.
 #
 # 'exec' form + sleep as PID 1 means SIGTERM stops the container immediately
 # instead of Docker waiting out the 10s kill timeout on every redeploy.

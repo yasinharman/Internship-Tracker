@@ -202,7 +202,7 @@ def write_results(session, results):
             posting.is_active = False
             deactivated += 1
             # Logged at INFO on purpose: every exclusion is visible in the
-            # Coolify logs, so a wrong one can be spotted without a query.
+            # run's own output, so a wrong one can be spotted without a query.
             print(f"  hidden: {posting.job_title} - {verdict.reason}")
 
     session.commit()

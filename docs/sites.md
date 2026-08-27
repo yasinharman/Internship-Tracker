@@ -1162,7 +1162,7 @@ move between runs; the stored decision is what counts.
 ### When a decision looks wrong
 
 Every `other` verdict is logged at INFO with title and reason, so a bad call is
-visible in the Coolify logs without a query. To audit:
+visible in the run's output without a query. To audit:
 
 ```sql
 select job_title, company, category_reason

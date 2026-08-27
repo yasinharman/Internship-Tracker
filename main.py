@@ -2,15 +2,26 @@
 SCRAPER ENTRY POINT
 ===================
 
-Runs every spider once and exits. The schedule lives OUTSIDE this script:
-the container starts idle (`sleep infinity`, see Dockerfile) and Coolify's
-scheduled task runs
+Runs every spider once and exits.
 
-    python main.py
+WHERE THIS ACTUALLY RUNS, 27.08.2026: on this laptop, by hand.
 
-inside the already-running container on its own cron expression.
+    .venv/bin/python main.py
 
-Exiting when the work is done is the whole point - a scheduled task that never
+Nothing in this repository is deployed. The Coolify application that used to
+run the crawl on a cron expression was deleted on 17.08.2026; what stayed on
+the server is the Postgres it writes to (`job-applications-db`), and that is
+the only reason DATABASE_URL points off this machine. A push to main therefore
+builds nothing and crawls nothing.
+
+The Dockerfile, the idle container and the scheduled-task wiring below are
+kept rather than stripped out: they still work and they describe the target to
+go back to. Going back is not a matter of redeploying, though - the image has
+no Chromium and PROXY_MODE is off, so Indeed and LinkedIn cannot run there as
+it stands (docs/sites.md).
+
+The schedule living OUTSIDE this script is still the design, and exiting when
+the work is done is the whole point of it - a scheduled task that never
 returns would be reported as still running and the next tick would pile a
 second crawl on top of the first.
 
@@ -19,7 +30,8 @@ second crawl on top of the first.
     python main.py --skip-classify          crawl only, skip dedupe + classify
     python main.py --list                   show the spider names
     python main.py --schedule               legacy in-process APScheduler loop,
-                                            for running without Coolify
+                                            for running without an external
+                                            scheduler
 """
 
 import argparse
@@ -348,8 +360,9 @@ def run_spiders(spiders=None):
     # A crawl where NOTHING came back is reported as a failed run, even though
     # every spider exited 0. One empty spider is ambiguous - a board really
     # can have no new postings today - but all of them empty means the crawl
-    # accomplished nothing, and that should be a red run in Coolify rather
-    # than a warning nobody opens the log to read.
+    # accomplished nothing, and that should be a failed run - a red one in
+    # whatever runs it, and a non-zero exit in a terminal - rather than a
+    # warning nobody opens the log to read.
     counted = [
         _items(stats) for ok, stats in results.values()
         if ok and _items(stats) is not None
@@ -475,9 +488,11 @@ def run_post_crawl():
 ############################################
 def run_with_internal_scheduler():
     """
-    Pre-Coolify behaviour: this process stays alive and fires the crawl itself.
-    Kept for running the stack without an external scheduler (docker-compose
-    locally). Do NOT use this for a Coolify scheduled task - it never exits.
+    The behaviour that predates the scheduled task: this process stays alive
+    and fires the crawl itself. Kept for running the stack without an external
+    scheduler (docker-compose locally). Do NOT use it for a scheduled task of
+    any kind - it never exits, so the scheduler would see a run that never
+    finishes and never fire the next one.
     """
     from apscheduler.schedulers.blocking import BlockingScheduler
 
@@ -571,8 +586,9 @@ if __name__ == "__main__":
                 flush=True,
             )
 
-    # Non-zero tells Coolify the scheduled task failed, so a broken crawl shows
-    # up as a red run instead of passing silently. Two ways to earn it: a
+    # Non-zero is how a broken crawl announces itself instead of passing
+    # silently: an error in the terminal today, a red run under a scheduler if
+    # this goes back on a server. Two ways to earn it: a
     # spider crashed, or every spider that ran came back empty - see
     # run_spiders for why the second one counts. Classification is not part of
     # this; see run_post_crawl.

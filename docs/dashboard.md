@@ -6,7 +6,11 @@ Two pieces, one container:
   which stays the only description of the schema. Writes nothing.
 - `web/` — React (Vite, TypeScript, Tailwind v4). Builds to static files that
   FastAPI serves, so the browser talks to one origin and there is no CORS
-  configuration between here and Coolify.
+  configuration between here and a host.
+
+Neither piece is deployed anywhere: `./dev.sh` on a laptop is how it is
+served, and the Coolify application was deleted on 17.08.2026 — only the
+Postgres it reads stayed on the server (see `main.py`).
 
 It replaced a Streamlit script (`app.py`, in git history) that connected to
 Postgres from the page itself. A React front end cannot do that, which is why

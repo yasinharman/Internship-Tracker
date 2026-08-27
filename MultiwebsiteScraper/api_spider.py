@@ -524,8 +524,9 @@ class BaseApiSpider(scrapy.Spider):
         One JSON object per line rather than just the count, so main.py can
         print a per-site summary (requests made, searches run, postings
         found, whether a block cut the run short) without re-deriving it
-        from the scrapy log - which streams straight to Coolify and should
-        keep doing so, not get grepped for numbers.
+        from the scrapy log - which streams straight to whoever is watching
+        the run, and should keep doing so rather than get grepped for
+        numbers.
 
         No SPIDER_STATS_FILE in the environment means nobody asked, e.g. a
         hand-run `scrapy crawl`. Silently do nothing.

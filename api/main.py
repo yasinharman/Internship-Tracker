@@ -8,9 +8,11 @@ Two jobs in one process:
   /*       the built React app (web/dist), with a catch-all so client-side
            routing survives a hard refresh on /ilanlar
 
-One service on one port, because Coolify starts this image with a build stage
-target and nothing else - the fewer moving parts that deploy has, the fewer
-ways it drifts from what runs locally.
+One service on one port, because the only lever the hosting panel offered was
+a build stage target - the fewer moving parts a deploy has, the fewer ways it
+drifts from what runs locally. There is no such deploy at the moment: this is
+served by ./dev.sh on a laptop, and the Coolify application was deleted on
+17.08.2026 (see main.py). The shape is kept for the day it goes back.
 """
 
 import os

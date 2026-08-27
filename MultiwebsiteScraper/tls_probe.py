@@ -24,9 +24,10 @@ theorising. It is also the only honest way to tell the two failures apart -
 
 both of which arrive as "no postings" and mean completely different things.
 
-Run it on the SERVER when the server is what is failing. A verdict measured
-from a home connection says nothing about what Coolify sees; that confusion
-is exactly how `indeed_cards` ended up parked.
+Run it WHERE THE CRAWL RUNS. Today that is a laptop, so a home connection is
+the thing to measure; while this was hosted it was the server, and a verdict
+measured at home said nothing about what the server saw. That confusion is
+exactly how `indeed_cards` ended up parked.
 
 Nothing here touches the database or the spiders - it is a diagnostic, safe
 to run at any time. It does spend a little residential bandwidth with
