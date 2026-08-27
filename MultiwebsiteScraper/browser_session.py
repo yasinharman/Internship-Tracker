@@ -46,6 +46,34 @@ class BrowserProfile:
 # NOTE: an outdated Chrome version is itself a bot signal. Bump these every
 # few months to whatever the current stable release is.
 PROFILES = [
+    ###################################################################
+    # THE ONE PROFILE THAT DESCRIBES THIS MACHINE INSTEAD OF A GUESS  #
+    ###################################################################
+    # Every other entry here is a plausible browser we do not have. That is
+    # fine while the run is anonymous - nothing on the far side can compare
+    # the claim against anything. It stops being fine the moment a signed-in
+    # session is carried, which is the mistake session_cookies.py warns about
+    # and indeed_cards.py measured on 30.07.2026.
+    #
+    # MEASURED 26.08.2026: the LinkedIn burner session was created in the
+    # installed Brave, which reports Chrome/151.0.0.0 on X11/Linux x86_64, and
+    # Playwright's bundled Chromium here is 151.0.7922.34 on the same
+    # platform. So this string is what the browser actually is, in both the
+    # window the human logged in with and the one the spider drives. Nothing
+    # else in this list can say that.
+    #
+    # Bump it when Brave/Chromium here move on - `python -c "from playwright.
+    # sync_api import sync_playwright" ...` or simply read the UA off the
+    # browser, which is how this value was obtained rather than typed.
+    BrowserProfile(
+        name="chrome-151-linux",
+        user_agent=(
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+        ),
+        sec_ch_ua='"Not(A:Brand";v="24", "Chromium";v="151", "Brave";v="151"',
+        sec_ch_ua_platform='"Linux"',
+    ),
     BrowserProfile(
         name="chrome-133-win",
         user_agent=(

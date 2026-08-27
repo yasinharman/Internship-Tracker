@@ -106,6 +106,7 @@ SITE_LABELS = {
     "techcareer.net": "techcareer.net",
     "indeed": "Indeed",
     "indeed.com": "Indeed",
+    "linkedin.com": "LinkedIn",
 }
 
 

@@ -17,10 +17,13 @@ httpcache/
 #Passwords
 .env
 
-#exported browser session - these files ARE the Indeed account
+#exported browser session - these files ARE the account they came from
 indeed-cookies.txt
 indeed-cookies.b64
 indeed-storage-state.json
+linkedin-cookies.txt
+linkedin-cookies.b64
+linkedin-storage-state.json
 
 #front end - installed and built, never committed
 web/node_modules

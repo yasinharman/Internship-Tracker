@@ -105,6 +105,14 @@ class IndeedCardsSpider(BaseApiSpider):
     origin = "https://tr.indeed.com"
     allowed_domains = ["indeed.com"]
 
+    # Which environment variables carry THIS site's exported session. Named on
+    # the spider rather than hardcoded in the loader or the middleware, because
+    # a session file is the account: a second site reading these would send
+    # Indeed's cookies to somewhere that is not Indeed. See
+    # PlaywrightMiddleware._resolve_storage_state.
+    COOKIES_ENV = "INDEED_COOKIES"
+    STORAGE_STATE_ENV = "INDEED_STORAGE_STATE"
+
     ###################################################################
     # WHY THIS SPIDER LOADS THE HOME PAGE IT DOES NOT NEED            #
     ###################################################################
@@ -423,7 +431,7 @@ class IndeedCardsSpider(BaseApiSpider):
 
         # A real signed-in session, exported from a browser by hand. Empty is
         # the normal case and means "crawl anonymously". See session_cookies.
-        self.session_cookies = load_cookies("INDEED_COOKIES")
+        self.session_cookies = load_cookies(self.COOKIES_ENV)
         self._require_a_whole_session()
         self._prefer_the_session_s_browser()
         # Set once the sign-in wall has been seen WITH cookies loaded, so the

@@ -215,6 +215,12 @@ class BlockDetectionMiddleware:
         "/signin",
         "sign_in",
         "page-two-signin",
+        # LinkedIn's wall for a request it will not serve without an account.
+        # Its other one, /uas/login, needs no entry - "/login" already covers
+        # it. Worth having because it is what tells an expired burner session
+        # apart from an address being refused, exactly as page-two-signin does
+        # for Indeed (see IndeedCardsSpider.note_sign_in_wall).
+        "/authwall",
     )
 
     def __init__(self, crawler):

@@ -37,12 +37,8 @@ load_dotenv()
 
 SCRAPY_PROJECT_FOLDER = "MultiwebsiteScraper"
 
-# Two sites are deliberately absent, and their spiders have been deleted.
+# One site is deliberately absent, and its spider has been deleted.
 # See docs/sites.md for the full reasoning; the code is in git history.
-#
-#   linkedin  Its JSON API (Voyager) only answers authenticated requests, and
-#             pointing the bot at a personal account risks a permanent ban for
-#             very little extra coverage. Checked by hand instead.
 #
 #   jooble    An aggregator: its postings are collected from kariyer.net and
 #             the like, so they arrive as duplicates under a jooble url - a
@@ -55,7 +51,13 @@ SCRAPY_PROJECT_FOLDER = "MultiwebsiteScraper"
 # Their DOM-parsing predecessors (kariyerNet, TechCareer, indeed_html) have
 # been deleted - see docs/sites.md for what each site actually turned out to
 # need, and git history for the old code.
-SPIDERS = ["kariyernet_cards", "techcareer_api", "indeed_cards"]
+# LinkedIn came back on 26.08.2026 after a month out of scope. What changed is
+# not the risk - its API still answers nobody who is not signed in, and it
+# still closes accounts that automate - but WHOSE account carries it: a burner
+# opened for this and nothing else. Read the LinkedIn section of docs/sites.md
+# before touching that spider; the reasoning that kept it out is still there,
+# and still correct, and this is the exception to it rather than a refutation.
+SPIDERS = ["kariyernet_cards", "techcareer_api", "indeed_cards", "linkedin_cards"]
 
 # indeed_cards was parked from 28.07.2026 to 30.07.2026. Un-parked on the
 # terms the parking comment itself set: a static residential address and the
@@ -102,7 +104,8 @@ FOLLOW_UP_SPIDERS = {}
 # they add no postings, and folding them in would make run_spiders' "every
 # spider found nothing = failed run" rule fire on a checker that legitimately
 # had nothing left to check.
-CHECK_SPIDERS = ["kariyernet_check", "techcareer_check", "indeed_check"]
+CHECK_SPIDERS = ["kariyernet_check", "techcareer_check", "indeed_check",
+                 "linkedin_check"]
 
 # A wedged spider must not hold the scheduled task open forever.
 SPIDER_TIMEOUT = int(os.getenv("SPIDER_TIMEOUT", "1800"))
@@ -139,6 +142,7 @@ SITE_LABELS = {
     "kariyernet_cards": "kariyer.net",
     "techcareer_api": "techcareer.net",
     "indeed_cards": "Indeed",
+    "linkedin_cards": "LinkedIn",
 }
 
 
