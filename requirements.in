@@ -1,0 +1,69 @@
+# brotli + zstandard let Scrapy advertise the same Accept-Encoding a real
+# Chrome does (gzip, deflate, br, zstd). Without them our encoding header is
+# a giveaway that we are not a browser.
+#
+# scrapy-impersonate + curl_cffi replay a real browser's TLS ClientHello,
+# which gets Indeed past the IP/fingerprint scoring Python's own stack fails
+# outright. It is not enough on its own, though: curl_cffi has no JS engine,
+# so it cannot run Cloudflare's managed challenge the way an actual browser
+# does (measured 05.08.2026 - see playwright_middleware.py). playwright is
+# what drives that actual browser, opt-in for indeed_cards only via
+# USE_PLAYWRIGHT = True. Run `playwright install chromium` once after
+# installing this file - the package alone does not ship the browser binary.
+#
+# openai + pydantic drive the field classifier (scraper/
+# classifier.py). anthropic is deliberately absent: the file keeps a seam for
+# it so models can be compared, but production settled on gpt-5.4-mini, and
+# the import only happens if LLM_PROVIDER=anthropic.
+#
+# fastapi + uvicorn serve the dashboard (api/). They replaced streamlit, which
+# read the database directly from the page; a React front end cannot, so the
+# reading half became an HTTP API. Everything streamlit pulled in with it -
+# pandas, numpy, pyarrow, altair, pydeck, protobuf, tornado and the rest, a
+# little over 100MB in the image - went with it. The aggregations it needed
+# pandas for are SQL now.
+#
+# uvicorn is installed as uvicorn[standard]: uvloop and httptools are the fast
+# event loop and HTTP parser, websockets and watchfiles round out the extra.
+# Nothing declares a dependency on them, so they look removable and are not.
+
+# ---------------------------------------------------------------------------
+# THE DIRECT DEPENDENCIES. requirements.txt is the lockfile: every pin below
+# plus everything they pull in, which is why it is four times longer.
+#
+# Nothing here is version-pinned on purpose - the lock does that. Edit this
+# file when a dependency is genuinely added or dropped, then regenerate:
+#
+#     pip install -r requirements.in && pip freeze > requirements.txt
+# ---------------------------------------------------------------------------
+
+# crawling
+Scrapy
+scrapy-impersonate
+curl_cffi
+playwright
+Brotli
+zstandard
+
+# storage
+SQLAlchemy
+psycopg2
+python-dotenv
+
+# the field classifier
+openai
+pydantic
+
+# the dashboard
+fastapi
+uvicorn[standard]
+
+# odds and ends: itemadapter/itemloaders are Scrapy's item plumbing and are
+# imported directly by pipelines.py and loaders.py; requests is the Hermes
+# webhook call; PyYAML reads config/watched_companies.yml; APScheduler is only
+# for `main.py --schedule`.
+itemadapter
+itemloaders
+requests
+PyYAML
+APScheduler
