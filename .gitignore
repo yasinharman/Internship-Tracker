@@ -29,6 +29,9 @@ web/dist
 #tsc's incremental build cache - local state, rebuilt on every machine
 *.tsbuildinfo
 
+#pytest's cache - local state, rebuilt on every run
+.pytest_cache/
+
 #raw API response dumps (API_DEBUG_DUMP=1)
 debug/
 

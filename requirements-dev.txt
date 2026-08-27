@@ -1,0 +1,8 @@
+# Test-only. Not installed in the image and not needed to run a crawl.
+#
+#     .venv/bin/pip install -r requirements-dev.txt
+#     .venv/bin/python -m pytest
+#
+# The suite is deliberately offline - no site, no database, no signed-in
+# session - so this is the whole list. See tests/conftest.py for why.
+pytest==9.1.1

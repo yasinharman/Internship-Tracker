@@ -1,0 +1,68 @@
+# Two jobs, because the repo is two languages and they fail differently.
+#
+# Neither job reaches a job board, a database or an LLM: the tests are pure
+# functions by design (tests/conftest.py), and the front-end job only type-
+# checks and builds. So CI needs no secrets, and a red run always means the
+# code is wrong rather than that a site was slow.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      # psycopg2 (not -binary) is built from source and needs pg_config.
+      - name: Install libpq headers
+        run: sudo apt-get update && sudo apt-get install -y libpq-dev
+
+      # The full pin set, so a broken lockfile fails here rather than on the
+      # machine that runs the crawl. `playwright install` is NOT run: that
+      # downloads a browser, and nothing in the suite opens one.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Tests
+        run: python -m pytest
+
+      # A spider that cannot be loaded is a broken crawl, and it is the
+      # failure a rename or a moved middleware produces - which no unit test
+      # would catch. `scrapy list` imports every spider module and the whole
+      # settings file, including the middleware paths that are plain strings.
+      - name: Every spider still loads
+        working-directory: scraper
+        run: python -m scrapy list
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit -p tsconfig.app.json
+
+      - name: Build
+        run: npm run build
