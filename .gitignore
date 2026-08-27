@@ -36,4 +36,8 @@ web/dist
 debug/
 
 #working plans - local notes, not part of the repo
-PLAN-*.mdbackups/
+PLAN-*.md
+
+#local database backups and run logs - scraped data, never committed
+backups/
+
