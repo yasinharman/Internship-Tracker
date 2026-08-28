@@ -12,6 +12,10 @@ Four sources, all measured rather than guessed - the notes in
 [`docs/sites/`](docs/sites/) record what each site does, on what date, and what
 was tried before the current approach worked.
 
+![Runtime architecture: four job boards through the anti-block transport into job_posts, then dedupe, notify, classify and check; FastAPI and the React dashboard read the same table](docs/assets/architecture.png)
+
+The whole thing on one screen. The five steps below are the middle of it.
+
 ---
 
 ## What runs, and in what order
