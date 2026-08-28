@@ -363,11 +363,38 @@ class IndeedCardsSpider(BaseApiSpider):
         # so it gets the gentlest treatment.
         "CONCURRENT_REQUESTS": 1,
         "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
-        # Raised from 4 on 03.08.2026 - a slower, less mechanical cadence is
-        # one of the few free levers left once a session is loaded and TLS
-        # identity switching is off the table (see BlockDetectionMiddleware).
-        # Unmeasured whether this alone moves the block point.
-        "DOWNLOAD_DELAY": 6,
+        # 4 -> 6 on 03.08.2026, 6 -> 20 on 27.08.2026. A slower, less
+        # mechanical cadence is one of the few free levers left once a session
+        # is loaded and TLS identity switching is off the table (see
+        # BlockDetectionMiddleware).
+        #
+        # WHY 20, AND WHAT IT IS TESTING. Measured 27.08.2026, three runs, the
+        # same shape every time: the warm-up and the first three searches
+        # answer 200 and the fourth is challenged.
+        #
+        #     16:00:01  warm-up                  200
+        #     16:00:07  yazilim stajyer          200
+        #     16:00:15  bilgisayar muh. stajyer  200
+        #     16:00:24  software intern          200
+        #     16:00:31  developer intern         403  cf-mitigated=challenge
+        #
+        # Four requests in thirty seconds. That is NOT an address ban - a
+        # burned address fails the warm-up too, and this one never has. It is
+        # a rate trigger, and the runs earlier the same day support it: the
+        # longer the gap since the previous run, the further the crawl got
+        # (1 search, then 3, then 4).
+        #
+        # 20 spreads those same four requests over about eighty seconds. If
+        # the block still lands on the fourth request, the cadence is NOT the
+        # lever and the next thing to look at is the session - which has
+        # warned "Google/OAuth login, no SOCK/SHOE, proceeding as an
+        # unmeasured experiment" on every single run since 05.08.
+        #
+        # Affordable because nothing here is on a schedule: a full run may
+        # take an hour and the throttle now says out loud that it is waiting
+        # (throttle.py), so a long quiet stretch is legible instead of
+        # alarming.
+        "DOWNLOAD_DELAY": 20,
         "RANDOMIZE_DOWNLOAD_DELAY": True,
 
         "TWISTED_REACTOR": "twisted.internet.asyncioreactor.AsyncioSelectorReactor",

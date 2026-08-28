@@ -33,10 +33,21 @@ already block the reactor by design and say so in their docstrings, so the
 sleep costs nothing the fetch was not already costing.
 """
 
+import logging
 import random
 import time
 
 from scrapy.utils.httpobj import urlparse_cached
+
+logger = logging.getLogger(__name__)
+
+# A wait longer than this is sliced up so the log keeps saying the crawl is
+# alive. Below it, a silent sleep is shorter than the gap between two ordinary
+# log lines and nobody would wonder.
+HEARTBEAT_ABOVE_S = 8
+
+# How often to say so while waiting.
+HEARTBEAT_EVERY_S = 10
 
 
 class SlotThrottle:
@@ -67,6 +78,37 @@ class SlotThrottle:
         if previous is not None:
             remaining = wait - (time.monotonic() - previous)
             if remaining > 0:
-                time.sleep(remaining)
+                self._sleep_out_loud(remaining, key)
 
         self._last[key] = time.monotonic()
+
+    def _sleep_out_loud(self, remaining, key):
+        """
+        Wait, saying so often enough that a long delay is never mistaken for
+        a dead crawl.
+
+        This sleep blocks the reactor - deliberately, see the module docstring
+        - which also blocks Scrapy's own LogStats extension, the thing that
+        would otherwise print "Crawled N pages" once a minute. At the 3-6s
+        delays this project started with, that cost nothing. At the 20s Indeed
+        needs to stay under Cloudflare's rate trigger the log would go quiet
+        for twenty seconds at a stretch, and the only way to tell a throttled
+        crawl from a wedged one would be to go and look at the process.
+
+        So the heartbeat comes from inside the wait instead. INFO, because
+        "is it still alive" is a question you want answered without turning
+        DEBUG on.
+        """
+        if remaining <= HEARTBEAT_ABOVE_S:
+            time.sleep(remaining)
+            return
+
+        deadline = time.monotonic() + remaining
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return
+            logger.info(
+                "throttle: waiting %.0fs more before the next %s request", left, key
+            )
+            time.sleep(min(HEARTBEAT_EVERY_S, left))

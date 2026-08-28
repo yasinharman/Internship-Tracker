@@ -295,6 +295,62 @@ said it needs, not more code. What changed is that the crawl now takes real
 value out of the window it gets, instead of spending it on the wrong terms and
 then burning sixteen minutes on wedged navigations.
 
+## The block is a COUNT, not a rate - measured 28.08.2026
+
+The obvious lever was cadence: four requests in thirty seconds looked like a
+rate trigger, so `DOWNLOAD_DELAY` went 6 -> 20 and the same crawl was run
+again. It is not a rate trigger.
+
+    27.08, delay 6, 20 min after the previous run
+      16:00:01  warm-up                  200
+      16:00:07  yazilim stajyer          200
+      16:00:15  bilgisayar muh. stajyer  200
+      16:00:24  software intern          200
+      16:00:31  developer intern         403   <- 4th request, 30s in
+
+    28.08, delay 20, TWENTY HOURS after the previous run
+      12:15:13  warm-up                  200
+      12:15:30  yazilim stajyer          200
+      12:15:50  bilgisayar muh. stajyer  200
+      12:16:18  software intern          200
+      12:16:37  developer intern         403   <- 4th request, 84s in
+
+Same place, both times. Spreading the requests over nearly three times as long
+moved nothing, and neither did a rested address: `blocks/detected: 8`,
+`200: 4`, `403: 8` in both runs.
+
+So Indeed serves three search pages per session and challenges the fourth.
+Three things are ruled out by this:
+
+  * **Rate.** 30s and 84s produce the same result.
+  * **Accumulated address reputation.** Twenty hours of rest changed nothing,
+    and a burned address would not answer the warm-up either - this one always
+    does, on every run, including the ones where every search is refused.
+  * **A residential proxy as the fix.** The crawl already leaves from a
+    residential connection. What a rotating pool would buy is a NEW session
+    per address, which is the thing that looks like it matters - not the
+    address type.
+
+**What is left to test, in order.** The session is the obvious next suspect
+and the cheapest to check, because it has been announcing itself since
+05.08.2026 on every single run:
+
+    WARNING: Session has no SOCK/SHOE (native login) but does have
+    __Secure-PassportAuthProxy-RefreshToken/JSESSIONID (Google/OAuth login) -
+    proceeding as an unmeasured experiment.
+
+Re-capture it with a native email+password login rather than Google
+(`python -m tools.save_session indeed`) and see whether the count moves off
+three. After that, whether a fresh browser CONTEXT resets the count is worth
+one run: the middleware now opens a fresh page per navigation but keeps the
+context, so the cookie jar is continuous across all nine searches.
+
+**The delay stays at 20 anyway.** It buys nothing against the block, and that
+is written down here so nobody re-derives it - but nothing in this project is
+on a schedule, an hour-long run is acceptable, and a gentler cadence is the
+cheaper side to err on. `throttle.py` now prints a line every ten seconds
+while it waits, so the quiet stretches are legible rather than alarming.
+
 ## Search terms - measured 30.07.2026
 
 Five field terms were added on top of the four broad ones, because depth was
