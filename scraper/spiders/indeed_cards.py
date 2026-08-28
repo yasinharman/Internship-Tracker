@@ -384,11 +384,21 @@ class IndeedCardsSpider(BaseApiSpider):
         # longer the gap since the previous run, the further the crawl got
         # (1 search, then 3, then 4).
         #
-        # 20 spreads those same four requests over about eighty seconds. If
-        # the block still lands on the fourth request, the cadence is NOT the
-        # lever and the next thing to look at is the session - which has
-        # warned "Google/OAuth login, no SOCK/SHOE, proceeding as an
-        # unmeasured experiment" on every single run since 05.08.
+        # 20 spread those same four requests over about eighty seconds and
+        # the block landed on the fourth request anyway, so the cadence was
+        # not the lever. Neither was the session, the address or the count:
+        # the browser was announcing itself before any search loaded, and
+        # fixing its fingerprint removed the challenge entirely (see
+        # docs/sites/indeed.md, "IT WAS THE BROWSER'S OWN FINGERPRINT").
+        #
+        # 20 EARNS ITS KEEP NOW, for a different reason than it was set. With
+        # the challenge gone the crawl reaches page 15 on five searches and
+        # makes 124 requests instead of 12, and three of those came back 429 -
+        # plain rate limiting, not a challenge. That is the binding constraint
+        # at this cadence, and a shorter one would find more of it. 41 minutes
+        # for 138 unique postings is a trade this project can make: nothing
+        # here is on a schedule, and throttle.py says out loud that it is
+        # waiting.
         #
         # Affordable because nothing here is on a schedule: a full run may
         # take an hour and the throttle now says out loud that it is waiting

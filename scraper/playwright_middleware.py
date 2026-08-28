@@ -174,16 +174,77 @@ class PlaywrightMiddleware:
 
         try:
             with sync_playwright() as p:
-                launch_kwargs = {"headless": self.headless}
-                if self.channel:
-                    launch_kwargs["channel"] = self.channel
+                launch_kwargs = {
+                    "headless": self.headless,
+                    # The full browser rather than Playwright's headless
+                    # shell, which is what `headless=True` picks by default.
+                    # Measured 28.08.2026, same flags otherwise:
+                    # navigator.plugins is 0 on the shell and 5 on this, and
+                    # 0 plugins is a documented headless tell. Override with
+                    # PLAYWRIGHT_CHANNEL if a machine only has the shell.
+                    "channel": self.channel or "chromium",
+                    # navigator.webdriver is `true` without this, which is the
+                    # browser volunteering that it is automated before any
+                    # fingerprinting has to work for it. tools/save_session.py
+                    # has always launched with this flag - the browser that
+                    # CREATES the session was harder to spot than the one that
+                    # replays it, which is backwards.
+                    "args": ["--disable-blink-features=AutomationControlled"],
+                }
                 browser = p.chromium.launch(**launch_kwargs)
 
+                ###########################################################
+                # THE BROWSER DESCRIBES ITSELF                            #
+                ###########################################################
+                # user_agent is deliberately NOT set here any more.
+                #
+                # MEASURED 28.08.2026. The impersonation profile's UA was
+                # being applied to the context, and document_headers() was
+                # sending the same one as an HTTP header, so a page asking
+                # who this was got:
+                #
+                #   navigator.userAgent   Macintosh ... Safari/605.1.15
+                #   navigator.platform    Linux x86_64
+                #   navigator.webdriver   true
+                #   WebGL renderer        SwiftShader
+                #   navigator.plugins     0
+                #
+                # A UA claiming macOS Safari on a headless Linux Chromium that
+                # is also announcing itself as automated. Five contradictions
+                # in the first fifty milliseconds of any fingerprinting
+                # script, and Cloudflare has challenged the fourth search page
+                # on every run since.
+                #
+                # The profile's UA exists to be PAIRED WITH A TLS HANDSHAKE -
+                # that is what browser_session.py's table is for, and it is
+                # right for curl_cffi, which really does replay the handshake
+                # it is told to. Playwright brings its own engine and its own
+                # handshake, so borrowing the label without the thing it
+                # labels only creates the mismatch.
+                #
+                # Left unset, Chromium reports itself, and the UA, the Client
+                # Hints, the platform and the engine finally agree.
+                # ...with ONE correction. Headless Chromium puts the word
+                # into its own User-Agent - "HeadlessChrome/151.0.0.0" - which
+                # is a plainer statement of what we are than any of the
+                # mismatches this replaced. Taken from the browser itself and
+                # edited by one word, so the version, the platform and the
+                # engine all stay true; we are not claiming to be a different
+                # browser, only declining to announce the mode.
+                scratch = browser.new_context()
+                scratch_page = scratch.new_page()
+                real_ua = scratch_page.evaluate("() => navigator.userAgent")
+                scratch_page.close()
+                scratch.close()
+                honest_ua = real_ua.replace("HeadlessChrome/", "Chrome/")
+
                 context_kwargs = {
-                    "user_agent": self._spider.session.profile.user_agent,
+                    "user_agent": honest_ua,
                     "locale": "tr-TR",
                     "viewport": {"width": 1280, "height": 800},
                 }
+                if honest_ua != real_ua:
+                    logger.info("User-Agent: %s", honest_ua)
 
                 # storage_state carries cookies AND localStorage/sessionStorage
                 # from an actual by-hand login (see tools/save_session.py) -
@@ -343,9 +404,15 @@ class PlaywrightMiddleware:
         #
         # Which leaves subresources as the only thing these headers ever
         # actually affected, and one site that was being broken by them.
+        #
+        # User-Agent and the sec-ch-ua hints join that list on 28.08.2026, for
+        # a different reason: they are not ignored, they WORK, and setting
+        # them was overriding the truthful values Chromium sends with a
+        # description of a browser this is not. See the context note above.
         for owned_by_the_browser in (
             "Accept", "Upgrade-Insecure-Requests",
             "Sec-Fetch-Site", "Sec-Fetch-Mode", "Sec-Fetch-User", "Sec-Fetch-Dest",
+            "User-Agent", "sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform",
         ):
             headers.pop(owned_by_the_browser, None)
 

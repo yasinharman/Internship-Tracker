@@ -295,6 +295,79 @@ said it needs, not more code. What changed is that the crawl now takes real
 value out of the window it gets, instead of spending it on the wrong terms and
 then burning sixteen minutes on wedged navigations.
 
+## IT WAS THE BROWSER'S OWN FINGERPRINT - measured 28.08.2026
+
+Everything below this section is a record of chasing the wrong thing. The
+challenge was never about the address, the cadence, the session or the count.
+It was that the browser announced itself, and the question that found it was a
+good one: *if I browse this by hand I am not blocked - why can't we do exactly
+what I do?*
+
+Asked the page who it thought we were, with the middleware's own settings:
+
+    navigator.userAgent   Macintosh; Intel Mac OS X ... Safari/605.1.15
+    navigator.platform    Linux x86_64
+    navigator.webdriver   true
+    WebGL renderer        SwiftShader
+    navigator.plugins     0
+
+A user agent claiming macOS Safari, on a headless Linux Chromium, with the
+automation flag on. Five contradictions inside the first fifty milliseconds of
+any fingerprinting script.
+
+**Where the UA came from, and why it was wrong here.** `browser_session.py`
+pairs each impersonation token with the User-Agent that matches its TLS
+handshake, and that table is right - for curl_cffi, which really does replay
+the handshake it is told to. Playwright brings its own engine and its own
+handshake, so the label was being borrowed without the thing it labels. The
+middleware set it on the context AND `document_headers()` sent it as a header,
+so both layers lied and the JS environment told the truth.
+
+**The other half is nastier.** `tools/save_session.py` has always launched
+with `--disable-blink-features=AutomationControlled`, and the middleware never
+did. The browser that CREATED the session was harder to spot than the one that
+replayed it.
+
+### What changed
+
+    the UA override                removed - Chromium reports itself
+    User-Agent, sec-ch-ua*         no longer sent as extra headers
+    --disable-blink-features=...   added; navigator.webdriver is false
+    headless shell -> full Chromium (channel)   navigator.plugins 0 -> 5
+    "HeadlessChrome/151" -> "Chrome/151"        one word, read off the browser
+
+The last one deserves a note: the UA is taken from the browser itself and
+edited by a single word, so version, platform and engine stay true. We are not
+claiming to be a different browser, only declining to announce the mode.
+
+### The result
+
+| | before | after |
+|---|---|---|
+| responses | 12 | **124** |
+| 200 | 4 | **121** |
+| 403 `cf-mitigated=challenge` | 8 | **0** |
+| 429 (plain rate limit) | 0 | 3 |
+| items | 30 | **737** |
+| unique postings | ~25 | **138** |
+| routes that ran | 3 of 9 | **8 of 9** |
+| block budget | spent | never touched |
+
+The 403 challenge is gone entirely. What is left is three 429s - honest rate
+limiting, a different mechanism and a much softer one - and five searches that
+reached `MAX_PAGES = 15` with results still arriving, a ceiling this spider
+had never got near.
+
+**So the earlier conclusions in this file are superseded**, and they are kept
+because the reasoning was sound and only the premise was missing: the count
+really did stop at three, the rate really did not matter, and the address
+really was fine. All three were downstream of a browser that had already
+identified itself before the first search loaded.
+
+The one tell still standing is the WebGL renderer: SwiftShader is the software
+rasteriser, and no headless browser has a GPU. Fixing it needs
+`PLAYWRIGHT_HEADLESS=0` and a visible window. It has not been needed.
+
 ## The block is a COUNT, not a rate - measured 28.08.2026
 
 The obvious lever was cadence: four requests in thirty seconds looked like a
