@@ -391,14 +391,28 @@ class IndeedCardsSpider(BaseApiSpider):
         # fixing its fingerprint removed the challenge entirely (see
         # docs/sites/indeed.md, "IT WAS THE BROWSER'S OWN FINGERPRINT").
         #
-        # 20 EARNS ITS KEEP NOW, for a different reason than it was set. With
-        # the challenge gone the crawl reaches page 15 on five searches and
-        # makes 124 requests instead of 12, and three of those came back 429 -
-        # plain rate limiting, not a challenge. That is the binding constraint
-        # at this cadence, and a shorter one would find more of it. 41 minutes
-        # for 138 unique postings is a trade this project can make: nothing
-        # here is on a schedule, and throttle.py says out loud that it is
-        # waiting.
+        # 20 -> 10 -> 20 on 28.08.2026. The middle step was a real
+        # experiment and it failed, which is the useful part: once the
+        # fingerprint was fixed the cadence started mattering, and it had
+        # never mattered before.
+        #
+        #                          delay 20     delay 10
+        #     responses                 124           32
+        #     200                       121           24
+        #     403 cf-challenge            0            8
+        #     429 (soft)                  3            0
+        #     items                     737          173
+        #     block budget      never spent        SPENT
+        #
+        # Same code, same fingerprint, same afternoon, one variable. At 20 the
+        # only pushback is a handful of 429s, which RETRY_TIMES absorbs. At 10
+        # the Cloudflare CHALLENGE comes back, the budget fills and the run is
+        # cut off at a quarter of the requests. The 5 minutes it took was not
+        # speed, it was dying early.
+        #
+        # So 20 is not a precaution any more, it is a measured floor. Below it
+        # the site stops rate-limiting and starts refusing. 41 minutes for 138
+        # unique postings is the price, and nothing here is on a schedule.
         #
         # Affordable because nothing here is on a schedule: a full run may
         # take an hour and the throttle now says out loud that it is waiting
