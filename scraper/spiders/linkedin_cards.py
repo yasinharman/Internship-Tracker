@@ -152,48 +152,89 @@ class LinkedinCardsSpider(BaseApiSpider):
     GEO_ID = "90010422"
     PAGE_SIZE = 25
 
-    # 25 x 5 = 125 postings per route before the circuit breaker. Deliberately
-    # low for a first season: next_page_allowed() already stops on an empty or
-    # a repeated page, so this only ever fires when something is wrong, and on
-    # a burner account the cheaper failure is stopping early.
-    MAX_PAGES = 5
+    # 5 -> 15 on 02.09.2026. The 5 was a first-season precaution and it had
+    # become the binding constraint: on 28.08 ALL SIX routes hit it with
+    # results still arriving (six `hit the MAX_PAGES ceiling` errors in one
+    # run), and on 02.09 the two filter routes brought back 232 postings
+    # against a theoretical 250 for that ceiling - 93% saturation. Whatever
+    # sits past page 5 has never been fetched.
+    #
+    # Indeed's ceiling has been 15 since 30.07 and the comparison is what
+    # makes this safe rather than hopeful: there, depth pays badly - 737 items
+    # collapsed to 138 unique postings, a 5.3x repeat rate, because Indeed
+    # pads a deep result set rather than ending it. LinkedIn does not do that;
+    # its repeat rate across pages is low, so a page 6 is mostly new postings
+    # rather than page 1 again.
+    #
+    # The circuit breaker is not the real stop in either case.
+    # next_page_allowed() already ends a route on an empty or a repeated page,
+    # so raising this only lets a route run until the RESULTS end. What it
+    # does cost is requests against a burner account: 2 routes x 15 pages is
+    # 30 requests where it used to be 10, at DOWNLOAD_DELAY 8 that is about
+    # four minutes. The four scan routes removed below paid for most of it.
+    MAX_PAGES = 15
 
     ###################################################################
-    # TWO ROUTES, BECAUSE ONE HAS ALWAYS LEAKED                       #
+    # THE FOUR KEYWORD SCANS WERE MEASURED OUT - 02.09.2026           #
     ###################################################################
     '''
-        docs/sites/README.md's standing rule: every posting must be reachable by at
-        least two independent routes. On kariyer.net the site's own working
-        type hid 85% of the internships; on techcareer the typeOfWork filter
-        did not know about "Bilgisayar Muhendisligi Stajyeri". There is no
-        reason to expect LinkedIn's tick-boxes to be better, and one concrete
-        reason to expect them to be worse: on LinkedIn the EMPLOYER picks the
-        experience level, and "Career Experience Drive - IT" - a real
-        internship with neither "staj" nor "intern" in its title - is exactly
-        the posting a keyword scan loses and a filter keeps.
+        This started as four keyword scans alongside the two filters, because
+        docs/sites/README.md's standing rule is that every posting must be
+        reachable by at least two independent routes. That rule was earned:
+        kariyer.net's own working type hid 85% of its internships, and
+        techcareer's typeOfWork filter had never heard of "Bilgisayar
+        Muhendisligi Stajyeri". There was no reason to expect LinkedIn's
+        tick-boxes to be better.
 
-        So both:
-          filter-*  what LinkedIn itself files as an internship or part-time
-          scan-*    free text, kept or dropped on the title
+        On LinkedIn they are. The same README gives the exit condition -
+        "sole finder = 0 for weeks: that route is redundant and is costing
+        requests for nothing" - and three consecutive runs met it:
 
-        ORDER MATTERS and not for tidiness. Searches enter the queue in this
+            route             found | sole finder
+            filter-parttime     125 | 104
+            filter-staj         125 | 101
+            scan-intern           6 |   0
+            scan-stajyer          7 |   0
+            scan-yazilim          7 |   0
+            scan-part-time        6 |   0
+
+        Across 26.08, 27.08 and 28.08 the four scans found ONE unique posting
+        between them, for about twenty requests a run against a burner
+        account. Everything else they returned, the filters had already found.
+
+        WHY LINKEDIN IS THE EXCEPTION. On the other sites the EMPLOYER picks
+        the category and gets it wrong. LinkedIn's `f_E=1` and `f_JT=P` are
+        not employer free-text; they are structured fields the posting flow
+        requires, and LinkedIn matches keywords against the description as
+        well as the title, so a scan drags in "Supply Chain Specialist" at
+        Nike for "stajyer" while adding nothing the filters missed.
+
+        WHAT THIS GIVES UP, said plainly. The scans were also the leak
+        detector: sole-finder = 0 is only meaningful while a second route is
+        there to disagree. Without them a filter that starts dropping
+        postings will look exactly like a quiet week.
+
+        And the two remaining routes do NOT cover for each other. They barely
+        overlap - 233 unique postings, 101 + 104 of them sole-found, so only
+        ~28 are seen by both. They partition the board (internships vs
+        part-time) rather than cross-check it. Any given posting now has ONE
+        route to it. That is a real departure from the two-route rule, taken
+        deliberately on three runs of evidence rather than by forgetting the
+        rule existed.
+
+        HOW TO RE-CHECK, and it costs one run: put the scans back for a
+        single crawl and read the sole-finder column. If it is still 0,
+        nothing is leaking. Worth doing after any LinkedIn interface change,
+        or if the daily posting count drops without an obvious cause.
+
+        ORDER MATTERS and not for tidiness. Routes enter the queue in this
         order and DOMAIN_BLOCK_BUDGET can end a run partway through, so
-        whatever is last is what gets lost. The site's own filters are the
-        highest-yield routes here, so they go first and the broad scans -
-        which mostly re-find what the filters already found - absorb the loss.
-
-        note_discovery() records which route found what, and the closing
-        report prints the sole-finder count. Read it: a route that is never
-        the only finder of anything is spending requests for nothing, and a
-        route that is the only finder of many is carrying the crawl.
+        whatever is last is what gets lost - see _route_priority below, which
+        is what makes the written order the actual one.
     '''
     ROUTES = {
         "filter-staj":         {"f_E": "1"},
         "filter-parttime":     {"f_JT": "P"},
-        "scan-yazilim":        {"keywords": "yazılım stajyer"},
-        "scan-stajyer":        {"keywords": "stajyer"},
-        "scan-intern":         {"keywords": "intern"},
-        "scan-part-time":      {"keywords": "part time"},
     }
 
     # Routes where the SITE has already said this is an internship or
@@ -577,12 +618,20 @@ class LinkedinCardsSpider(BaseApiSpider):
                 self.crawler.stats.inc_value("linkedin/unrendered_card")
                 continue
 
-            # LinkedIn matches the description as well as the title, so a
-            # keyword scan returns plenty that is neither an internship nor
-            # part-time - "Supply Chain Specialist" at Nike came back for
-            # "stajyer" on 26.08.2026. The filter routes are exempt: there the
-            # SITE has said what this is, and the postings whose titles say
-            # nothing are the entire reason that route exists.
+            # DORMANT SINCE 02.09.2026, kept on purpose. Every route in
+            # ROUTES is now a filter route, so site_says is always set and
+            # this never fires. It is the guard for a keyword scan, and the
+            # docstring above asks for the scans to be put back for one run
+            # whenever the filters need re-checking - this is what makes that
+            # a one-line change instead of a rewrite.
+            #
+            # Why a scan needs it: LinkedIn matches the description as well
+            # as the title, so a keyword search returns plenty that is
+            # neither an internship nor part-time - "Supply Chain Specialist"
+            # at Nike came back for "stajyer" on 26.08.2026. Filter routes are
+            # exempt because there the SITE has said what the posting is, and
+            # the postings whose titles say nothing are the entire reason
+            # that route exists.
             if not site_says and not is_wanted(title):
                 continue
 
