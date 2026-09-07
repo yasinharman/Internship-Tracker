@@ -1,0 +1,24 @@
+<!--
+  The mark in the sidebar, as the tab icon.
+
+  lucide-react's Activity path, verbatim from node_modules so the two cannot
+  drift, on the shell's own #0f0f10 ground. The tile carries a background
+  rather than being transparent because a white stroke alone disappears
+  against a light browser tab, and a square one because nothing in this design
+  has a radius.
+
+  Stroke 2.75 rather than lucide's 2: at 16px in a tab the icon is rendered at
+  half scale, and the sidebar's weight comes out too faint to read there.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="32" height="32" fill="#0f0f10" />
+  <path
+    d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"
+    transform="translate(4 4)"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="2.75"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
