@@ -19,13 +19,27 @@ export interface Row {
 const FILLS = { accent: "bg-accent", warn: "bg-warn", bad: "bg-bad" };
 const TEXTS = { accent: "text-accent-soft", warn: "text-warn", bad: "text-bad" };
 
-export function RankedList({ rows, empty = "Gösterilecek veri yok." }: { rows: Row[]; empty?: string }) {
+export function RankedList({
+  rows,
+  empty = "Gösterilecek veri yok.",
+  compact = false,
+}: {
+  rows: Row[];
+  empty?: string;
+  /**
+   * For the sidebar, which is 224px wide and has a nav above it and a footer
+   * below. The panel version centres itself in whatever height it is given
+   * and breathes at 24px; neither is available in a column that has to fit
+   * five rows between two fixed blocks.
+   */
+  compact?: boolean;
+}) {
   if (rows.length === 0) {
-    return <p className="py-8 text-center text-[13px] text-muted-2">{empty}</p>;
+    return <p className={`text-center text-[13px] text-muted-2 ${compact ? "py-2" : "py-8"}`}>{empty}</p>;
   }
 
   return (
-    <div className="flex flex-1 flex-col justify-center space-y-6">
+    <div className={compact ? "space-y-2.5" : "flex flex-1 flex-col justify-center space-y-6"}>
       {rows.map((row) => {
         const tone = row.tone ?? "accent";
         return (

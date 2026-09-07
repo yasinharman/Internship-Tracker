@@ -43,13 +43,32 @@ export default function App() {
   const { query, update, reset, touched } = useFilters(meta.data);
   const fetching = useIsFetching() > 0;
 
+  // The KPIs and the source split moved out of the board and into the sidebar,
+  // so the shell needs the numbers the board used to fetch for itself.
+  //
+  // Not a second request: this is the key DashboardPage already asks for, with
+  // the same function and the same `enabled` guard, so react-query serves both
+  // from one fetch. Dropping the guard would cost a request - `query` falls
+  // back to its own defaults until meta lands, which is a different key.
+  const stats = useQuery({
+    queryKey: ["stats", query],
+    queryFn: () => api.stats(query),
+    enabled: Boolean(meta.data),
+  });
+
   const page = PAGES[location.pathname] ?? PAGES["/"];
   const shared = { meta: meta.data, query, update, reset, touched };
 
   return (
     <div className="relative z-10 flex h-full">
       <aside className="hidden w-64 shrink-0 lg:block">
-        <Sidebar lastCrawlAt={meta.data?.last_crawl_at ?? null} />
+        <Sidebar
+          lastCrawlAt={meta.data?.last_crawl_at ?? null}
+          sources={stats.data?.sources}
+          kpis={stats.data?.kpis}
+          closed={query.closed}
+          statsPending={stats.isPending}
+        />
       </aside>
 
       {menuOpen && (
@@ -62,7 +81,10 @@ export default function App() {
           <div className="absolute inset-y-0 left-0 w-64">
             <Sidebar
               lastCrawlAt={meta.data?.last_crawl_at ?? null}
-             
+              sources={stats.data?.sources}
+              kpis={stats.data?.kpis}
+              closed={query.closed}
+              statsPending={stats.isPending}
               onNavigate={() => setMenuOpen(false)}
             />
           </div>
@@ -81,7 +103,12 @@ export default function App() {
           onOpenMenu={() => setMenuOpen(true)}
         />
 
-        <div className="hide-scrollbar flex-1 space-y-6 overflow-y-auto p-6 lg:p-8">
+        {/* Wider side margins than the top and bottom, and wider than the
+            gutter between the cards inside: the grid should read as framed by
+            the page rather than as running off both edges of it. Horizontal
+            only - the vertical padding stays where it was, because raising it
+            would push the postings back down the screen. */}
+        <div className="hide-scrollbar flex-1 space-y-6 overflow-y-auto p-6 lg:px-14 lg:py-8">
           {meta.isError ? (
             <ErrorState error={meta.error} />
           ) : (

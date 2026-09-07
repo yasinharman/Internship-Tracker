@@ -52,6 +52,14 @@ export interface Job {
   url: string;
   source_site: string;
   source_label: string;
+  /**
+   * The company's logo, as the source site's DOM had it.
+   *
+   * Optional rather than `string | null` because the API does not send
+   * it yet - the column is not crawled. Typing it as always-present
+   * would be a claim about a payload that has no such key.
+   */
+  company_logo_url?: string | null;
   job_type: string | null;
   job_type_label: string | null;
   job_category: string | null;

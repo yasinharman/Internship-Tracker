@@ -1,120 +1,22 @@
 import { Link } from "react-router-dom";
 import { useEffect, useRef } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Activity, Building2, Clock, ExternalLink } from "lucide-react";
 import { api } from "../lib/api";
 import type { PageProps } from "../lib/shared";
-import { RANGE_DESCRIPTIONS, fmtDateTime, fmtNumber, fmtRelative, sourceTone } from "../lib/format";
-import type { Job, RangeKey } from "../lib/types";
+import { RANGE_DESCRIPTIONS, fmtNumber, fmtRelative } from "../lib/format";
+import type { RangeKey } from "../lib/types";
 import { PageHeader } from "../components/PageHeader";
 import { RangeToggle } from "../components/RangeToggle";
 import { FilterBar } from "../components/FilterBar";
-import { StatCard } from "../components/StatCard";
 import { Panel } from "../components/Panel";
-import { RankedList, type Row } from "../components/RankedList";
-import { DataTable, type Column } from "../components/DataTable";
-import { CategoryBadge, ClosedMark } from "../components/Badge";
-import { EmptyState, ErrorState, SkeletonBlock, SkeletonRows } from "../components/States";
+import { JobCard, JOB_GRID } from "../components/JobCard";
+import { EmptyState, ErrorState, SkeletonBlock, SkeletonCards } from "../components/States";
 import { DailyFlowChart } from "../components/DailyFlowChart";
 
-const COLUMNS: Column<Job>[] = [
-  // The title has always been a link, but nothing said so - it rendered as
-  // plain text with only a hover underline, so the way out to the actual
-  // posting was invisible until you happened to mouse over it. This is the
-  // affordance; the underline on the title is the reminder.
-  //
-  // It sits in the text flow directly after the title rather than in a column
-  // of its own at the far edge of the row. As a column it was lined up with
-  // the dates, five columns away from the title it belonged to, and the
-  // shorter the title the wider that gap got. Inline, it is always the next
-  // thing after the title - and because it is in the flow rather than a flex
-  // row beside it, it follows the last line when a long title wraps instead
-  // of floating up beside the first.
-  {
-    key: "title",
-    header: "Başlık",
-    render: (row) => (
-      <>
-        <a
-          href={row.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`text-xs underline decoration-white/15 underline-offset-2 transition-colors hover:text-ink hover:decoration-white/60 ${
-            // Dimmed rather than struck through: a closed posting is still
-            // worth reading, it just cannot be applied to any more.
-            row.closed_at ? "text-muted-2" : "text-ink-3"
-          }`}
-        >
-          {row.job_title}
-        </a>{" "}
-        <ClosedMark closedAt={row.closed_at} when={fmtRelative(row.closed_at)} />{" "}
-        <a
-          href={row.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`${row.job_title} ilanını yeni sekmede aç`}
-          title={row.closed_at ? "İlan yayından kalkmış - sayfa hâlâ açılabilir" : undefined}
-          className={`ml-1 inline-flex items-center gap-1.5 border border-line bg-white/[0.02] px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-colors hover:border-line-strong hover:bg-white/[0.06] hover:text-ink ${
-            row.closed_at ? "text-muted-3" : "text-muted"
-          }`}
-        >
-          İlana git
-          <ExternalLink size={11} strokeWidth={2} />
-        </a>
-      </>
-    ),
-  },
-  {
-    key: "company",
-    header: "Şirket",
-    render: (row) => <span className="text-xs text-muted">{row.company ?? "—"}</span>,
-  },
-  {
-    key: "category",
-    header: "Alan",
-    width: "1%",
-    render: (row) => (
-      <CategoryBadge
-        category={row.job_category}
-        label={row.category_label}
-        reason={row.category_reason}
-      />
-    ),
-  },
-  {
-    key: "type",
-    header: "Tip",
-    width: "1%",
-    render: (row) => (
-      <span className="font-mono text-xs whitespace-nowrap text-muted">{row.job_type_label ?? "—"}</span>
-    ),
-  },
-  {
-    key: "source",
-    header: "Kaynak",
-    width: "1%",
-    render: (row) => (
-      <span className={`font-mono text-xs whitespace-nowrap ${sourceTone(row.source_site)}`}>
-        {row.source_label}
-      </span>
-    ),
-  },
-  {
-    key: "date",
-    header: "Tarih",
-    align: "right",
-    width: "1%",
-    render: (row) => (
-      <span className="font-mono text-xs whitespace-nowrap text-muted-2" title={fmtDateTime(row.created_at)}>
-        {fmtRelative(row.created_at)}
-      </span>
-    ),
-  },
-];
-
 // Big enough that the first screenful never needs a second request, small
-// enough that a filter change is not a half-megabyte of JSON.
-const BOARD_PAGE_SIZE = 50;
+// enough that a filter change is not a half-megabyte of JSON. Divisible by
+// three, so a page never lands with a half-empty last row of cards.
+const BOARD_PAGE_SIZE = 51;
 
 export function DashboardPage({ meta, query, update, reset, touched }: PageProps) {
   const stats = useQuery({
@@ -141,10 +43,13 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
   const rows = jobs.data?.pages.flatMap((page) => page.rows) ?? [];
   const totalJobs = jobs.data?.pages[0]?.total ?? 0;
 
-  // The sentinel sits below the last row; when it comes into view inside the
-  // scroll box, the next page is requested. rootMargin buys a screenful of
-  // warning so the rows are already there by the time they are scrolled to.
-  const scrollBox = useRef<HTMLDivElement>(null);
+  // The sentinel sits under the last card; when it comes into view the next
+  // page is requested. rootMargin buys a screenful of warning so the cards
+  // are already there by the time they are scrolled to.
+  //
+  // No root any more. The list used to scroll inside its own box and the
+  // observer had to be told so; now it scrolls with the page, and the
+  // viewport - the default - is the right frame to measure against.
   const sentinel = useRef<HTMLDivElement>(null);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = jobs;
 
@@ -156,7 +61,7 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
       (entries) => {
         if (entries[0].isIntersecting && !isFetchingNextPage) fetchNextPage();
       },
-      { root: scrollBox.current, rootMargin: "300px" },
+      { rootMargin: "300px" },
     );
     observer.observe(target);
     return () => observer.disconnect();
@@ -164,17 +69,6 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
 
   const kpis = stats.data?.kpis;
   const unclassified = kpis?.unclassified ?? 0;
-
-  const sourceRows: Row[] = (() => {
-    const rows = stats.data?.sources ?? [];
-    const max = Math.max(...rows.map((r) => r.count), 1);
-    return rows.map((row) => ({
-      key: row.site,
-      label: row.label,
-      value: fmtNumber(row.count),
-      fraction: row.count / max,
-    }));
-  })();
 
   // The database being empty and the current filter matching nothing are
   // different problems with different fixes, so they get different messages.
@@ -192,69 +86,68 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
   // more; the square on the status line still turns amber for it, and every
   // unclassified posting carries its own badge in the table.
 
-  // The number follows the Kapananlar toggle - api/main.py:203 counts whatever
-  // the current filter matches - so the label has to follow it too. Leaving it
-  // on "Aktif İlan" while the count includes closed postings would be the same
-  // lie "Toplam İlan" told, pointing the other way.
-  //
-  // And still not "Toplam" in either state: the classifier's `other` pile and
-  // the cross-board duplicates are hidden from both numbers and have no toggle
-  // (api/queries.py:34 VISIBLE), so neither one is the size of the table.
-  const totalLabel = query.closed ? "Aktif + Kapalı" : "Aktif İlan";
-  const totalHint = query.closed
-    ? "Kaynağında yayından kalkmış ilanlar da sayıya dahil"
-    : "Kaynağında hâlâ yayında olan ilanlar";
+  /*
+    THE CHART SITS IN THE HEADER ROW, BETWEEN THE FILTERS AND THE RANGE
+    ===================================================================
+    It is the channel the KPI cards used to claim, and the argument for
+    putting the chart in it is the same one that put them there: the row
+    already reserves that width for something, and a chart is the only thing
+    left on this page that is not a posting.
 
-  const cards = (
-    <>
-      <StatCard
-        label={totalLabel}
-        icon={Activity}
-        value={kpis?.total ?? 0}
-        delta={kpis?.total_delta}
-        hint={totalHint}
-      />
-      <StatCard label="Bugün Eklenen" icon={Clock} value={kpis?.today ?? 0} />
-      <StatCard
-        label="Farklı Şirket"
-        icon={Building2}
-        value={kpis?.companies ?? 0}
-        delta={kpis?.companies_delta}
-      />
-    </>
+    Narrower than the full column on purpose - roughly 530px at 1600 against
+    the 1280 it had - which is what the series can afford. It is a shape over
+    time, not a table of values, and the y ticks carry the numbers for anyone
+    who wants them.
+
+    `dense`, not the Panel default: at this height 24px of padding on both
+    sides plus a heading carrying 24px of margin leaves the canvas less room
+    than the frame around it.
+  */
+  const chart = (
+    <Panel
+      dense
+      title="Günlük İlan Akışı"
+      className="flex h-full flex-col"
+      action={
+        stats.data?.series_truncated ? (
+          <span className="text-[11px] text-muted-2">son 90 gün</span>
+        ) : undefined
+      }
+    >
+      <div className="relative h-full min-h-0 w-full flex-1">
+        {stats.isPending ? (
+          <SkeletonBlock className="h-full" />
+        ) : (
+          stats.data && <DailyFlowChart stats={stats.data} />
+        )}
+      </div>
+    </Panel>
   );
-  const showCards = !databaseEmpty && !stats.isError;
+  const showChart = !databaseEmpty && !stats.isError;
 
   return (
     <>
       {/*
-        THE HEADER BLOCK, IN THREE COLUMNS
-        ==================================
-        Left holds the title, the status line and the filters; right holds the
-        range toggle at the top and the note at the bottom; the cards sit in
-        the channel between them, centred against the whole block rather than
-        belonging to either row.
+        THREE COLUMNS AGAIN, AND THE CHART IS THE MIDDLE ONE
+        ====================================================
+        Grid rather than the flex row this was: a grid cell is a position the
+        chart can be moved INTO at a breakpoint, so there is one canvas that
+        changes place. Two flex children with a `hidden` between them would
+        have meant two, mounted at once, drawing the same series twice.
 
-        This is the shape the marked screenshot asks for
-        (docs/design/header-layout-marked.png): two vertical rules just past
-        the last filter and just before the toggle, spanning both rows. The
-        earlier attempts each put the cards inside one row or the other, which
-        is why they kept running out of width - the channel is only wide
-        because it is claiming the empty half of two rows at once.
+        Below 1500px the grid collapses to one column and `order-last` drops
+        the chart under the filters at full width, which is where it was
+        before it moved up here.
+
+        col-start pins the toggle to the third column instead of letting it
+        auto-place: with an empty database the chart is not rendered at all,
+        and without the pin the toggle would slide into the gap it left.
       */}
-      <div className="flex items-center gap-6">
-        {/*
-          Not flex-1: the slack belongs after the cards, not before them, so
-          ml-auto on the right column takes it instead of this one.
-
-          The cap is what fixes where the cards start. Without it this column
-          is as wide as its filter row, so adding a chip walks the cards to the
-          right; with it their left edge stays put whether or not any filter is
-          narrowed, and the chips wrap inside the column instead. It is a cap,
-          not a width - the column still shrinks below it when the channel is
-          tight, and it only applies where the channel exists at all.
-        */}
-        <div className="flex min-w-0 flex-col gap-4 min-[1560px]:max-w-[30rem]">
+      {/* 34rem, measured: the filter row wants 529px for its four controls and
+          the rule after them, and a 32rem cap wrapped "Kapananlar" onto a
+          second line. The 32px come out of the chart, which has them. */}
+      <div className="grid items-stretch gap-4 min-[1500px]:grid-cols-[minmax(0,34rem)_minmax(0,1fr)_auto]">
+        <div className="flex min-w-0 flex-col gap-4">
           <PageHeader
             title="Güncel İlanlar"
             tone={databaseEmpty ? "idle" : unclassified > 0 ? "warn" : "ok"}
@@ -276,42 +169,16 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
           )}
         </div>
 
-        {/*
-          The channel takes the slack and centres the cards in it, so they sit
-          midway between the filters and the range toggle rather than against
-          either. flex-1 on this wrapper is what claims the space; the grid
-          inside keeps its own width and is centred within it.
-
-          min-w matching the grid is load-bearing. Without it this wrapper is
-          the thing that shrinks when the row runs out of room, and the grid
-          inside it does not shrink with it - measured, it overflowed 50px into
-          the columns on either side. With it the shrinking falls to the left
-          column, which has min-w-0 and chips that wrap.
-
-          1560 rather than 1500 because that is where the left column stops
-          having to truncate its status line: at 1500 it gets 287px and the
-          line wants 274 of them after its padding, which is 3px short.
-        */}
-        {showCards && (
-          <div className="hidden min-w-[40rem] flex-1 justify-center min-[1560px]:flex">
-            <div className="grid w-[40rem] shrink-0 grid-cols-3 gap-3">{cards}</div>
+        {showChart && (
+          <div className="order-last min-h-[180px] min-w-0 min-[1500px]:order-none min-[1500px]:col-start-2">
+            {chart}
           </div>
         )}
 
-        {/* Toggle at the top of the block, note at its foot - the two ends the
-            marked screenshot shows them at. */}
-        {/* Just the toggle now, centred against the block like the cards - the
-            note that used to sit at the foot of this column is gone. */}
-        <div className="ml-auto flex shrink-0 items-center min-[1560px]:ml-0">
+        <div className="justify-self-end min-[1500px]:col-start-3">
           <RangeToggle value={query.range} onChange={(next: RangeKey) => update({ range: next })} />
         </div>
       </div>
-
-      {showCards && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 min-[1560px]:hidden">
-          {cards}
-        </div>
-      )}
 
       {databaseEmpty ? (
         <Panel>
@@ -324,80 +191,67 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
         <ErrorState error={stats.error} />
       ) : (
         <>
+          {/*
+            THE SUMMARY MOVED ABOVE THE BOARD
+            =================================
+            The postings used to sit here in a 30.4rem scroll box, so that the
+            chart and the source split underneath stayed reachable however
+            long the list got. That box holds two rows of cards and a
+            scrollbar, and nesting a scroller inside the page's own to show
+            two rows is worse than either arrangement it compromises between.
 
-          <Panel
-            flush
-            title="Son İlanlar"
-            action={
-              <div className="flex items-center gap-3">
-                <span className="font-mono text-xs tabular-nums text-muted-2">
-                  {fmtNumber(rows.length)} / {fmtNumber(totalJobs)}
-                </span>
-                <Link
-                  to="/ilanlar"
-                  className="text-xs font-medium text-muted transition-colors hover:text-ink"
-                >
-                  Tüm ilanlar →
-                </Link>
-              </div>
-            }
-          >
-            {jobs.isPending ? (
-              <SkeletonRows rows={8} />
-            ) : jobs.isError ? (
-              <ErrorState error={jobs.error} />
-            ) : (
-              // A fixed-height box rather than a table that grows without
-              // limit: the chart and the source split still have to be
-              // reachable by scrolling the page, and a thousand rows between
-              // them and the top would put them out of reach entirely.
-              <DataTable
-                stickyHeader
-                maxHeight="30.4rem"
-                scrollRef={scrollBox}
-                columns={COLUMNS}
-                rows={rows}
-                rowKey={(row) => row.id}
-                empty="Bu filtreye uyan ilan yok. Filtreleri genişletmeyi deneyin."
-                footer={
-                  <>
-                    <div ref={sentinel} />
-                    {jobs.isFetchingNextPage && (
-                      <p className="py-3 text-center text-[11px] text-muted-2">yükleniyor...</p>
-                    )}
-                    {!jobs.hasNextPage && rows.length > BOARD_PAGE_SIZE && (
-                      <p className="py-3 text-center text-[11px] text-muted-3">listenin sonu</p>
-                    )}
-                  </>
-                }
-              />
-            )}
-          </Panel>
-
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <Panel
-              title="Günlük İlan Akışı"
-              className="flex h-[380px] flex-col lg:col-span-2"
-              action={
-                stats.data?.series_truncated ? (
-                  <span className="text-[11px] text-muted-2">son 90 gün</span>
-                ) : undefined
-              }
-            >
-              <div className="relative h-full min-h-0 w-full flex-1">
-                {stats.isPending ? <SkeletonBlock /> : stats.data && <DailyFlowChart stats={stats.data} />}
-              </div>
-            </Panel>
-
-            <Panel title="Kaynak Dağılımı" className="flex flex-col">
-              {stats.isPending ? (
-                <SkeletonBlock className="h-48" />
-              ) : (
-                <RankedList rows={sourceRows} empty="Bu filtreye uyan ilan yok." />
-              )}
-            </Panel>
+            So the summary goes first and the board flows down the page below
+            it. Nothing is buried by a list that has nothing under it, and the
+            order now reads the way the page is used: how the crawl is doing,
+            then what it found.
+          */}
+          {/* A bare heading rather than a Panel around the grid: every card
+              draws its own hairline, and a frame full of frames adds a rule
+              and 24px of padding without separating anything from anything.
+              The empty and error states keep theirs - a single centred
+              message does need something to sit in. */}
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-sm font-medium text-ink">Son İlanlar</h2>
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-xs tabular-nums text-muted-2">
+                {fmtNumber(rows.length)} / {fmtNumber(totalJobs)}
+              </span>
+              <Link
+                to="/ilanlar"
+                className="text-xs font-medium text-muted transition-colors hover:text-ink"
+              >
+                Tüm ilanlar →
+              </Link>
+            </div>
           </div>
 
+          {jobs.isPending ? (
+            <SkeletonCards cards={9} />
+          ) : jobs.isError ? (
+            <ErrorState error={jobs.error} />
+          ) : rows.length === 0 ? (
+            <Panel>
+              <EmptyState
+                title="Bu filtreye uyan ilan yok"
+                detail="Zaman aralığını genişletin veya filtreleri temizleyin."
+              />
+            </Panel>
+          ) : (
+            <>
+              <div className={JOB_GRID}>
+                {rows.map((job) => (
+                  <JobCard key={job.id} job={job} />
+                ))}
+              </div>
+              <div ref={sentinel} />
+              {jobs.isFetchingNextPage && (
+                <p className="text-center text-[11px] text-muted-2">yükleniyor...</p>
+              )}
+              {!jobs.hasNextPage && rows.length > BOARD_PAGE_SIZE && (
+                <p className="text-center text-[11px] text-muted-3">listenin sonu</p>
+              )}
+            </>
+          )}
         </>
       )}
     </>

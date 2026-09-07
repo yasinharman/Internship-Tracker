@@ -12,21 +12,30 @@ export function Panel({
   children,
   className = "",
   flush = false,
+  dense = false,
 }: {
   title?: string;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
   flush?: boolean;
+  /**
+   * A third padding, for a panel short enough that the frame competes with
+   * what is inside it. The compact chart is 180px tall: 24px of padding top
+   * and bottom plus a heading holding 24px of its own margin leaves the canvas
+   * less room than the box around it. 16px and 12px leave it most of them.
+   */
+  dense?: boolean;
 }) {
+  const pad = flush ? "" : dense ? "p-4" : "p-6";
   return (
-    <section className={`border border-line bg-white/[0.01] ${flush ? "" : "p-6"} ${className}`}>
+    <section className={`border border-line bg-white/[0.01] ${pad} ${className}`}>
       {title && (
         <div
           className={
             flush
               ? "flex items-center justify-between border-b border-line p-6"
-              : "mb-6 flex items-center justify-between"
+              : `flex items-center justify-between ${dense ? "mb-3" : "mb-6"}`
           }
         >
           <h2 className="text-sm font-medium text-ink">{title}</h2>
