@@ -141,6 +141,30 @@ class LinkedinCheckSpider(OpeningCheckMixin, LinkedinCardsSpider):
         except Exception:
             self.crawler.stats.inc_value("linkedin/detail_never_rendered")
 
+    def description(self, response):
+        """
+        The description box - the same element page_actions already waits for.
+
+        DETAIL_MARKERS gates the render on this selector, so a page that
+        rendered enough to answer the verdict rendered enough to answer this
+        too, and a page that did not is UNKNOWN either way. No extra request:
+        linkedin_cards refuses the description because it would cost one per
+        posting, and this page is downloaded regardless to ask whether the job
+        is still open.
+
+        Measured 09.09.2026 over two postings: 1462 and 3652 characters of
+        real text. The three class-based selectors tried alongside it -
+        .jobs-description__content, .jobs-box__html-content, #job-details -
+        matched NOTHING, which is what this site's notes predict: LinkedIn
+        hashes its class names per build, and data-testid is one of the two
+        anchors that survive (docs/sites/linkedin.md).
+        """
+        node = response.css('[data-testid="expandable-text-box"]')
+        if not node:
+            return None
+        text = " ".join(t.strip() for t in node.css("*::text").getall() if t.strip())
+        return text or None
+
     def verdict(self, response):
         body = response.text.lower()
 

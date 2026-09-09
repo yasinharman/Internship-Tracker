@@ -208,6 +208,55 @@ we are least able to replace. An employer with no logo gets a ghost element
 instead of an `<img>`, so the selector returns nothing and the column stays
 NULL - `scraper/api_spider.logo_url()` has the rest of the rejection rules.
 
+## The description IS reachable - from the CHECKER, not the crawl - 09.09.2026
+
+The section below still stands for the crawl and is not being reversed: a
+description costs one extra request per posting there, and doubling the
+traffic on a burner account for it is not worth it.
+
+But `linkedin_check` already fetches `jobs/view/<id>/` for every posting on
+the board, to ask whether it is still open. The description is in that
+response, so reading it there adds nothing:
+
+```
+[data-testid="expandable-text-box"]
+```
+
+which is not a new anchor - `linkedin_check.DETAIL_MARKERS` already gates the
+render on this exact selector, so a page that rendered enough to answer the
+verdict rendered enough to answer this too.
+
+Measured over two postings: **1462 and 3652 characters** of real text. Three
+class-based selectors were tried alongside it and matched **nothing**:
+
+| Selector | Result |
+|---|---|
+| `[data-testid="expandable-text-box"]` | 1462 / 3652 chars |
+| `.jobs-description__content` | no match |
+| `.jobs-box__html-content` | no match |
+| `#job-details` | no match |
+
+That is this file's own warning holding up: LinkedIn hashes its class names
+per build, and `data-testid` is one of the two anchors that survive.
+
+**Coverage is 23 of 40, and the missing 17 are not a failure to render.** A
+real run over 40 postings returned 40 OPEN verdicts, zero
+`linkedin/detail_never_rendered`, zero `linkedin/unreadable_detail` - and 17
+pages with no `[data-testid="expandable-text-box"]` in them at all. So the
+pages arrived intact and simply do not all carry that element.
+
+Not measured yet, and worth one run before anyone writes a fallback: the
+likeliest reason is that the box is the *expandable* wrapper, and a
+description short enough not to need expanding is rendered without it. If that
+is right the fallback is whatever plain container holds the short ones, and it
+is cheap. If it is wrong, guessing at a second selector is how a wrong one
+gets shipped.
+
+**Length: mean 3383 characters over the 23.** `classifier.DESCRIPTION_CHARS`
+is 1500, so more than half of a typical LinkedIn description never reaches the
+model. That number was chosen when descriptions were rare and short; it is now
+the binding constraint on the input this whole change exists to provide.
+
 ## No description, on purpose
 
 A card carries a title, a company and a location and nothing else. Reading

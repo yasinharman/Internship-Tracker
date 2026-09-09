@@ -18,8 +18,10 @@ days - about 30 requests a day. OPENINGS_MAX_PER_SITE caps it if that stops
 being true.
 """
 
+import json
 import re
 
+from ..api_spider import strip_html
 from ..openings import CLOSED, OPEN, UNKNOWN, OpeningCheckMixin
 from .indeed_cards import IndeedCardsSpider
 
@@ -27,6 +29,16 @@ from .indeed_cards import IndeedCardsSpider
 # than by parsing because the blob is ~400 kB of nested JSON with escaped quotes
 # inside string values - the same reason extract_provider_json() brace-scans
 # instead of using a regex for the card data.
+# The description, out of the same ~290 kB blob and for the same reason as
+# EXPIRED below: brace-scanning it to parse properly is what
+# extract_provider_json() has to do for the card data, and this is one string.
+#
+# The capture is a JSON string literal - `(?:[^"\\]|\\.)*` walks escaped
+# quotes correctly - and json.loads puts it back through the decoder rather
+# than unescaping by hand, because the value arrives full of \u003Cbr> and
+# would otherwise need every escape re-implemented here.
+DESCRIPTION = re.compile(r'"sanitizedJobDescription"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
 EXPIRED = re.compile(r'"isJobExpired"\s*:\s*true')
 NOT_EXPIRED = re.compile(r'"isJobExpired"\s*:\s*false')
 
@@ -38,6 +50,33 @@ class IndeedCheckSpider(OpeningCheckMixin, IndeedCardsSpider):
         **IndeedCardsSpider.custom_settings,
         "ITEM_PIPELINES": {},
     }
+
+    def description(self, response):
+        """
+        The description this file's own header says was turned down.
+
+        docs/sites/indeed.md refused fetching /viewjob?jk= per posting FOR
+        descriptions at "roughly 75 extra requests a day". That refusal still
+        stands for the crawl - and it is moot here, because this checker
+        fetches that exact url anyway to ask whether the posting is still
+        open. The header above already called it "the same endpoint for a
+        different question"; this is the other question, answered for free.
+
+        Measured 09.09.2026: `sanitizedJobDescription` appears exactly once in
+        a 290 kB body and holds the full text. Note the asymmetry with the
+        crawl - the SEARCH record carries only `snippet`, an excerpt, which is
+        why every stored Indeed row reads "N/A" or a fragment. The full text
+        was never on the page the crawl looks at.
+        """
+        match = DESCRIPTION.search(response.text)
+        if not match:
+            return None
+        try:
+            text = json.loads(f'"{match.group(1)}"')
+        except ValueError:
+            # A truncated or re-encoded blob is not worth guessing at.
+            return None
+        return strip_html(text) or None
 
     def verdict(self, response):
         """

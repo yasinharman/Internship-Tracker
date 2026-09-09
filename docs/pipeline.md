@@ -223,7 +223,20 @@ the requests it costs to fetch the not-yet-hidden rows.
 reads the description off the page it downloaded for the verdict
 (`OpeningCheckMixin.description`). It costs no request - `indeed_check.py`
 had already noticed it fetches the exact endpoint the description was refused
-on, "the same endpoint for a different question".
+on, "the same endpoint for a different question". All four sites, measured
+09.09.2026, each recorded in its own `docs/sites/` file:
+
+| Site | Where | Note |
+|---|---|---|
+| techcareer | `pageProps.jobDetail.content.description` | the payload the verdict just parsed |
+| kariyer.net | `[data-test="qualifications-and-job-description"]` | the container the verdict already selects |
+| LinkedIn | `[data-testid="expandable-text-box"]` | the element `DETAIL_MARKERS` already waits for |
+| Indeed | `"sanitizedJobDescription"` in the `/viewjob` body | once in ~290 kB; the crawl's record has only `snippet` |
+
+The description is written whatever the verdict says. Whether a posting is
+still open and what the job IS are different questions, and a probe that could
+not answer the first may well have answered the second - measured on Indeed
+the same day, an `inconclusive` verdict still yielded a full description.
 
 **Verdicts are written in batches, not once at the end.** `main.py` runs each
 checker as a subprocess with `CHECK_TIMEOUT` and `subprocess.run(timeout=)`

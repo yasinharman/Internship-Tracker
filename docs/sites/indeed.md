@@ -424,6 +424,36 @@ on a schedule, an hour-long run is acceptable, and a gentler cadence is the
 cheaper side to err on. `throttle.py` now prints a line every ten seconds
 while it waits, so the quiet stretches are legible rather than alarming.
 
+## The description is on the DETAIL page, and the checker already fetches it - 09.09.2026
+
+"The first investigation > Description" turned down fetching `/viewjob?jk=`
+per posting for descriptions, at roughly 75 extra requests a day. **That
+refusal still stands for the crawl.** What changed is that `indeed_check`
+fetches that url anyway, for every posting the board can show, to read
+`isJobExpired` - its own header calls it "the same endpoint for a different
+question". So the description costs nothing there.
+
+Measured on one posting: the `/viewjob` body is ~290 kB and
+**`sanitizedJobDescription` appears in it exactly once**, holding the full
+text.
+
+| Key | Occurrences in one body |
+|---|---|
+| `sanitizedJobDescription` | **1** |
+| `jobDescriptionText` | 1 |
+| `jobDescription` | 4 |
+| `descriptionHtml` | 0 |
+
+Pulled with a regex rather than by parsing, for the same reason `EXPIRED` is -
+the blob is nested JSON with escaped quotes inside string values. The capture
+is a JSON string literal and `json.loads` does the unescaping, because the
+value arrives full of `\u003Cbr>`.
+
+**The asymmetry with the crawl is the point.** The SEARCH record carries only
+`snippet`, an excerpt - which is why every stored Indeed row reads `N/A` or a
+fragment. The full text was never on the page the crawl looks at, so this is
+not a selector the crawl was missing.
+
 ## THERE IS NO COMPANY LOGO IN THE CARD RECORDS - measured 09.09.2026
 
 Looked for one because the board draws each posting as a card built around the
