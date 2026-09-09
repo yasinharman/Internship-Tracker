@@ -7,7 +7,7 @@ IS THIS techcareer.net POSTING STILL OPEN?
 The one site that answers the question directly - see verdict().
 """
 
-from ..api_spider import dig
+from ..api_spider import dig, strip_html
 from ..openings import CLOSED, OPEN, UNKNOWN, OpeningCheckMixin
 from .techcareer_api import TechCareerApiSpider
 
@@ -74,3 +74,19 @@ class TechCareerCheckSpider(OpeningCheckMixin, TechCareerApiSpider):
             return CLOSED
 
         return CLOSED if head.get("isCompleted") else OPEN
+
+    def description(self, response):
+        """
+        The same payload the verdict just read, for a different question.
+
+        techcareer_api.py:266-269 pulls the description out of this exact
+        endpoint during the crawl, and the crawl already fetches it - but only
+        for the handful of postings that survive the filters, and only once.
+        Reading it here as well is what keeps a posting's description current
+        without a request that was not already being made.
+
+        HTML inside JSON, so strip_html - the same call the cards spider makes.
+        """
+        payload = self.parse_json(response)
+        content = dig(payload, "pageProps.jobDetail.content") or {}
+        return strip_html(content.get("description")) or None

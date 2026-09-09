@@ -60,6 +60,17 @@ def load_unclassified(session, limit=None):
         session.query(JobPost)
         .filter(JobPost.job_category.is_(None))
         .filter(JobPost.duplicate_of.is_(None))
+        # Closed postings are skipped for the same kind of reason: the checks
+        # now run BEFORE this step (see main.py run_post_crawl), so a posting
+        # they just found gone from its source site would otherwise be paid
+        # for here and then hidden behind the "Kapananlar" toggle anyway.
+        #
+        # The consequence is worth stating rather than discovering: a posting
+        # that closed before it was ever classified stays NULL forever, and
+        # shows as "sınıflandırılmadı" when that toggle is on. That is the
+        # price of not spending on a dead posting, and it is recoverable - the
+        # row is still there and one UPDATE puts it back in the queue.
+        .filter(JobPost.closed_at.is_(None))
         .order_by(JobPost.created_at.desc())
     )
     if limit:

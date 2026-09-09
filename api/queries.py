@@ -268,3 +268,81 @@ def distinct_companies_where(session, clauses):
         )
         or 0
     )
+
+
+###############################################################
+# ONE LOGO PER EMPLOYER, BORROWED ACROSS POSTINGS             #
+###############################################################
+# `company_logo_url` says what the crawl saw on ONE posting, and three of the
+# four boards supply it. Indeed supplies nothing: measured 09.09.2026, its
+# card records carry a company name, an opaque id and a rating, and no artwork
+# at all - docs/sites/indeed.md has the counts. So an Indeed row can never
+# earn a logo of its own, however many times it is re-crawled.
+#
+# It can borrow one. If LinkedIn showed us Trendyol's mark on Tuesday, that is
+# still Trendyol's mark on the Indeed posting we found on Wednesday.
+#
+# THIS IS A READ-TIME FALLBACK, NOT A WRITE. Nothing copies a url onto a row
+# the crawl did not see it on: the column keeps meaning "what this posting
+# showed us", so a wrong logo can never be laundered into looking like
+# evidence, and the day Indeed starts serving artwork the borrowed value is
+# simply replaced by the real one. It also improves on its own - every crawl
+# that finds a new employer widens what the rest of the board can borrow.
+#
+# Matched on a normalised name because the four boards do not spell employers
+# the same way. Case and inner whitespace are folded, and Turkish casing is
+# used: "İŞ BANKASI".lower() is "i̇ş bankasi" under the invariant rules and
+# only matches itself if both sides are folded the same way. Nothing fuzzier
+# than that, and the reason is measured rather than assumed. Stripping legal
+# suffixes - A.Ş., Ltd., Şti., San., Tic., Inc., GmbH, Holding, Group - was
+# tried on 09.09.2026 against the 110 Indeed employers with no logo: 16 match
+# on the normalised name and the looser rule added EXACTLY ZERO. The other 94
+# have no logo anywhere in the data because they do not post on the boards
+# that carry one. So the looser rule buys nothing and costs the risk of
+# hanging one employer's mark on another's posting.
+def normalize_company(name):
+    if not name:
+        return None
+    folded = " ".join(str(name).split()).casefold()
+    return folded or None
+
+
+def logos_by_company(session, companies):
+    """
+    {normalised name: logo url} for the employers asked about.
+
+    Newest first and first-one-wins, so an employer that changed its mark is
+    represented by the most recent posting that showed it.
+    """
+    wanted = {normalize_company(name) for name in companies}
+    wanted.discard(None)
+    if not wanted:
+        return {}
+
+    # Narrowed by DISTINCT ON rather than by a WHERE on the name, and that is
+    # deliberate: the match is Python's casefold and SQL's lower() is not the
+    # same function on Turkish text, so a name filter here would quietly drop
+    # candidates the Python side would have matched. One row per spelling
+    # instead - bounded by the number of employers that have ever shown a
+    # logo, a few hundred - and the comparison happens in one place.
+    #
+    # The board's own hides do not apply. A logo is a fact about an employer,
+    # not about whether one of its postings is still open or was classified
+    # into another field, and the row it came from having closed does not make
+    # the mark wrong.
+    rows = session.execute(
+        select(JobPost.company, JobPost.company_logo_url, JobPost.created_at)
+        .where(
+            JobPost.company_logo_url.is_not(None),
+            JobPost.company.is_not(None),
+        )
+        .distinct(JobPost.company)
+        .order_by(JobPost.company, JobPost.created_at.desc())
+    ).all()
+
+    found = {}
+    for company, logo, _created in sorted(rows, key=lambda r: r[2], reverse=True):
+        key = normalize_company(company)
+        if key in wanted and key not in found:
+            found[key] = logo
+    return found

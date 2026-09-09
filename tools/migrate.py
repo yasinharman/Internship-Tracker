@@ -93,6 +93,16 @@ MIGRATIONS = [
         "CREATE INDEX IF NOT EXISTS ix_job_posts_closed_at "
         "ON job_posts (closed_at)",
     ),
+    # VARCHAR rather than TEXT, and that is not a preference. models.py
+    # declares this as Column(String), which create_all() emits as VARCHAR, so
+    # a database built from scratch and one built by this file have to agree -
+    # the same divergence the two indexes above exist to prevent.
+    #
+    # No index. Nothing filters, sorts or groups on a logo.
+    (
+        "job_posts.company_logo_url",
+        "ALTER TABLE job_posts ADD COLUMN IF NOT EXISTS company_logo_url VARCHAR",
+    ),
 ]
 
 

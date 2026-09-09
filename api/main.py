@@ -312,6 +312,7 @@ def _job(row: JobPost) -> Job:
         id=row.id,
         job_title=row.job_title,
         company=row.company,
+        company_logo_url=row.company_logo_url,
         location=row.location,
         url=row.url,
         source_site=row.source_site,
@@ -345,8 +346,23 @@ def jobs(
         select(JobPost).where(and_(*clauses)).order_by(order, JobPost.id.desc()).limit(limit).offset(offset)
     ).all()
 
+    jobs_out = [_job(row) for row in rows]
+
+    # An employer's mark, borrowed from another of its postings when this one
+    # did not carry one. Indeed never carries one - see q.logos_by_company -
+    # so without this a third of the board would be initials forever.
+    #
+    # One extra query, and only for the page being returned: the names asked
+    # about are the ones actually missing a logo on these <= 500 rows.
+    missing = {job.company for job in jobs_out if job.company and not job.company_logo_url}
+    if missing:
+        borrowed = q.logos_by_company(session, missing)
+        for job in jobs_out:
+            if not job.company_logo_url:
+                job.company_logo_url = borrowed.get(q.normalize_company(job.company))
+
     return JobPage(
-        rows=[_job(row) for row in rows],
+        rows=jobs_out,
         total=q.count_where(session, clauses),
         limit=limit,
         offset=offset,

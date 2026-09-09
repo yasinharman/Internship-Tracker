@@ -14,3 +14,4 @@ class JobPostItem(scrapy.Item):
     job_description = scrapy.Field()
     url = scrapy.Field()
     source_site = scrapy.Field()
+    company_logo_url = scrapy.Field()

@@ -27,7 +27,7 @@ import os
 import re
 from collections import defaultdict
 from datetime import datetime
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import scrapy
 
@@ -89,6 +89,52 @@ def strip_html(value):
         .replace("&quot;", '"').replace("&#39;", "'")
     )
     return _WS_RE.sub(" ", text).strip()
+
+
+##########################
+# A LOGO URL, OR NOTHING #
+##########################
+def logo_url(value, base=None):
+    """
+    Normalize an employer logo url off a card or a JSON record, or return None.
+
+    None rather than DEFAULT_VALUE, deliberately. "N/A" is truthy: it would
+    survive the loader, reach the column, and render as <img src="N/A">, which
+    the browser resolves against the BOARD's own origin - one pointless
+    round-trip per card, answered by the SPA catch-all with 200 and an HTML
+    body that fails to decode. It would also make every coverage count read
+    100%. None instead means the loader drops the value and the field is
+    absent, which pipelines.py reads as "leave whatever is stored alone".
+
+    WHAT GETS REJECTED, all of it measured on 09.09.2026:
+
+    `data:` - kariyer.net serves a 1x1 transparent SVG in `src` for cards it
+    has not lazily loaded yet: 25 of 40 on the first listing page. The alt
+    text still carries the company name, so this is a real <img> that is not a
+    logo. Storing it would paint an invisible image instead of falling back to
+    the monogram - the one failure the board cannot show anyone.
+
+    A relative path with no base - better a monogram than a url that resolves
+    against the board's origin when it is rendered.
+
+    Protocol-relative `//host/path` is kept and pinned to https, which
+    img-kariyer.mncdn.com answers (200, measured). An absolute http:// url is
+    left alone rather than upgraded: cdn1.kariyer.net, which techcareer's
+    records point at, has no working certificate, so rewriting the scheme
+    would turn a working logo into a dead one.
+    """
+    if not isinstance(value, str):
+        return None
+    value = value.replace("\n", "").strip()
+    if not value or value == "N/A" or value.startswith(("data:", "blob:")):
+        return None
+    if value.startswith("//"):
+        return "https:" + value
+    if value.startswith(("http://", "https://")):
+        return value
+    if base:
+        return urljoin(base, value)
+    return None
 
 
 ###################

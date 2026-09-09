@@ -74,10 +74,43 @@ Each posting is a `<div data-test="ad-card">` with the data as attributes.
 | location | `[data-test="location"]::text` - **not** the `cityname` attribute, see below |
 | job_type | `worktypetext` attr, normalised by `pipelines.normalize_job_type` |
 | url | `a[data-test="ad-card-item"]::attr(href)`, needs `urljoin` |
+| company_logo_url | `img[data-test="company-image"]::attr(src)` - the same tag as `company`. **Mostly a placeholder, see below** |
 | work model | `workmodeltext` attr ("İş Yerinde" / remote) |
 
 Other attributes present: `positionid`, `companyid`, `jobcode`, `sectorid`,
 `sectorname`, `cityid`, `countryid`, `time`, `sponsor`, `jobstatus`.
+
+**The logo is lazily loaded, and the placeholder looks like a logo - measured
+09.09.2026.** Over 40 cards on one listing page:
+
+| src shape | Cards |
+|---|---|
+| `data:image/svg+xml` 1x1 transparent | **25** |
+| absolute `https://img-kariyer.mncdn.com/mnresize/150/150/...` | 12 |
+| protocol-relative `//img-kariyer.mncdn.com/UploadFiles/...` | 2 |
+| no `img` in the card at all | 1 |
+
+The placeholder is a real `<img>` with the company name still in `alt`, so a
+`src`-only read returns something for every card and roughly two thirds of it
+is an invisible 1x1. `api_spider.logo_url()` drops `data:` for that reason;
+stored, it would paint nothing where the board would otherwise draw the
+company's initials. The protocol-relative ones are pinned to `https`, which
+the host answers (200).
+
+The detail page carries the logo server-rendered, and this spider already
+fetches it for the postings it keeps - so a fallback there is available if the
+`logo/found` counter says the listing is not good enough. Not done yet: the
+detail page has dozens of images (header art, award badges, recommended
+employers) and picking the right one needs its own measurement.
+
+**The check spider reads the description too - 09.09.2026.**
+`kariyernet_check.verdict()` already selects
+`[data-test="qualifications-and-job-description"], [data-test="job-description"]`
+to prove it is on a posting page, so `description()` reads the text out of the
+same container with the selectors copied verbatim from
+`kariyernet_cards.py:449-461`. Note the consequence: on a CLOSED posting that
+container is exactly the branch that fired, so a closed posting still yields a
+description - which is what a reader wants behind the "Kapananlar" toggle.
 
 **Multi-city trap:** a nationwide posting has
 `locations="[object Object],[object Object],..."` and `cityname` holds only the

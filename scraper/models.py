@@ -114,6 +114,28 @@ class JobPost(Base):
     # 36 stored kariyer.net postings appear in them on any given day.
     last_seen_at = Column(DateTime)
 
+    ###################################################################
+    # THE EMPLOYER'S MARK                                             #
+    ###################################################################
+    # Written by pipelines.py on every upsert, from whatever the *_cards
+    # spider read off the listing it was already fetching. NULL means no logo
+    # was seen FOR THIS POSTING - never "this company has no logo", because
+    # the scope here is the row and not the employer: the same company can
+    # carry one on a posting crawled today and not on one crawled in August.
+    #
+    # A url into the SOURCE SITE's own CDN, hotlinked rather than copied.
+    # Nothing in this project downloads it. Measured 09.09.2026:
+    # img-kariyer.mncdn.com answers 200 with no referrer, with our own origin
+    # and with a foreign one, so there is no hotlink block to work around yet.
+    #
+    # Unlike the fields pipelines.py overwrites, this one is only written when
+    # the crawl actually found something - see the comment there. A lazy card
+    # or a changed selector has to fail as "no new logo", not as "delete the
+    # one we already have".
+    #
+    # No index: nothing filters, sorts or groups on it.
+    company_logo_url = Column(String)
+
 ##############################
 # CONNECTION TO THE DATABASE #
 ##############################

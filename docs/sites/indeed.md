@@ -424,6 +424,41 @@ on a schedule, an hour-long run is acceptable, and a gentler cadence is the
 cheaper side to err on. `throttle.py` now prints a line every ten seconds
 while it waits, so the quiet stretches are legible rather than alarming.
 
+## THERE IS NO COMPANY LOGO IN THE CARD RECORDS - measured 09.09.2026
+
+Looked for one because the board draws each posting as a card built around the
+employer's mark, and the other three sites all supply one. Indeed does not.
+
+The record is the object `extract_provider_json()` already parses, so this is
+the spider's own input rather than an approximation of it. Over the 15 records
+on one search page:
+
+| Probe | Result |
+|---|---|
+| keys matching `logo\|image\|brand\|icon\|photo\|avatar` | **none of ~110** |
+| `companyBrandingAttributes` | **the key does not exist** |
+| `"logo"` anywhere in the serialised records | 0 |
+| `"image"` anywhere | 0 |
+| `.png` / `.jpg` anywhere | 0 / 0 |
+| `featuredCompanyAttributes` | `{}` |
+| `enhancedAttributesModel` | `{}` |
+| every http url in the blob | an `/applystart?jk=...` tracking link |
+
+So it is not a matter of finding the right key. The employer identity Indeed
+ships on a card is `company`, `companyIdEncrypted`, `companyRating` and
+`companyReviewCount` - a name, an opaque id and review numbers, no artwork.
+
+**What this costs and what it would cost to change.** Indeed rows keep the
+company's initials on the board, which is the same thing a reader sees for an
+employer that has no logo anywhere. Getting artwork would mean the detail page
+(`/viewjob?jk=`), and this file already refuses that for the description at
+roughly 75 extra requests a day against the site that blocks hardest - the
+reasoning is in `indeed_cards.py` under WHAT THIS SPIDER DOES NOT COLLECT, and
+a logo is a weaker reason than a description was.
+
+Re-checking is cheap if Indeed ever adds one: dump `sorted(records[0].keys())`
+in `parse_search` for one page and compare against the list above.
+
 ## Search terms - measured 30.07.2026
 
 Five field terms were added on top of the four broad ones, because depth was
