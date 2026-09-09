@@ -103,6 +103,15 @@ fetches it for the postings it keeps - so a fallback there is available if the
 detail page has dozens of images (header art, award badges, recommended
 employers) and picking the right one needs its own measurement.
 
+**The check spider reads the description too - 09.09.2026.**
+`kariyernet_check.verdict()` already selects
+`[data-test="qualifications-and-job-description"], [data-test="job-description"]`
+to prove it is on a posting page, so `description()` reads the text out of the
+same container with the selectors copied verbatim from
+`kariyernet_cards.py:449-461`. Note the consequence: on a CLOSED posting that
+container is exactly the branch that fired, so a closed posting still yields a
+description - which is what a reader wants behind the "Kapananlar" toggle.
+
 **Multi-city trap:** a nationwide posting has
 `locations="[object Object],[object Object],..."` and `cityname` holds only the
 first entry, so an ad covering all 81 provinces reports `cityname="Adana"`.

@@ -471,22 +471,46 @@ def run_post_crawl():
     trading a slightly earlier Telegram ping for nothing classify would have
     added.
 
-    Checking whether the stored postings are still open runs LAST, and that
-    ordering is what makes it affordable. By this point classify has moved
-    this crawl's `other` postings out of the board, so the set to check is the
-    set the board can actually show - 79 rows on 21.08.2026 rather than 290.
-    The cost scales with the board, not with the archive.
+    CLASSIFY RUNS LAST, and it did not always. The entry this replaces is
+    kept because it was not wrong - only one of its premises was:
 
-    None of dedupe, notify, classify or the checks failing stops the others. A
+        "Checking whether the stored postings are still open runs LAST, and
+        that ordering is what makes it affordable. By this point classify has
+        moved this crawl's `other` postings out of the board, so the set to
+        check is the set the board can actually show - 79 rows on 21.08.2026
+        rather than 290. The cost scales with the board, not with the
+        archive."
+
+    The premise was that the checks only answer one question. They answer two.
+    Every checker downloads the posting's own page to see whether it is still
+    open, and the description is in that same response - measured 09.09.2026,
+    993 rows carried a real description in 32 of them, because LinkedIn and
+    Indeed refuse the extra request a description would otherwise cost and
+    store "N/A" instead. So the classifier was deciding what a job IS from its
+    title, for 97% of the board, while the text that says so was being fetched
+    and thrown away an hour later.
+
+    Running the checks first hands classify the description, and costs two
+    things, both accepted deliberately. The set to check is now the
+    pre-classify board, so the checks visit this crawl's `other` postings
+    before anything knows they are `other`. And a checker that gets killed by
+    CHECK_TIMEOUT now matters more - which is why the verdicts are written in
+    batches rather than once at close; see scraper/openings.py WRITE_EVERY.
+
+    What it buys back: classify no longer pays for a posting the checks just
+    found closed (pipeline/classify_jobs.py skips closed_at IS NOT NULL), and
+    the LLM decides on the description rather than on the title.
+
+    None of dedupe, notify, the checks or classify failing stops the others. A
     job listed twice, a missed Telegram ping, an unsorted posting or a board
     that still lists a job that closed yesterday are each worth far less than
     leaving everything the crawl just found untouched.
     """
     deduped = run_step("dedupe", "pipeline.dedupe_jobs", DEDUPE_TIMEOUT)
     notified = run_step("notify", "pipeline.notify_watchlist", NOTIFY_TIMEOUT)
-    classified = run_step("classify", "pipeline.classify_jobs", CLASSIFY_TIMEOUT)
     checked = run_checks()
-    return deduped and notified and classified and checked
+    classified = run_step("classify", "pipeline.classify_jobs", CLASSIFY_TIMEOUT)
+    return deduped and notified and checked and classified
 
 
 ############################################

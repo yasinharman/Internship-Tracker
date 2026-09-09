@@ -128,11 +128,31 @@ model's reason beside it, visible in the dashboard's "Neden" column.
 | `pipeline/classify_jobs.py` | Reads `job_category IS NULL`, writes results |
 | `tools/migrate.py` | Adds the three columns (idempotent) |
 
-Runs from `main.py` after the crawl. A failure there does **not** fail the
-scheduled task: the postings are already stored, and unclassified rows stay
-visible on the dashboard.
+Runs from `main.py` after the crawl, and **last of the four post-crawl steps
+since 09.09.2026** - after the `*_check` spiders rather than before them. Two
+consequences, both intended:
+
+- A posting the checks just found closed is not classified at all
+  (`closed_at IS NULL` in `load_unclassified`). It stays NULL forever and
+  shows as `sınıflandırılmadı` behind the "Kapananlar" toggle. That is the
+  price of not paying for a dead posting; one `UPDATE` puts it back in the
+  queue.
+- The checks write `job_description` on their way past, so the classifier
+  reads the posting's own text instead of guessing from the title. See the
+  reversal in `main.py run_post_crawl()`.
+
+A failure there does **not** fail the scheduled task: the postings are already
+stored, and unclassified rows stay visible on the dashboard.
 
 ### Choosing the model
+
+> **The premise under this section changed on 09.09.2026 and the numbers have
+> not been re-measured.** Both of `gpt-5.4-nano`'s disqualifying errors below
+> are title-reading errors, and the comparison was run on input that was
+> almost entirely title-only: measured the same day, 32 of 993 rows carried a
+> real description. Now that the checks collect descriptions, `--compare`
+> should be run again on rows that have one before this table is trusted to
+> still be the answer.
 
 Decided by measurement, not by price list. `pipeline/classify_jobs.py --compare` runs
 the same postings through several models and prints only the disagreements.
@@ -191,6 +211,26 @@ each site, once per crawl. See `scraper/openings.py`.
 techcareer.net) - the other 211 are the classifier's `other` pile, hidden
 either way. Checking those too would have quadrupled the cost to re-confirm
 postings nobody will ever see.
+
+**That is still true, but the board is now bigger when the checks run
+(09.09.2026).** The checks moved ahead of classify, so this crawl's `other`
+postings have not been hidden yet and are visited once before they are. The
+trade was made knowingly: the checks were already downloading each posting's
+page, and the description in that page is worth more to the classifier than
+the requests it costs to fetch the not-yet-hidden rows.
+
+**A second question, answered from the same response.** Each checker now also
+reads the description off the page it downloaded for the verdict
+(`OpeningCheckMixin.description`). It costs no request - `indeed_check.py`
+had already noticed it fetches the exact endpoint the description was refused
+on, "the same endpoint for a different question".
+
+**Verdicts are written in batches, not once at the end.** `main.py` runs each
+checker as a subprocess with `CHECK_TIMEOUT` and `subprocess.run(timeout=)`
+*kills* it, so `closed()` never ran and a cut-short run silently discarded
+every verdict it had paid for. `OPENINGS_WRITE_EVERY` (default 25) bounds the
+loss to one batch, and `checked_at ASC NULLS FIRST` means the next run resumes
+where this one stopped.
 
 ### The signal, per site
 

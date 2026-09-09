@@ -78,6 +78,25 @@ UNKNOWN = "unknown"
 # its turn eventually.
 MAX_PER_SITE = int(os.getenv("OPENINGS_MAX_PER_SITE", "0"))
 
+# How many verdicts to hold before writing them.
+#
+# This used to be "all of them, once, at spider close" - and that is fine right
+# up until the spider does not get to close. main.py runs each checker as a
+# subprocess with CHECK_TIMEOUT, and subprocess.run(timeout=) KILLS it, so
+# closed() never fires and every verdict collected up to that point is thrown
+# away. Not "some rows unchecked": the whole run, silently, having spent the
+# requests.
+#
+# It became load-bearing when classify moved after the checks: the set to
+# check is now the pre-classify board, which on 09.09.2026 was 487 LinkedIn
+# postings at DOWNLOAD_DELAY 8 - about 65 minutes against a 1200s ceiling.
+#
+# 25 is small enough that a kill costs at most 25 wasted probes and large
+# enough that a full run is a couple of dozen commits rather than hundreds.
+# load_open_postings() orders by checked_at ASC NULLS FIRST, so the next run
+# resumes exactly where this one was cut off.
+WRITE_EVERY = int(os.getenv("OPENINGS_WRITE_EVERY", "25"))
+
 
 class OpeningCheckMixin:
     """
@@ -109,6 +128,16 @@ class OpeningCheckMixin:
         # first request goes out, so nothing holds a database connection open
         # for the length of a six-minute crawl.
         self._postings = {}
+        # Verdicts collected since the last flush. _verdicts keeps every one
+        # for the closing summary; this is only what has not been written yet.
+        self._pending = []
+        # id -> description text read out of the same response. Empty for a
+        # site whose checker does not override description().
+        self._descriptions = {}
+        # Accumulated across flushes rather than built once at the end, now
+        # that there is more than one write.
+        self._newly_closed = []
+        self._reopened = []
 
     ###########################################################
     # WHAT TO CHECK                                           #
@@ -231,24 +260,127 @@ class OpeningCheckMixin:
             self.logger.warning("id=%s verdict failed: %s", posting_id, error)
             outcome = UNKNOWN
 
+        # The description comes out of THIS response - the only place the body
+        # is ever in scope. Failing to read one is not a reason to lose the
+        # verdict, so it gets its own guard.
+        try:
+            text = self.description(response)
+        except Exception as error:
+            self.logger.warning("id=%s description failed: %s", posting_id, error)
+            text = None
+        if text:
+            self._descriptions[posting_id] = text
+            self.crawler.stats.inc_value("check/description_found")
+        else:
+            self.crawler.stats.inc_value("check/description_missing")
+
         self._verdicts[posting_id] = outcome
+        self._pending.append(posting_id)
         self.logger.debug("id=%s -> %s (%s)", posting_id, outcome, response.url)
+
+        if len(self._pending) >= WRITE_EVERY:
+            self._flush_pending()
 
     def verdict(self, response):
         """Override: OPEN, CLOSED or UNKNOWN. Default refuses to guess."""
         return UNKNOWN
 
+    def description(self, response):
+        """
+        Override: the posting's description as text, or None.
+
+        The response is already downloaded to answer the open/closed question,
+        so reading the description out of it costs no request. That is the
+        whole argument for doing it here: docs/sites/indeed.md turned down
+        fetching /viewjob per posting FOR descriptions at ~75 requests a day,
+        and indeed_check.py:12-18 notes it fetches that exact endpoint anyway
+        for a different question.
+
+        Returning None is not a failure - it means this site's checker has no
+        description to offer, and the stored value is left alone.
+        """
+        return None
+
     ###########################################################
-    # WRITE ONCE, AT THE END                                  #
+    # WRITE AS WE GO                                          #
     ###########################################################
+    # This used to be one write at spider close, and it was wrong for a
+    # reason nothing in the output would have told you: main.py runs each
+    # checker as a subprocess with CHECK_TIMEOUT and subprocess.run(timeout=)
+    # KILLS it, so closed() never fired and a cut-short run threw away every
+    # verdict it had paid for. See WRITE_EVERY.
     def closed(self, reason):
         try:
-            self._write_verdicts()
+            self._flush_pending()
+            self._report()
         finally:
             # The parent reports the item count to main.py; keep that working.
             super().closed(reason)
 
-    def _write_verdicts(self):
+    def _flush_pending(self):
+        """
+        Write the verdicts collected since the last call, then forget them.
+
+        Each batch opens and closes its own session rather than holding one
+        open for the length of the crawl - the same reason
+        load_open_postings() closes its read session before the first request
+        goes out.
+        """
+        ids = self._pending
+        self._pending = []
+        if self.dry_run or not ids:
+            return
+
+        now = datetime.utcnow()
+        session = sessionmaker(bind=db_connect())()
+        try:
+            rows = session.query(JobPost).filter(JobPost.id.in_(ids)).all()
+            for posting in rows:
+                outcome = self._verdicts[posting.id]
+
+                # Written whatever the verdict says. A description is evidence
+                # about what the job IS; whether it is still open is a
+                # different question, and a probe that could not answer the
+                # second may well have answered the first.
+                #
+                # It overwrites, because this page was fetched just now and
+                # the stored value may be the crawl's "N/A". The reverse
+                # direction is guarded in pipelines.py, which would otherwise
+                # put that "N/A" straight back on the next crawl.
+                description = self._descriptions.get(posting.id)
+                if description:
+                    posting.job_description = description
+
+                if outcome == UNKNOWN:
+                    # Not even checked_at: a probe that could not tell is
+                    # not a check, and stamping it would hide a site that
+                    # has started refusing us behind a fresh timestamp.
+                    continue
+                if outcome == CLOSED:
+                    if posting.closed_at is None:
+                        posting.closed_at = now
+                        # Plain strings, never ORM objects. session.commit()
+                        # expires every attribute and session.close() detaches
+                        # the instance, so reading posting.job_title afterwards
+                        # re-queries on a closed session and raises
+                        # DetachedInstanceError - which is exactly what
+                        # happened on the first real run, after the commit had
+                        # already succeeded. The write was fine and the log was
+                        # what fell over.
+                        self._newly_closed.append(posting.job_title)
+                elif posting.closed_at is not None:
+                    # The site says it is open after all. Rare - the crawl
+                    # normally gets here first via last_seen_at - but a
+                    # reposted job lands exactly here.
+                    posting.closed_at = None
+                    self._reopened.append(posting.job_title)
+                posting.checked_at = now
+            session.commit()
+        finally:
+            session.close()
+
+    def _report(self):
+        """The closing summary. Reads state; writes nothing."""
         counts = {OPEN: 0, CLOSED: 0, UNKNOWN: 0}
         for outcome in self._verdicts.values():
             counts[outcome] = counts.get(outcome, 0) + 1
@@ -259,61 +391,27 @@ class OpeningCheckMixin:
         # looked at everything and could not tell".
         unanswered = len(self._postings) - len(self._verdicts)
 
-        # Plain strings, never ORM objects. session.commit() expires every
-        # attribute and session.close() detaches the instance, so reading
-        # posting.job_title afterwards re-queries on a closed session and
-        # raises DetachedInstanceError - which is exactly what happened on the
-        # first real run, after the commit had already succeeded. The write
-        # was fine and the log was what fell over.
-        newly_closed = []
-        reopened = []
-
+        # A dry run flushes nothing, so the titles come from the verdicts
+        # rather than from what was written.
+        newly_closed = self._newly_closed
         if self.dry_run:
             newly_closed = [
                 self._postings[pid]["job_title"]
                 for pid, outcome in self._verdicts.items()
                 if outcome == CLOSED
             ]
-        elif self._verdicts:
-            now = datetime.utcnow()
-            session = sessionmaker(bind=db_connect())()
-            try:
-                rows = (
-                    session.query(JobPost)
-                    .filter(JobPost.id.in_(list(self._verdicts)))
-                    .all()
-                )
-                for posting in rows:
-                    outcome = self._verdicts[posting.id]
-                    if outcome == UNKNOWN:
-                        # Not even checked_at: a probe that could not tell is
-                        # not a check, and stamping it would hide a site that
-                        # has started refusing us behind a fresh timestamp.
-                        continue
-                    if outcome == CLOSED:
-                        if posting.closed_at is None:
-                            posting.closed_at = now
-                            newly_closed.append(posting.job_title)
-                    elif posting.closed_at is not None:
-                        # The site says it is open after all. Rare - the crawl
-                        # normally gets here first via last_seen_at - but a
-                        # reposted job lands exactly here.
-                        posting.closed_at = None
-                        reopened.append(posting.job_title)
-                    posting.checked_at = now
-                session.commit()
-            finally:
-                session.close()
 
         for title in newly_closed:
             self.logger.info("closed: %s", title)
-        for title in reopened:
+        for title in self._reopened:
             self.logger.info("reopened (site says it is open again): %s", title)
 
         self.logger.info(
-            "%s: %s open, %s closed, %s inconclusive, %s unanswered%s",
+            "%s: %s open, %s closed, %s inconclusive, %s unanswered, "
+            "%s description(s)%s",
             self.site_name,
             counts[OPEN], counts[CLOSED], counts[UNKNOWN], unanswered,
+            len(self._descriptions),
             " (DRY RUN - nothing written)" if self.dry_run else "",
         )
 

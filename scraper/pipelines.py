@@ -172,6 +172,14 @@ def normalize_job_type(job_type):
 #################################
 # PIPELINE TO POSTGRES DATABASE #
 #################################
+# What a spider sends when it has no description to send. Spelled out here
+# rather than imported: it is BaseApiSpider.DEFAULT_VALUE (scraper/api_spider.py),
+# a class attribute rather than a module constant, and importing the spider
+# base class into the pipeline to read one string is a heavier coupling than
+# the duplication. If that value ever changes, this is the other place.
+NO_DESCRIPTION = "N/A"
+
+
 class JobScraperPipeline:
     def __init__(self):
         engine = db_connect()
@@ -194,7 +202,22 @@ class JobScraperPipeline:
                 existing_job.job_title = item.get('job_title')
                 existing_job.company = item.get('company')
                 existing_job.location = item.get('location')
-                existing_job.job_description = item.get('job_description')
+                # NOT unconditional, unlike the fields around it. The check
+                # spiders now write this column too (scraper/openings.py), and
+                # they are the only source of a description for LinkedIn and
+                # Indeed - whose cards spiders send the literal "N/A" because
+                # a real one would cost an extra request per posting.
+                #
+                # Overwriting with that would erase a description the checks
+                # paid for, on every single re-crawl, and the classifier would
+                # be back to reading titles without anything saying so.
+                #
+                # kariyer.net and techcareer are unaffected: their cards
+                # spiders produce a real description, which is truthy, so a
+                # fresher one still wins.
+                incoming = item.get('job_description')
+                if incoming and incoming != NO_DESCRIPTION:
+                    existing_job.job_description = incoming
                 existing_job.job_type = normalized_job_type
 
                 # ONLY WHEN THERE IS ONE, unlike the five fields above.

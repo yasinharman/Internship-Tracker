@@ -53,3 +53,24 @@ class KariyerNetCheckSpider(OpeningCheckMixin, KariyerNetCardsSpider):
             return CLOSED
 
         return UNKNOWN
+
+    def description(self, response):
+        """
+        The container the verdict above already selects, read for its text.
+
+        Note what that means: on a CLOSED posting this is the branch that
+        fired, so the description is available exactly when the page has no
+        apply button left. A closed posting still deserves a right verdict
+        from the classifier - it is shown behind the "Kapananlar" toggle.
+
+        Selectors and the join are copied from kariyernet_cards.py:449-461
+        rather than re-derived, so the two paths cannot drift into disagreeing
+        about what this site's description is.
+        """
+        parts = response.css(
+            'div[data-test="qualifications-and-job-description"] *::text'
+        ).getall()
+        if not parts:
+            parts = response.css('[data-test="job-description"] *::text').getall()
+        text = " ".join(part.strip() for part in parts if part.strip())
+        return text or None

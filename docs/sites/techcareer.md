@@ -93,6 +93,15 @@ content. Note that this is a DIFFERENT host from the one kariyer.net's own
 cards point at (`img-kariyer.mncdn.com`, https, fine) even though the two
 sites share an owner.
 
+## The description is read twice, on purpose
+
+`parse_detail` takes it during the crawl and `techcareer_check.description()`
+takes it again from the same `_next/data` payload when the posting is checked.
+Measured 09.09.2026: `pageProps.jobDetail.content.description`, HTML, needs
+`strip_html`. The second read costs no request - the checker downloads that
+payload anyway to read `head.isCompleted` - and it is what keeps a stored
+description current without re-crawling.
+
 ## Yield
 
 **2 postings**, both internships in Istanbul, one of them findable only by the
