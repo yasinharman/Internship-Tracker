@@ -116,3 +116,51 @@ On the board it is one toggle in the filter bar, "Kapananlar", carrying
 `meta.closed_count` so the button says what it would reveal before it is
 pressed. Closed rows appear mixed in with the open ones rather than in a
 section of their own, so each carries a `kapandı` badge and a dimmed title.
+
+## The employer's logo
+
+Each posting is a card and the card is built around the employer's mark, so
+`job_posts.company_logo_url` is what the board reads first. Three decisions
+sit behind that column, and all three are visible to a reader.
+
+| Column | Owner | Meaning |
+|---|---|---|
+| `company_logo_url` | `pipelines.py`, from the `*_cards` spiders | NULL = no logo seen for THIS posting |
+
+**It is hotlinked, not copied.** The value is a url into the source site's own
+CDN and nothing here downloads it. Measured 09.09.2026:
+`img-kariyer.mncdn.com` answers 200 with no referrer, with our origin and with
+a foreign one, so there is no hotlink block to work around. The board sends
+`referrerPolicy="no-referrer"` anyway, because withholding a header costs
+nothing and a CDN can start checking it any day. If one ever does, the symptom
+is monograms rather than broken images, and the fix — download once, serve
+ourselves — is a separate job that this column does not have to change for.
+
+**The column is per-posting; the board is per-employer.** The reversal is
+worth keeping rather than tidying away. The column was scoped to the posting
+and cross-row resolution was rejected on the grounds that it shows a mark the
+crawl never saw there — and that reasoning was not wrong, only one of its
+premises was. The premise was that every source eventually supplies a logo.
+Measured 09.09.2026, **Indeed supplies none at all** (`docs/sites/indeed.md`),
+so an Indeed row can never earn one however many times it is re-crawled, and
+"per-posting" meant a third of the board was initials forever.
+
+So `/api/jobs` fills a missing logo from another posting by the same employer,
+and `q.logos_by_company` carries the reasoning. What did not change is the
+column: **nothing writes a borrowed url to a row.** The stored value still
+means "what this posting showed us", so a borrowed mark can never be laundered
+into looking like evidence, and the day Indeed starts serving artwork the real
+value simply replaces it.
+
+Matching is the normalised name — whitespace folded, `casefold` — and nothing
+fuzzier. Stripping legal suffixes was tried against the 110 Indeed employers
+with no logo: 16 match on the normalised name and the looser rule added zero,
+because the other 94 do not post on the boards that carry a logo at all.
+
+**A missing logo is a monogram, never a gap or a broken image.** The board
+draws the company's initials, and the same fallback catches a url that 404s at
+render time. That is what lets `pipelines.py` keep a url it could not
+re-confirm instead of erasing it — the reasoning is in the comment there, and
+the short version is that a stale logo costs one failed image while an erased
+column costs data that postings vanishing from the source sites make
+unrecoverable.

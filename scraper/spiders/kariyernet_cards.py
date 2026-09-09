@@ -33,7 +33,7 @@ Attribute names are matched in lowercase - HTML parsers normalise
 import os
 from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
 
-from ..api_spider import BaseApiSpider
+from ..api_spider import BaseApiSpider, logo_url
 from ..browser_session import BrowserSession, profile_for_impersonate
 from ..job_filters import looks_like_internship
 from ..loaders import KariyerNetLoader
@@ -395,6 +395,24 @@ class KariyerNetCardsSpider(BaseApiSpider):
         loader.add_css("company", 'img[data-test="company-image"]::attr(alt)')
         loader.add_css("company", '[data-test="subtitle"]::text')
         loader.add_value("company", self.DEFAULT_VALUE)
+
+        # The same <img> whose alt gave us the company name, read for its src
+        # this time. No DEFAULT_VALUE fallback: a posting with no logo has to
+        # arrive as an absent field, not as "N/A" - see logo_url().
+        #
+        # Measured 09.09.2026 over 40 cards on one listing page: 12 absolute
+        # https, 2 protocol-relative, 1 card with no img at all, and 25 that
+        # carry a 1x1 transparent SVG because the card had not lazily loaded.
+        # logo_url() drops that last group, so roughly a third of the cards on
+        # a page yield one. The counter below is what will say whether the
+        # kept postings - a tenth of the cards, and the only ones stored - do
+        # better or worse than that.
+        logo = logo_url(
+            card.css('img[data-test="company-image"]::attr(src)').get(),
+            base=response.url,
+        )
+        loader.add_value("company_logo_url", logo)
+        self.crawler.stats.inc_value("logo/found" if logo else "logo/missing")
 
         # The rendered text before the `cityname` attribute, which is wrong for
         # multi-city postings: a nationwide ad carries locations="[object

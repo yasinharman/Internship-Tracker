@@ -98,6 +98,10 @@ class Job(BaseModel):
     id: int
     job_title: str
     company: Optional[str]
+    # Hotlinked from the source site's CDN, as the crawl found it. None means
+    # no logo was seen for THIS posting - not that the company has none - and
+    # the board draws the company's initials instead.
+    company_logo_url: Optional[str] = None
     location: Optional[str]
     url: str
     source_site: str

@@ -32,7 +32,7 @@ for the handful of survivors anyway.
 
 import json
 
-from ..api_spider import BaseApiSpider, dig, strip_html
+from ..api_spider import BaseApiSpider, dig, logo_url, strip_html
 from ..job_filters import is_wanted, looks_like_internship, looks_like_parttime
 from ..loaders import JsonJobLoader
 
@@ -218,6 +218,24 @@ class TechCareerApiSpider(BaseApiSpider):
         loader.add_value("company", dig(head, "company.name"))
         loader.add_value("company", head.get("hiddenCompanyInfo"))
         loader.add_value("company", self.DEFAULT_VALUE)
+
+        # From the detail payload rather than the list record, even though
+        # `owner.logo` is right there in the list and would have to be carried
+        # through meta. Dumped 09.09.2026: head.company.logo holds the same
+        # url, so the detail is enough and parse_list keeps forwarding only
+        # the slug.
+        #
+        # It is empty exactly when head.company.name is - a posting whose
+        # employer is hidden, which is why the company falls back to
+        # hiddenCompanyInfo two lines up. A hidden employer has no logo to
+        # show either, so there is nothing to recover from the list side.
+        #
+        # The url is absolute and on cdn1.kariyer.net over plain http; that
+        # host has no working certificate, so logo_url() leaves the scheme
+        # alone rather than upgrading it into a dead link.
+        logo = logo_url(dig(head, "company.logo"), base=self.origin)
+        loader.add_value("company_logo_url", logo)
+        self.crawler.stats.inc_value("logo/found" if logo else "logo/missing")
 
         loader.add_value("location", head.get("location"))
         loader.add_value("location", self.DEFAULT_VALUE)

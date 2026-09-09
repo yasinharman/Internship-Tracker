@@ -53,13 +53,14 @@ export interface Job {
   source_site: string;
   source_label: string;
   /**
-   * The company's logo, as the source site's DOM had it.
+   * The company's logo, hotlinked from the source site's CDN.
    *
-   * Optional rather than `string | null` because the API does not send
-   * it yet - the column is not crawled. Typing it as always-present
-   * would be a claim about a payload that has no such key.
+   * null means the crawl saw no logo for THIS posting - not that the company
+   * has none. The scope is the row: a posting crawled before the column
+   * existed, or one whose card had not lazily loaded its image, stays null
+   * until that posting is crawled again.
    */
-  company_logo_url?: string | null;
+  company_logo_url: string | null;
   job_type: string | null;
   job_type_label: string | null;
   job_category: string | null;

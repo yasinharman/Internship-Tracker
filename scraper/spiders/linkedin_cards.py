@@ -62,7 +62,7 @@ import os
 import time
 from urllib.parse import urlencode
 
-from ..api_spider import BaseApiSpider
+from ..api_spider import BaseApiSpider, logo_url
 from ..job_filters import is_wanted, looks_like_internship, looks_like_parttime
 from ..loaders import JsonJobLoader
 from ..session_cookies import describe as describe_cookies
@@ -659,6 +659,26 @@ class LinkedinCardsSpider(BaseApiSpider):
         company = node_text(card, ".artdeco-entity-lockup__subtitle")
         loader.add_value("company", company)
         loader.add_value("company", self.DEFAULT_VALUE)
+
+        # The lockup's image slot, the sibling of the subtitle two lines up -
+        # LinkedIn's own component vocabulary, which this file already speaks.
+        # `.job-card-list__logo` is the same element under a second class.
+        #
+        # Measured 09.09.2026, one search page: 25 of 25 cards rendered and
+        # the logo is SERVER-RENDERED in the html we already have. The <img>
+        # carries loading="lazy" and a `lazy-image` class but its src is a
+        # real media.licdn.com url, not a placeholder - no `data-delayed-url`
+        # and no ghost anywhere in the card. So this costs nothing: no extra
+        # request, no detail page, which is what the docstring above refuses.
+        #
+        # An employer with no logo gets a ghost element rather than an <img>,
+        # so .get() returns None and the field stays absent.
+        logo = logo_url(
+            card.css(".artdeco-entity-lockup__image img::attr(src)").get(),
+            base=self.origin,
+        )
+        loader.add_value("company_logo_url", logo)
+        self.crawler.stats.inc_value("logo/found" if logo else "logo/missing")
 
         # "Istanbul, Türkiye (On-site)", "Greater Istanbul (Remote)",
         # "Sarıyer, Istanbul, Türkiye (Hybrid)" - stored as LinkedIn writes it.

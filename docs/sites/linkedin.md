@@ -139,6 +139,7 @@ rested address before concluding anything.
 | title | `a.job-card-list__title--link` **`aria-label`** |
 | company | `.artdeco-entity-lockup__subtitle` |
 | location | first `li` of `.artdeco-entity-lockup__caption` |
+| company_logo_url | `.artdeco-entity-lockup__image img::attr(src)` - the lockup's image slot, sibling of the two above |
 | url | rebuilt as `/jobs/view/<id>/` |
 
 Read the whole element's text, never `::text`. Ember writes its bindings as
@@ -179,6 +180,33 @@ useful, fetching descriptions is the lever - see below.
 
 Net effect on the board: LinkedIn contributes **68 visible postings**, more
 than Indeed's 38 on the same day.
+
+## The logo IS on the card, and it costs nothing - 09.09.2026
+
+Measured on one search page, after `page_actions` finishes scrolling: **25 of
+25 cards rendered, and every rendered card carries the employer's logo
+server-rendered in the html we already have.** Nesting:
+
+```
+.job-card-list__entity-lockup            (the lockup)
+  .job-card-list__logo                   (== .artdeco-entity-lockup__image)
+    .ivm-image-view-model
+      .ivm-view-attr__img-wrapper
+        <img src="https://media.licdn.com/dms/image/v2/.../company-logo_100_100/...">
+```
+
+Worth knowing before trusting it: the `<img>` says `loading="lazy"` and
+carries a `lazy-image` class, which normally means the src is a placeholder
+and the real url is in `data-delayed-url`. **It is not** - the src is a real
+`media.licdn.com` url, and neither `data-delayed-url` nor a `ghost-` class
+appears anywhere in the card. The asset is `company-logo_100_100`, i.e. 100px,
+displayed at 56.
+
+This is the one field the "no detail page" rule (below) does not cost us
+anything on: it is on the card, so reading it adds no request to the account
+we are least able to replace. An employer with no logo gets a ghost element
+instead of an `<img>`, so the selector returns nothing and the column stays
+NULL - `scraper/api_spider.logo_url()` has the rest of the rejection rules.
 
 ## No description, on purpose
 

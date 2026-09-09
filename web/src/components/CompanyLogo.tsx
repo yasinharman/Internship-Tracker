@@ -1,12 +1,14 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 
 /**
  * The company's mark, and the thing every card is built around.
  *
- * Three states, one tile:
- *   - a crawled logo url    -> the image itself
- *   - no url, filler on     -> a synthetic mark (preview only, see below)
- *   - no url, filler off    -> the company's initials
+ * Two states, one tile: the logo the crawl found, or the company's initials.
+ * There used to be a third - a synthetic coloured shape derived from the
+ * company name - which stood in while company_logo_url was not crawled yet.
+ * It went the moment the column started arriving: with real logos on the page
+ * a reader cannot tell an invented mark from a photographed one, and a board
+ * that looks like data while being made up is worse than a grey monogram.
  *
  * THE TILE IS LIGHT ON PURPOSE. Job boards serve logos drawn for a white
  * page - dark ink, frequently no transparency - so on this board's #0f0f10 a
@@ -15,33 +17,6 @@ import { useState, type ReactNode } from "react";
  * was designed to sit on. #e7e5e4 is the palette's existing light value
  * rather than a new colour, so the wall of tiles still belongs to the page.
  */
-
-/**
- * PREVIEW SCAFFOLDING - DELETE THIS CONST AND ITS BRANCH BELOW
- * ===========================================================
- * Nothing has been crawled into company_logo_url yet. With this off, every
- * card on the board shows the same grey monogram and the layout cannot be
- * judged at all - which is not a question about the design, only about the
- * data not being there.
- *
- * On, each company gets a deterministic mark: a shape and a colour derived
- * from its name, so the same company is the same mark on every card and the
- * grid reads the way it will read once the spiders fill the column.
- *
- * It stands in for a photograph, it is NOT the fallback. The fallback is the
- * monogram below, which is what a company with no logo on its source page
- * gets for real.
- */
-export const LOGO_FILLER = true;
-
-/** Stable per name, so a company keeps its mark across pages and reloads. */
-function hash(value: string): number {
-  let h = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    h = (h * 31 + value.charCodeAt(index)) | 0;
-  }
-  return Math.abs(h);
-}
 
 /** Turkish casing: locale-less toUpperCase turns "i" into "I", not "İ". */
 function initials(company: string): string {
@@ -54,31 +29,14 @@ function initials(company: string): string {
   return letters.toLocaleUpperCase("tr-TR");
 }
 
-// Brand-shaped colours rather than the board's neutrals: the point of the
-// filler is to stand in for a real logo, and real logos are not grey.
-const FILLS = [
-  "#f97316", "#e11d48", "#2563eb", "#7c3aed",
-  "#0891b2", "#16a34a", "#ca8a04", "#db2777",
-];
-
-const MARKS: ReactNode[] = [
-  <circle cx="12" cy="12" r="7.5" />,
-  <rect x="4.5" y="4.5" width="15" height="15" />,
-  <path d="M12 3.5 20.5 20.5 3.5 20.5Z" />,
-  <path d="M12 3 21 12 12 21 3 12Z" />,
-  <path d="M4 20 12 4 20 20 12 14.5Z" />,
-  <g>
-    <circle cx="9.5" cy="12" r="6.5" />
-    <circle cx="14.5" cy="12" r="6.5" fillOpacity="0.55" />
-  </g>,
-  <path d="M4 6h16v4H4zM4 14h10v4H4z" />,
-  <path d="M12 3l9 5.5v11L12 21 3 19.5v-11z" />,
-];
-
 interface Props {
   company: string | null;
-  /** As the source site's DOM had it. Absent on every row crawled before the
-   *  spiders started reading it, which today is all of them. */
+  /**
+   * As the source site's CDN serves it. Null for a posting the crawl found no
+   * logo for, and for every row crawled before the column existed - the scope
+   * is the posting, not the employer, so the same company can have one here
+   * and not on its neighbour.
+   */
   logoUrl?: string | null;
   /** Tailwind size for the tile. */
   className?: string;
@@ -89,7 +47,13 @@ interface Props {
 export function CompanyLogo({ company, logoUrl, className = "size-14", dimmed = false }: Props) {
   const [broken, setBroken] = useState(false);
   const name = company?.trim() ?? "";
-  const tile = `flex shrink-0 items-center justify-center overflow-hidden bg-accent ${
+  // bg-white, not the palette's #e7e5e4. Job boards bake a white background
+  // into the asset itself - LinkedIn's company-logo_100_100 is a padded white
+  // square - so a warm-grey tile put a visible second square inside the first
+  // one, which reads as the logo not fitting its slot. On white the seam
+  // disappears and a logo with real transparency still lands on the
+  // background it was drawn for.
+  const tile = `flex shrink-0 items-center justify-center overflow-hidden bg-white ${
     dimmed ? "opacity-40 saturate-50" : ""
   } ${className}`;
 
@@ -102,24 +66,24 @@ export function CompanyLogo({ company, logoUrl, className = "size-14", dimmed = 
           loading="lazy"
           // These are hotlinked off the source site's CDN, some of which
           // refuse a request carrying a foreign origin as its referrer and
-          // answer the same request without one.
+          // answer the same request without one. Measured 09.09.2026:
+          // img-kariyer.mncdn.com does not care either way, but the header
+          // costs nothing to withhold.
           referrerPolicy="no-referrer"
           // A 404, a hotlink block or a dead CDN falls through to the
-          // monogram rather than leaving a broken-image glyph in the grid.
+          // initials rather than leaving a broken-image glyph in the grid.
+          // This is also what absorbs a logo an employer has since replaced,
+          // which is why the crawler is allowed to keep a url it cannot
+          // re-confirm - see scraper/pipelines.py.
           onError={() => setBroken(true)}
-          className="size-full object-contain p-1.5"
+          // 2px of breathing room, not 6. The assets already carry their
+          // own margin - LinkedIn's company-logo_100_100 is a padded square -
+          // so ours was being added on top of theirs and the mark sat small
+          // in the middle of its tile. A wordmark still letterboxes top and
+          // bottom: object-contain will not crop a logo to fill a square, and
+          // cropping is the one thing a logo must never have done to it.
+          className="size-full object-contain p-0.5"
         />
-      </div>
-    );
-  }
-
-  if (LOGO_FILLER && name) {
-    const seed = hash(name);
-    return (
-      <div className={tile} aria-hidden>
-        <svg viewBox="0 0 24 24" className="size-full p-2.5" fill={FILLS[seed % FILLS.length]}>
-          {MARKS[seed % MARKS.length]}
-        </svg>
       </div>
     );
   }

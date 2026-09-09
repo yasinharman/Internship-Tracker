@@ -72,9 +72,26 @@ List: `id`, `title`, `slug`, `jobTitle`, `jobTitleEn`, `location`,
 `workPlaces`, `owner.name`, `owner.logo`. **No working-type field** - which is
 why the full scan has to match on the title.
 
-Detail: `head.title`, `head.company.name`, `head.location`,
-`head.typeOfWorks`, `head.startDate`/`endDate`, `head.workPlaces`,
-`content.description` (HTML), `content.skills`.
+Detail: `head.title`, `head.company.name`, **`head.company.logo`**,
+`head.location`, `head.typeOfWorks`, `head.startDate`/`endDate`,
+`head.workPlaces`, `content.description` (HTML), `content.skills`.
+
+**The logo is in both payloads, and the detail one is enough - dumped
+09.09.2026.** `owner.logo` on the list record and `head.company.logo` on the
+detail record hold the same url, so the spider reads the detail and
+`parse_list` keeps forwarding nothing but the slug. Both are empty for a
+posting whose employer is hidden - exactly when `head.company.name` is empty
+and the spider falls back to `hiddenCompanyInfo` - and a hidden employer has
+no logo to recover from the list side either.
+
+**The url is `http://`, and it has to stay that way.** It points at
+`cdn1.kariyer.net`, which serves the image over plain http (200) but has no
+working certificate: `curl` on the `https://` form fails with exit 60. So
+`logo_url()` leaves an absolute `http://` alone rather than upgrading the
+scheme, and a board served over https would have these blocked as mixed
+content. Note that this is a DIFFERENT host from the one kariyer.net's own
+cards point at (`img-kariyer.mncdn.com`, https, fine) even though the two
+sites share an owner.
 
 ## Yield
 

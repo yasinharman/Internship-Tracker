@@ -41,6 +41,7 @@ class KariyerNetLoader(BaseJobLoader):
     location_in = MapCompose(clean_up_n)
     job_type_in = MapCompose(clean_up_n)
     url_in = MapCompose(clean_up_n)
+    company_logo_url_in = MapCompose(clean_up_n)
     source_site_in = MapCompose(clean_up_n)
     
     job_description_in = MapCompose(clean_up_n, str.strip)
@@ -83,6 +84,7 @@ class JsonJobLoader(BaseJobLoader):
     location_in = MapCompose(to_text, compress_whitespace)
     job_type_in = MapCompose(to_text, compress_whitespace)
     url_in = MapCompose(to_text, clean_up_n)
+    company_logo_url_in = MapCompose(to_text, clean_up_n)
     source_site_in = MapCompose(to_text, clean_up_n)
 
     job_description_in = MapCompose(to_text, compress_whitespace)
