@@ -420,26 +420,62 @@ which as of 10.09.2026 starts refusing after about ten pages
 (`docs/sites/kariyernet.md`), that is ~46 crawl navigations plus one per
 stored posting.
 
-Reordering does not reduce that number. The lever that does is
+Reordering does not reduce that number. The only lever that does is
+`OPENINGS_MAX_PER_SITE`, and **it is a worse trade than it looks**, for a
+reason that is easy to miss: the checker is not only answering "is this still
+open". For half the sites it is the only thing that ever reads the posting.
 
-```bash
-OPENINGS_MAX_PER_SITE=25
-```
+### WHERE A DESCRIPTION ACTUALLY COMES FROM - measured 10.09.2026
 
-`scraper/openings.py` orders the queue `checked_at ASC NULLS FIRST`, so a cap
-is fair rather than arbitrary: every row still gets its turn, just over more
-nights. Unset today (0 = no cap).
+| Site | From the crawl | From the checker |
+|---|---|---|
+| kariyer.net | **the full text** - it fetches the posting page for every card it keeps; 630-2 537 chars measured | the same container again, so a refresh |
+| techcareer.net | **the full text** - it is already in the Next.js payload the listing returns | a refresh |
+| Indeed | the `snippet` only - a teaser sentence. `docs/sites/indeed.md` turned down a `/viewjob` per posting at ~75 requests a day | **the full text**, out of the `/viewjob` it fetches anyway |
+| LinkedIn | **nothing.** `linkedin_cards` writes the literal `"N/A"` - there is no snippet on a card to take | **the only source there is** |
+
+So a cap does completely different damage per site:
+
+* on **kariyer.net** it is nearly free where descriptions are concerned - the
+  crawl already stored the full text and the checker is only refreshing it.
+  What a cap costs there is the freshness of open/closed, nothing else.
+* on **LinkedIn** it is destructive. Cap the checker and the classifier goes
+  back to deciding from the title, which is exactly the failure fixed on
+  09.09.2026 - and LinkedIn is the largest set, 487 rows that day.
+
+Descriptions are also what makes a cheaper classifier defensible at all: the
+model comparison in "Choosing the model" above was run almost entirely on
+titles, and both errors that disqualified `gpt-5.4-nano` were title-reading
+errors. Starving the checker undoes the premise of ever re-running it.
+
+**And the knob cannot tell the sites apart.** `MAX_PER_SITE` is read once at
+module import in `scraper/openings.py` and applied to every checker, so
+"limit kariyer.net but leave LinkedIn alone" is not expressible today. If a
+cap is ever genuinely needed, make it per site first - `KARIYERNET_MAX_PER_SITE`
+falling back to `OPENINGS_MAX_PER_SITE` - rather than reaching for the global
+one and quietly paying for it on LinkedIn.
+
+### What the cap does, for when it is needed
+
+`LIMIT n` on that query, per checker run, ordered `checked_at ASC NULLS
+FIRST`: never-checked rows first, then longest-ago. So the cap is fair rather
+than arbitrary - with 100 rows and a cap of 25, every row is still checked,
+just once every four nights instead of every night. Unset today (0 = no cap).
 
 ### Decision
 
-Keep `crawl -> dedupe -> notify -> check -> classify`. Fix `--spider` so it
-runs only its own checker. Reach for `OPENINGS_MAX_PER_SITE` if a site starts
-refusing the check after a clean crawl.
+Keep `crawl -> dedupe -> notify -> check -> classify`, with one classify run
+for everything. Fix `--spider` so it runs only its own checker. **Leave
+`OPENINGS_MAX_PER_SITE` at 0** - kariyer.net's block problem is answered by
+`BLOCK_COOLDOWN_S` (wait ten minutes, carry on) rather than by checking fewer
+postings, and that answer costs no descriptions.
 
 Revisit if any of these change:
 
 * classify grows a `--site` flag for another reason, making the split free
 * a site is measured to refuse its checker *because of* its own crawl an hour
   earlier - which would make the gap, not the volume, the thing to lengthen
+* a checker still cannot finish after the cool-off - then make the cap per
+  site, and cap the site whose crawl already carries the description
 * the crawl set grows enough that one classify run stops finishing inside
   `CLASSIFY_TIMEOUT`
