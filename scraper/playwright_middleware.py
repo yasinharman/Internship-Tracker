@@ -119,7 +119,6 @@ class PlaywrightMiddleware:
         # headless is the difference between a crawl and a block page on
         # kariyer.net while being free everywhere else.
         self.headless = None
-        self.profile_dir = None
         self.storage_state_env = None
         self.storage_state_path = None
 
@@ -129,6 +128,8 @@ class PlaywrightMiddleware:
 
         self._worker = None
         self._spider = None
+        self._browser = None
+        self._context_kwargs = {}
         self._job_queue = queue.Queue()
         self._ready = threading.Event()
         self._startup_error = None
@@ -150,12 +151,10 @@ class PlaywrightMiddleware:
 
         self._spider = spider
         self._resolve_headless(spider)
-        self._resolve_profile_dir(spider)
         self._resolve_storage_state(spider)
         logger.info(
-            "Starting Playwright (headless=%s, channel=%s, profile=%s) for %s",
-            self.headless, self.channel or "bundled chromium",
-            self.profile_dir or "ephemeral", spider.name,
+            "Starting Playwright (headless=%s, channel=%s) for %s",
+            self.headless, self.channel or "bundled chromium", spider.name,
         )
         self._worker = threading.Thread(
             target=self._worker_main, name="playwright-" + spider.name,
@@ -222,37 +221,6 @@ class PlaywrightMiddleware:
             f"- that is a real window on a virtual screen, not headless."
         )
 
-    ###################################################################
-    # A PROFILE THAT SURVIVES THE NIGHT                               #
-    ###################################################################
-    def _resolve_profile_dir(self, spider):
-        """
-        Where this spider's browser keeps its cookies, history and storage
-        between runs, or None for a fresh one every time.
-
-        A person visiting kariyer.net every other day arrives with the
-        visitor id PerimeterX gave them weeks ago; a crawl that builds a new
-        context each night arrives as a stranger, every night, forever. The
-        directory costs nothing and makes the second visit look like a second
-        visit.
-
-        Deliberately NOT combinable with a storage-state file: Playwright's
-        persistent context owns its own on-disk state and `storage_state` is
-        an argument to the ephemeral one. A spider that carries a signed-in
-        session wants the file; a spider that just wants to be a returning
-        anonymous visitor wants the directory. Nobody needs both, and letting
-        both through would quietly ignore one of them.
-        """
-        configured = getattr(spider, "PLAYWRIGHT_PROFILE_DIR", None)
-        raw = (os.getenv("PLAYWRIGHT_PROFILE_DIR") or configured or "").strip()
-        if not raw:
-            self.profile_dir = None
-            return
-
-        path = os.path.abspath(os.path.expanduser(raw))
-        os.makedirs(path, exist_ok=True)
-        self.profile_dir = path
-
     def _resolve_storage_state(self, spider):
         """
         Which exported session belongs to THIS spider.
@@ -286,16 +254,6 @@ class PlaywrightMiddleware:
         self.storage_state_env = env_var
         self.storage_state_path = raw_path or None
 
-        if self.storage_state_path and self.profile_dir:
-            raise RuntimeError(
-                f"{spider.name} has both a persistent profile "
-                f"({self.profile_dir}) and a storage-state file "
-                f"({env_var}={raw_path}). Playwright can honour only one - a "
-                f"persistent context owns its own on-disk state - so one of "
-                f"them would be silently ignored and the run would carry a "
-                f"session nobody could point at. Pick one."
-            )
-
     def _worker_main(self):
         try:
             from playwright.sync_api import sync_playwright
@@ -315,14 +273,12 @@ class PlaywrightMiddleware:
                     "viewport": {"width": 1280, "height": 800},
                 }
 
-                if self.profile_dir:
-                    browser, context = self._open_persistent(
-                        p, launch_kwargs, context_kwargs
-                    )
-                else:
-                    browser, context = self._open_ephemeral(
-                        p, launch_kwargs, context_kwargs
-                    )
+                browser, context = self._open_ephemeral(
+                    p, launch_kwargs, context_kwargs
+                )
+                # Kept so _fresh_context can make more of them mid-run.
+                self._browser = browser
+                self._context_kwargs = context_kwargs
 
                 self._seed_cookies(context)
 
@@ -330,8 +286,7 @@ class PlaywrightMiddleware:
                 self._run_job_loop(context)
 
                 context.close()
-                if browser is not None:
-                    browser.close()
+                browser.close()
         except Exception as error:
             self._startup_error = error
             self._ready.set()
@@ -360,36 +315,46 @@ class PlaywrightMiddleware:
         }
 
     ###################################################################
-    # A BROWSER THAT REMEMBERS LAST NIGHT                             #
+    # ARRIVING AS SOMEBODY WHO HAS NOT BEEN HERE BEFORE               #
     ###################################################################
-    def _open_persistent(self, p, launch_kwargs, context_kwargs):
-        """
-        One on-disk profile, reused every run. Returns (None, context) -
-        launch_persistent_context hands back the context and owns the browser
-        behind it, so there is no separate object to close.
+    '''
+        A navigation may ask, via meta["fresh_context"], to be made from a
+        brand-new browser context - its own cookie jar, its own storage,
+        nothing carried in from the pages before it. The rest of the run
+        keeps sharing one context, which is what a session normally is.
 
-        No user_agent override on this path, unlike the ephemeral one below.
-        The correction there exists for exactly one string, "HeadlessChrome",
-        and a profile directory is what a spider that must run windowed asks
-        for - so on this path the browser's own answer is already true and
-        editing it would only reintroduce the mismatch the comment below
-        spent a paragraph removing. The warning covers the combination
-        nobody has asked for yet.
-        """
-        if self.headless:
-            logger.warning(
-                "Persistent profile with headless=True: navigator.userAgent "
-                "will read HeadlessChrome, which this path does not rewrite. "
-                "If that matters here, the spider probably wants a window."
-            )
-        context = p.chromium.launch_persistent_context(
-            self.profile_dir, **launch_kwargs, **context_kwargs
-        )
-        logger.info(
-            "Browser profile kept at %s - cookies and storage from the "
-            "previous run come with it.", self.profile_dir,
-        )
-        return None, context
+        WHY THAT EXISTS, MEASURED 10.09.2026 ON kariyer.net. Its posting
+        pages sit behind a stricter PerimeterX policy than its listing pages,
+        and the thing that policy refuses is a request carrying a _px3 cookie
+        earned somewhere else. Arriving with no cookie at all is served.
+
+        The afternoon that established this changed two variables together
+        and cost hours for it: every automated probe loaded the listing
+        first, and the un-driven control browser went straight to a posting.
+        "Automated" and "arrived carrying a listing's cookie" moved as one,
+        so the conclusion was "PerimeterX detects automation", which was
+        wrong. Separated:
+
+            fresh context, first navigation IS the posting     200, 377 kB
+            the same, again, another posting                   200, 395 kB
+            one context, posting after posting, no listing     #1 200,
+                                                               #2-8 all 403
+            new context per posting, one browser throughout    5 of 5 at 200
+
+        So the allowance is per cookie jar, not per browser, not per address,
+        and not per automation protocol - Chrome, Chromium and Firefox were
+        all refused equally while carrying one, and all served without one.
+        A context costs 4ms to make, so the fix is as cheap as it is silly.
+
+        Note what this is NOT doing: nothing is forged, no challenge is
+        answered, no automation is hidden. Each posting is opened by a
+        browser that has not been to the site before, which is what a person
+        opening a link in a private window looks like.
+    '''
+    def _fresh_context(self):
+        context = self._browser.new_context(**self._context_kwargs)
+        self.crawler.stats.inc_value("playwright/fresh_contexts")
+        return context
 
     def _open_ephemeral(self, p, launch_kwargs, context_kwargs):
         """A fresh context per run, the way this middleware started."""
@@ -522,8 +487,16 @@ class PlaywrightMiddleware:
             # message-less TimeoutError upstream looks like from here.
             logger.debug("worker dequeued %s", request.url[:80])
             page = None
+            # A request that asked to arrive as a new visitor gets its own
+            # context, thrown away afterwards - see _fresh_context. Everything
+            # else shares the run's, which is what a session normally is.
+            visitor = None
             try:
-                page = context.new_page()
+                if request.meta.get("fresh_context"):
+                    visitor = self._fresh_context()
+                    page = visitor.new_page()
+                else:
+                    page = context.new_page()
                 future.set_result(self._navigate(page, request))
             except Exception as error:
                 future.set_exception(error)
@@ -537,6 +510,13 @@ class PlaywrightMiddleware:
                         # take the loop down with it - the next job gets a new
                         # page and has every chance of working.
                         logger.debug("could not close page: %s", error)
+                if visitor is not None:
+                    try:
+                        # Closing it is the whole point: the cookies it just
+                        # earned must not reach the next posting.
+                        visitor.close()
+                    except Exception as error:
+                        logger.debug("could not close context: %s", error)
 
     ###################################################################
     # ONE NAVIGATION, RUNS ON THE WORKER THREAD                       #

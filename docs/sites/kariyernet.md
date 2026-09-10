@@ -1,9 +1,16 @@
 # kariyer.net
 
 **Status:** migrated - `spiders/kariyernet_cards.py`. The old DOM spider has
-been deleted; it is in git history if ever needed. **Transport: a real
-Chromium with a real window** since 10.09.2026 - see the next section, which
-is the one that matters if the crawl ever comes back empty.
+been deleted; it is in git history if ever needed. **Transport since
+10.09.2026: a real Chromium, with a real window, opening every page from a
+browser context that has never been to the site.** Both halves of that are
+load bearing and neither is obvious - "Two gates, not one" below is the
+section to read if the crawl ever comes back empty.
+
+**Not yet verified on a rested address.** Everything measured on 10.09 was
+measured on an address that had taken about a hundred refusals that
+afternoon, and the run that proved the fix (34 consecutive successes, up from
+7) was refused again afterwards. Treat the numbers as a floor.
 
 **Investigated 27.07.2026:**
 
@@ -15,6 +22,71 @@ is the one that matters if the crawl ever comes back empty.
 | Listings per page | 16 |
 | Structured data | `application/ld+json` is only a BreadcrumbList - useless. Job data lives in `window.__NUXT__` as `positionName` / `positionId` |
 
+
+## Two gates, not one - and the second one is the cookie
+
+**Read this before the two sections below it**, both of which were written
+earlier the same day and each of which states its mechanism with more
+confidence than it had earned.
+
+kariyer.net has **two separate routes with different policies**, and it took
+most of 10.09.2026 to see that:
+
+| | `/is-ilanlari/*` listing | `/is-ilani/*` posting |
+|---|---|---|
+| headless browser | refused | refused |
+| windowed browser, no cookies | **served** | **served** |
+| windowed browser carrying a `_px3` from another page | served (mostly) | **refused** |
+| curl_cffi, any handshake | refused | refused |
+
+So there are two gates and both are real:
+
+1. **A window.** Measured by interleaving headless and headed launches in the
+   same minute - 9 495 bytes and zero cards against 621 kB and 36 of them,
+   twice each. This gate is on both routes and the section below has it right.
+
+2. **An unused cookie jar.** The posting route refuses a request carrying a
+   `_px3` earned somewhere else, and serves one carrying nothing. One context
+   managed exactly one posting; a new context per posting managed five of
+   five, description container in every one. Nothing about automation is
+   involved - Chrome, Chromium and Firefox were refused identically while
+   carrying a cookie, and a plain un-driven Chrome was refused the same way
+   once it had one.
+
+### What the earlier sections get wrong
+
+**"PerimeterX refuses a browser with no window"** describes gate 1 and reads
+as if it were the whole answer. It is not - it explains the listing route and
+misses the posting route entirely, which is why the first live run collected
+seven descriptions and then nothing.
+
+**"A page has to live long enough to be read"** proposes that a page torn
+down 300ms after DOMContentLoaded never lets the PerimeterX sensor post, so
+`_px3` goes stale. Good theory, and it died: a later probe gave posting pages
+a four-second dwell, counted TEN sensor requests on each, and every one was
+still refused. The dwell is kept because every passing measurement used it,
+not because it is the mechanism.
+
+### How the spider is shaped by this
+
+`default_meta()` puts `fresh_context: True` on **every** request, listing
+pages included. It was on detail requests alone for one run, on the grounds
+that listings had never been refused while sharing a context - and that run
+had its SECOND listing page refused. One rule instead of two, and there is no
+second rule to forget when a new kind of request is added.
+
+### What is still not known
+
+**Whether this holds on a rested address.** Everything above was measured on
+an address that had taken roughly a hundred refusals that afternoon, and the
+run that put the fix through 34 consecutive successes was then refused again
+- with the owner's own browser getting the press-and-hold challenge shortly
+after. So 34 is a floor measured under bad conditions, not a limit.
+
+**What the pacing should be.** 8 seconds between requests is what the 34 were
+collected at, which is far too brisk for a site that ends the run at 35. The
+crawl is ~50 requests and runs overnight; three minutes apart would fit in
+2.5 hours and is a completely different kind of visitor. Untested.
 
 ## PerimeterX refuses a browser with no window - MEASURED 10.09.2026
 
@@ -89,17 +161,21 @@ which is the entire distinction the site is drawing. The middleware prints
 this command if it is asked for a window and finds neither `DISPLAY` nor
 `WAYLAND_DISPLAY`.
 
-### The browser keeps its profile
+### ~~The browser keeps its profile~~ - REVERSED THE SAME DAY
 
-`~/.cache/internship-tracker/browser-profiles/kariyernet`, shared with
-`kariyernet_check`. A person who checks this site every other day arrives
-carrying the visitor id PerimeterX gave them weeks ago; a fresh context every
-night arrives as a stranger every night. **This is not what unblocked the
-site** - the window did that, and every passing measurement above used a
-throwaway profile - so do not read it as load bearing. Chrome locks a profile
-while it has it open, so the two spiders must not run at the same time;
-`main.py` runs each as its own sequential subprocess, which is what makes it
-safe.
+A persistent profile at `~/.cache/internship-tracker/browser-profiles/`
+was added here on the theory that a returning visitor should look like one.
+The section admitted in its own words that it was "not load bearing", which
+should have been enough reason not to add it.
+
+By the afternoon it was actively wrong. The whole mechanism turned out to be
+**arriving with no cookies at all** (see "Two gates" above), so a profile
+that carries state between runs is the opposite of what the posting route
+wants - and the one profile that HAD accumulated state had accumulated a
+hundred refusals with it, giving every run a poisoned `_pxvid` to start from.
+
+Removed. It is in git history. The lesson generalises and is written up in
+[README.md](README.md#how-to-work-on-a-spider-without-wrecking-the-address---10092026).
 
 ### What was removed
 

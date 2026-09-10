@@ -5,20 +5,19 @@ IS THIS kariyer.net POSTING STILL OPEN?
     python -m scrapy crawl kariyernet_check                 write them
 
 Subclasses the crawl spider so the transport comes along - a real windowed
-browser, the profile directory it keeps between runs and the delay between
-navigations. Only the urls and the verdict differ. See scraper/openings.py
-for why this is a spider at all.
+browser and the delay between navigations. Only the urls and the verdict
+differ. See scraper/openings.py for why this is a spider at all.
 
-IT SHARES THE BROWSER PROFILE, so it must not run while kariyernet_cards is
-running: Chrome locks a profile directory while it has it open, and the
-second launch fails outright rather than quietly making do. main.py runs
-every spider as its own sequential subprocess, which is what makes that safe;
-two hand-started `scrapy crawl` commands in two terminals is what does not.
+EVERY PROBE IS A POSTING PAGE, so every probe needs its own browser context.
+That is the whole finding of 10.09.2026 and it is not optional here: this
+spider does nothing BUT fetch posting pages, so without it the first probe
+succeeds and every one after it is refused. probe_request below sets the
+flag; the measurement is in kariyernet_cards.
 
 IT NEEDS A WINDOW TOO, inherited from NEEDS_A_WINDOW on the parent. Headless
 does not fail here, it lies: PerimeterX answers it with a block page that
 carries neither an apply button nor a description container, which is
-verdict() 's exact definition of UNKNOWN. A headless run would therefore
+verdict()'s exact definition of UNKNOWN. A headless run would therefore
 report every posting in the database as unverifiable rather than as blocked.
 """
 
@@ -35,6 +34,20 @@ class KariyerNetCheckSpider(OpeningCheckMixin, KariyerNetCardsSpider):
         **KariyerNetCardsSpider.custom_settings,
         "ITEM_PIPELINES": {},
     }
+
+    def probe_request(self, posting):
+        """
+        One probe per posting, each from a browser that has never been to the
+        site - see the module docstring and kariyernet_cards.
+
+        The parent's request is taken and its meta added to rather than
+        rebuilt, so anything openings.py starts putting there (it owns
+        posting_id, and dont_filter is load bearing) keeps arriving.
+        """
+        request = super().probe_request(posting)
+        if request is not None:
+            request.meta["fresh_context"] = True
+        return request
 
     def verdict(self, response):
         """

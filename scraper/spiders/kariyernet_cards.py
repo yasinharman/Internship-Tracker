@@ -215,35 +215,54 @@ class KariyerNetCardsSpider(BaseApiSpider):
     STORAGE_STATE_ENV = "KARIYERNET_STORAGE_STATE"
 
     ###############################################################
-    # THE BROWSER KEEPS ITS PROFILE BETWEEN RUNS                  #
+    # A POSTING PAGE IS OPENED BY SOMEBODY WHO HAS JUST ARRIVED   #
     ###############################################################
     '''
-        A person who checks this site every other day arrives carrying the
-        visitor id PerimeterX gave them weeks ago. A crawl that builds a fresh
-        context every night arrives as a stranger every night, forever.
+        The second measurement of 10.09.2026, and the one that actually got
+        the descriptions.
 
-        The directory costs nothing and it is the closest thing to what the
-        human actually does, which is the whole brief for this spider. It is
-        NOT what unblocked the site - the window did that, and the measurement
-        above passed with throwaway profiles - so do not read this as load
-        bearing. It is here because a second visit should look like one.
+        The window got the LISTING pages. Posting pages kept refusing, and
+        for most of an afternoon that looked like PerimeterX detecting
+        automation: Chrome, Chromium and Firefox were all refused, over CDP
+        and over Juggler alike, while a plain `google-chrome` opened the same
+        posting twice in a row from the same address.
 
-        One directory, shared with kariyernet_check, which subclasses this.
-        Chrome locks a profile while it is open, so the two must not run at
-        the same time; main.py runs every spider as its own sequential
-        subprocess, so they do not.
+        Two variables had been moving together the whole time. Every
+        automated probe loaded the listing first, because that is the human
+        path and it is where the urls come from. The un-driven control went
+        STRAIGHT to a posting. So "automated" and "arrived carrying a cookie
+        the listing had set" were never separated. Separating them:
 
-        UNDER ~/.cache, NOT UNDER THE REPO. A profile inside the checkout
-        would be a different profile in every git worktree, so the returning
-        visitor would go back to being a stranger the moment anyone worked on
-        a branch - which is precisely the property this is here for. It also
-        keeps a browser cache out of a directory people grep. Override with
-        PLAYWRIGHT_PROFILE_DIR.
+            fresh context, first navigation IS the posting     200, 377 kB
+            the same again, another posting                    200, 395 kB
+            one context, posting after posting, no listing     #1 200,
+                                                               #2-8 all 403
+            NEW CONTEXT PER POSTING, one browser throughout    5 of 5 at 200,
+                                                               description
+                                                               container in
+                                                               every one
+
+        So the posting route refuses a request carrying a `_px3` earned
+        somewhere else, and serves one carrying nothing. The allowance is per
+        cookie jar - not per browser, not per address, not per automation
+        protocol. And a context costs FOUR MILLISECONDS to make.
+
+        Hence `fresh_context` on the detail request. The listing requests do
+        not set it: they share the run's context happily, three of them in a
+        row on the first live run, all 200.
+
+        WHAT THIS IS NOT. Nothing is forged, no challenge is answered, no
+        automation is concealed. Each posting is opened by a browser that has
+        not been to the site before - which is what a person opening a link
+        in a fresh private window looks like.
+
+        THE PERSISTENT PROFILE THAT USED TO BE HERE IS GONE. It was added
+        the same morning on the theory that a returning visitor should look
+        like one, and flagged in its own comment as not load bearing. This
+        measurement makes it actively wrong: the whole point is to arrive
+        with no history, and the one profile that HAD accumulated history had
+        accumulated a hundred refusals with it. It is in git history.
     '''
-    PLAYWRIGHT_PROFILE_DIR = os.path.join(
-        os.getenv("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
-        "internship-tracker", "browser-profiles", "kariyernet",
-    )
 
     # The identity in browser_session.py that describes THIS machine rather
     # than a plausible other one. Under Playwright almost all of these headers
@@ -359,41 +378,37 @@ class KariyerNetCardsSpider(BaseApiSpider):
     SCROLL_SETTLE_MS = 400
 
     ###############################################################
-    # A PAGE HAS TO LIVE LONG ENOUGH TO BE READ                   #
+    # A PAGE IS LEFT OPEN LONG ENOUGH TO FINISH LOADING           #
     ###############################################################
     '''
-        MEASURED 10.09.2026, and it cost the first live run its second half.
+        THIS WAS ADDED FOR A REASON THAT TURNED OUT TO BE WRONG, and the
+        wrong reason is worth keeping because it was a good theory that
+        survived one measurement and died to the next.
 
-        PlaywrightMiddleware opens a page, navigates, hands it here and closes
-        it. With no actions to run, a posting page therefore existed for the
-        length of `goto` and no longer - 0.1 to 0.6 seconds, DOMContentLoaded
-        and gone. The run's shape came out like this:
+        The theory. PlaywrightMiddleware opens a page, navigates, and closes
+        it, so with no actions defined a posting page existed for the length
+        of `goto` and no longer - 0.1 to 0.6 seconds. The first live run
+        served two listing pages that had been scrolled for seconds and seven
+        posting pages that had not, then refused everything after. Counting
+        directly with a request handler, a listing page given a four-second
+        dwell made FOUR PerimeterX sensor requests, and a page torn down 300ms
+        after DOMContentLoaded makes none. So: the sensor never gets to post,
+        `_px3` is never refreshed, and it goes stale.
 
-            listing page 1   scrolled 2.6s     200
-            7 posting pages  ~0.3s each        200
-            listing page 2   scrolled 1.7s     200
-            every request after that           403, press-and-hold
+        Why it is wrong. A later probe gave posting pages a four-second dwell
+        and counted TEN sensor requests on each - and every one of them was
+        still refused. The sensor was running fine. What actually decides it
+        is whether the request carries a `_px3` earned somewhere else at all;
+        see "A POSTING PAGE IS OPENED BY SOMEBODY WHO HAS JUST ARRIVED".
 
-        The two pages that lived for seconds were served. The pages that lived
-        for a fraction of one were served seven times and then never again.
+        Why it stays. Four seconds is what every passing measurement used,
+        including the five-of-five that settled the design, so removing it
+        now would change the one thing that is known to work in order to save
+        three minutes on an overnight job. It is also just true that a page
+        should be allowed to finish loading before it is read.
 
-        WHY THAT IS THE LIKELY MECHANISM. PerimeterX's sensor is javascript on
-        the page; it collects, then POSTs to its collector, and the response is
-        what re-issues `_px3` with a score attached. Counted directly on a
-        listing page with a four-second dwell: FOUR sensor requests. A page
-        torn down 300ms after DOMContentLoaded has not made any of them, so
-        the crawl was spending the one good `_px3` the first page earned and
-        never refreshing it. When it went stale, everything was refused.
-
-        So the dwell is not politeness and it is not a rate limit. It is
-        leaving the page open long enough to finish loading - which is the
-        one thing a person does that this spider was not doing.
-
-        FOUR SECONDS because that is where the sensor calls were counted, not
-        because four was tuned to be the minimum. It could well be less. At
-        roughly 30 postings a run it costs two minutes on a job that runs
-        overnight, so nobody has spent a measurement finding out - and each
-        measurement of this costs the address some credit with the site.
+        Treat it as unmeasured rather than as load bearing. If it ever needs
+        to go, take it out on its own and watch the item count.
     '''
     POSTING_DWELL_S = 4
 
@@ -470,12 +485,26 @@ class KariyerNetCardsSpider(BaseApiSpider):
 
     def default_meta(self):
         """
-        Meta that belongs on every request, warm-up included - see the base
-        class. Nothing to add now that the transport is a browser: the
-        impersonation token this used to carry described a handshake curl_cffi
-        would replay, and there is no curl_cffi here any more.
+        Meta that belongs on EVERY request, warm-up included - see the base
+        class.
+
+        `fresh_context` is here rather than on the detail requests alone, and
+        it moved on 10.09.2026 after one run said so. The theory was that only
+        posting pages needed a clean cookie jar, because listing pages had
+        never been refused while sharing one - three of them in a row on the
+        first live run. It stopped being true the same afternoon: with the
+        address tired from a day of measurements, the SECOND listing page in
+        a shared context was refused too.
+
+        There is no reason to keep the distinction. A context costs four
+        milliseconds, the site serves a browser that arrives carrying nothing,
+        and "every page is opened by someone who has just got here" is one
+        rule instead of two - which also means there is no second rule to
+        forget when a new kind of request is added.
+
+        The impersonation token this used to carry is gone with curl_cffi.
         """
-        return {}
+        return {"fresh_context": True}
 
     ###############################################################
     # PAGINATION IDENTITY - THE POSTING LINK, NOT THE ELEMENT     #
@@ -571,11 +600,16 @@ class KariyerNetCardsSpider(BaseApiSpider):
 
             # The description only exists on the posting page. This is the
             # only request we spend per posting, and only for the ones we want.
+            #
+            # fresh_context is what makes it answerable at all - see "A
+            # POSTING PAGE IS OPENED BY SOMEBODY WHO HAS JUST ARRIVED" above.
+            # The referer stays, because it is true and it is what a person's
+            # browser would send; it is simply not the thing that mattered.
             yield self.document_request(
                 response.urljoin(href),
                 callback=self.parse_detail,
                 referer=response.url,
-                meta={"partial_item": partial},
+                meta={"partial_item": partial, "fresh_context": True},
             )
 
         search_key = response.meta["search_key"]

@@ -97,3 +97,35 @@ def test_kariyernet_does_not_borrow_indeeds_session():
     assert IndeedCardsSpider.STORAGE_STATE_ENV == "INDEED_STORAGE_STATE"
     assert (KariyerNetCardsSpider.STORAGE_STATE_ENV
             != IndeedCardsSpider.STORAGE_STATE_ENV)
+
+
+###############################################################
+# EVERY POSTING PAGE ARRIVES AS A NEW VISITOR                 #
+###############################################################
+"""
+    MEASURED 10.09.2026: kariyer.net serves a posting page to a browser
+    carrying no cookies and refuses one carrying a `_px3` earned on the
+    listing. One context managed exactly one posting; a new context per
+    posting managed five of five. The flag is the whole mechanism, and it is
+    a single dict key that a refactor could drop without anything failing -
+    the crawl would just collect one description and then stop.
+"""
+
+
+def test_the_checker_probes_from_a_fresh_context():
+    from scraper.spiders.kariyernet_check import KariyerNetCheckSpider
+    from scraper.browser_session import BrowserSession, pick_profile
+
+    spider = object.__new__(KariyerNetCheckSpider)
+    spider.session = BrowserSession(
+        profile=pick_profile("chrome-151-linux"),
+        origin=KariyerNetCheckSpider.origin,
+    )
+    request = spider.probe_request(
+        {"id": 1, "url": "https://www.kariyer.net/is-ilani/x-stajyer-1",
+         "job_title": "x"}
+    )
+    assert request.meta["fresh_context"] is True
+    # What the parent put there has to survive the override.
+    assert request.meta["posting_id"] == 1
+    assert request.dont_filter is True
