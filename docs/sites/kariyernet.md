@@ -1,17 +1,183 @@
 # kariyer.net
 
 **Status:** migrated - `spiders/kariyernet_cards.py`. The old DOM spider has
-been deleted; it is in git history if ever needed.
+been deleted; it is in git history if ever needed. **Transport: a real
+Chromium with a real window** since 10.09.2026 - see the next section, which
+is the one that matters if the crawl ever comes back empty.
 
 **Investigated 27.07.2026:**
 
 | | |
 |---|---|
 | Frontend | Nuxt.js, server-side rendered |
-| Anti-bot | **PerimeterX** (`_pxhd` cookie set on every response) |
-| Anonymous access | Yes - `GET /is-ilanlari?cp=2` with no cookies returns HTTP 200 and the full listing |
+| Anti-bot | **PerimeterX** (`_pxhd` cookie set on every response), app id `PXqzR3QUY9` |
+| Anonymous access | Yes, no account needed - but **not from any HTTP client**. Was "`GET /is-ilanlari?cp=2` with no cookies returns HTTP 200"; that stopped being true by 09.09.2026, when every request from curl_cffi was answered 403 whatever handshake it replayed |
 | Listings per page | 16 |
 | Structured data | `application/ld+json` is only a BreadcrumbList - useless. Job data lives in `window.__NUXT__` as `positionName` / `positionId` |
+
+
+## PerimeterX refuses a browser with no window - MEASURED 10.09.2026
+
+This is the section to read before changing anything about how this spider
+reaches the site, because two days were spent answering a question the site
+was not asking.
+
+**The symptom.** From 09.09 the crawl returned 403 on every request for about
+two hours, climbing the whole curl_cffi handshake ladder (firefox147 ->
+safari184 -> chrome124 -> firefox135) and failing on all four rungs. The next
+morning the first probe of the day was refused as well:
+
+```
+python -m scraper.tls_probe --url "<the staj search>" --expect "ad-card"
+  firefox147   403   5 065 bytes   marker absent
+```
+
+Meanwhile the same address, in a browser, opened any page on the site
+instantly. **So the address was fine and the client was not.**
+
+**Working down from "a real browser" to "our real browser."** One variable at
+a time, all of it from this machine on 10.09:
+
+| What was driving Chrome | Result |
+|---|---|
+| nothing - plain `google-chrome <url>`, brand-new profile | **cards** |
+| the same ordinary Chrome, attached to over CDP afterwards | **cards** |
+| Playwright, `--enable-automation` left in, `navigator.webdriver === true` | **cards** |
+| the same, headless | block page |
+
+The CDP-free row was read back out of Chrome's own History database rather
+than through any automation, so it says what a person's browser sees.
+
+**Then interleaved**, so a cooling-off effect could not be mistaken for a
+verdict. Same binary, same profile shape, same minute:
+
+| | bytes | cards | title |
+|---|---|---|---|
+| headless #1 | 9 495 | 0 | Access to this page has been denied |
+| headed #1 | 621 239 | **36** | İstanbul Staj İlanları ... |
+| headless #2 | 9 495 | 0 | Access to this page has been denied |
+| headed #2 | 621 665 | **36** | İstanbul Staj İlanları ... |
+
+**PerimeterX here is not reading `navigator.webdriver`, and it is not reading
+the debugging protocol. It is refusing a browser with no window.** The block
+page is app `PXqzR3QUY9`'s press-and-hold challenge - "İnsan olduğunuzu
+doğrulamak için Basılı Tutun" - which no amount of waiting resolves.
+
+### What that means for the spider
+
+`USE_PLAYWRIGHT = True` and `NEEDS_A_WINDOW = True`. The second one makes
+`PlaywrightMiddleware` refuse to start headless for this spider rather than
+honour a stray `PLAYWRIGHT_HEADLESS=1`, because **headless does not fail
+loudly here**: it returns 9 kB, zero cards, and a run that exits 0 having
+found nothing, which is indistinguishable from a selector that has rotted.
+The same trap catches the checker harder - a block page carries neither an
+apply button nor a description container, which is `verdict()`'s exact
+definition of UNKNOWN, so a headless check run would mark the whole board
+unverifiable instead of blocked.
+
+### Running it unattended
+
+A window needs a display. A desktop session has one. Otherwise:
+
+```
+sudo apt install xvfb
+xvfb-run -a .venv/bin/python main.py --spider kariyernet_cards
+```
+
+That is a real window painted into a virtual screen, not a headless browser -
+which is the entire distinction the site is drawing. The middleware prints
+this command if it is asked for a window and finds neither `DISPLAY` nor
+`WAYLAND_DISPLAY`.
+
+### The browser keeps its profile
+
+`~/.cache/internship-tracker/browser-profiles/kariyernet`, shared with
+`kariyernet_check`. A person who checks this site every other day arrives
+carrying the visitor id PerimeterX gave them weeks ago; a fresh context every
+night arrives as a stranger every night. **This is not what unblocked the
+site** - the window did that, and every passing measurement above used a
+throwaway profile - so do not read it as load bearing. Chrome locks a profile
+while it has it open, so the two spiders must not run at the same time;
+`main.py` runs each as its own sequential subprocess, which is what makes it
+safe.
+
+### What was removed
+
+The four-token handshake ladder, `KARIYERNET_IMPERSONATE`, and this spider's
+use of `CurlImpersonateMiddleware`. All of it is in git history along with the
+31.07.2026 numbers that justified it at the time. The middleware itself stays
+- Indeed may still want it - but as of 10.09.2026 **no spider uses it**, so
+treat it as untested against a live site.
+
+
+## A page has to live long enough to be read - MEASURED 10.09.2026
+
+The window got the crawl in. It did not keep it in, and the reason is the
+second thing to know about this site.
+
+`PlaywrightMiddleware` opens a page, navigates, hands it to the spider's
+`page_actions` and closes it. With no actions defined for posting pages, a
+posting therefore existed for the length of `goto` and no longer - between
+0.1 and 0.6 seconds. The first live run came out like this:
+
+| | page was open for | result |
+|---|---|---|
+| listing page 1 | 2.6s (scrolling) | 200 |
+| 7 posting pages | ~0.3s each | 200 |
+| listing page 2 | 1.7s (scrolling) | 200 |
+| **every request after that** | ~0.3s | **403, press-and-hold** |
+
+The two pages that lived for seconds were served. The pages that lived for a
+fraction of one were served seven times and then never again.
+
+**The likely mechanism.** PerimeterX's sensor is javascript on the page: it
+collects, POSTs to its collector, and the response re-issues `_px3` with a
+score. Counted directly with a `page.on("request")` handler on a listing page
+given a four-second dwell: **four sensor requests**. A page torn down 300ms
+after DOMContentLoaded has made none of them, so the crawl was spending the
+one good `_px3` the first page earned and never refreshing it. When it went
+stale, everything was refused.
+
+So `POSTING_DWELL_S = 4` - the spider leaves a posting page open for as long
+as reading its first screen would take. Four because that is where the sensor
+calls were counted, not because four was tuned down to a minimum; at thirty
+postings a run it costs two minutes overnight, and every attempt to measure a
+smaller number costs this address some credit with the site.
+
+Listing pages need no separate dwell: the scroll that loads the logos already
+takes 1.7-2.6s, and neither listing page has ever been refused.
+
+## When it refuses, wait - it is a state, not a coin flip
+
+The same run says the other thing worth knowing: the refusals did not trickle
+in, they arrived all at once and never stopped. There is nothing for the
+escalation ladder to change - no proxy configured, no handshake left to swap -
+so eight immediate retries just collect eight more refusals and spend
+`DOMAIN_BLOCK_BUDGET`, ending the run with two thirds of the postings
+uncollected. Which is exactly what happened.
+
+Quiet is the only thing documented to clear it: `docs/sites/indeed.md`
+measured a home address recovering on its own in about eight minutes after
+the same treatment. So the spider sets
+
+```python
+BLOCK_COOLDOWN_S = 600          # ten minutes of doing nothing
+BLOCK_COOLDOWN_AFTER = 2        # ... after two refusals IN A ROW, not one
+BLOCK_COOLDOWNS_ALLOWED = 6     # ... at most six times in a run
+```
+
+and `BlockDetectionMiddleware._cool_off` waits, resets the budget the burst
+would have spent, and re-queues the request. Opt-in per spider, so Indeed and
+LinkedIn still fail fast - a pause does not fix an expired session.
+
+`main.py`'s `SPIDER_TIMEOUTS` gives this spider and its checker a two-hour
+ceiling to match. Without it a run would be killed mid-pause and reported as
+a failure for doing exactly what it was told.
+
+**Not yet measured:** whether a run that has been cooled off comes back
+clean. The unit tests in `tests/test_block_cooldown.py` cover when the pause
+fires and when it stops; only a live run that actually gets refused can say
+whether ten minutes is the right number.
 
 ## There is probably no JSON listing endpoint
 

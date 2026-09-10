@@ -18,8 +18,10 @@ on every request (see _navigate below - the Cookie header Scrapy would have
 sent is deliberately dropped for that reason).
 
 OPT-IN, PER SPIDER, same convention as CurlImpersonateMiddleware in
-api_middlewares.py: set USE_PLAYWRIGHT = True on the spider class. Nothing
-else changes transport - kariyer.net and techcareer.net never see this file.
+api_middlewares.py: set USE_PLAYWRIGHT = True on the spider class. Indeed,
+LinkedIn and - since 10.09.2026, for a different reason spelled out below -
+kariyer.net. techcareer.net never sees this file; it reads a Next.js data
+endpoint that has never asked anything of the client.
 
 WHY A DEDICATED THREAD, NOT sync_playwright() CALLED DIRECTLY
 ---------------------------------------------------------------
@@ -34,13 +36,38 @@ Future, the same way CurlImpersonateMiddleware blocks on a synchronous
 curl_cffi call. One request in flight at a time either way, which matches
 CONCURRENT_REQUESTS = 1 on indeed_cards.
 
-UNMEASURED PAST HEADLESS. This is the first attempt: headless Chromium,
-05.08.2026. If Cloudflare's challenge still refuses a headless browser (a
-real possibility - automation tells like navigator.webdriver and a
-headless-specific WebGL renderer are well documented), the next rung is
-PLAYWRIGHT_HEADLESS=0 (a visible window) or PLAYWRIGHT_CHANNEL=chrome (the
-actually-installed Chrome instead of Playwright's bundled Chromium build),
-neither of which needs a code change.
+THE WINDOW TURNED OUT TO BE THE WHOLE ANSWER FOR kariyer.net - 10.09.2026
+--------------------------------------------------------------------------
+The paragraph that used to sit here guessed that headless might not be
+enough and listed PLAYWRIGHT_HEADLESS=0 as a rung to try. On kariyer.net it
+is not a rung, it is the entire difference, and the measurement is about as
+clean as this project gets. Four launches, interleaved so that an ordering
+effect could not be mistaken for a verdict, same binary, same profile shape,
+same minute, same address:
+
+    headless #1     9 495 B    0 cards   "Access to this page has been denied"
+    headed   #1   621 239 B   36 cards   "Istanbul Staj Ilanlari ..."
+    headless #2     9 495 B    0 cards   "Access to this page has been denied"
+    headed   #2   621 665 B   36 cards   "Istanbul Staj Ilanlari ..."
+
+Everything else had already been eliminated on the way to that table. A
+plain `google-chrome <url>` with a brand-new profile and no CDP attached
+loaded the page, which cleared the exit address. Attaching to that same
+ordinary Chrome over CDP still loaded it, which cleared the debugging
+protocol. Leaving --enable-automation in place, so navigator.webdriver read
+`true` the whole way through, still loaded it - PerimeterX is not reading
+that flag here. Only the window mattered.
+
+So a spider may declare NEEDS_A_WINDOW = True and this middleware will
+refuse to start headless for it, rather than let one stray environment
+variable turn a working crawl into 9 kB of block page. That refusal is the
+point: headless fails in a way that looks exactly like a dead selector.
+
+WHAT A WINDOW COSTS. It needs a display. On a desktop session there already
+is one; for an unattended run there is Xvfb, which is a real windowed
+browser painting into a virtual framebuffer rather than a headless one
+pretending. _resolve_headless says so with the command to run when no
+display is present.
 """
 
 import logging
@@ -67,20 +94,32 @@ CHALLENGE_TITLE_MARKERS = (
     "attention required",
 )
 
+# PerimeterX's block page, by contrast, is waiting for a human to press and
+# hold a button. It will still be there in ten seconds, in ten minutes, and
+# when the crawl gives up - so recognising it is worth a log line and nothing
+# else. BlockDetectionMiddleware refuses the response on the 403 and on the
+# `px-captcha` in its body; this only stops _wait_out_challenge from spending
+# the challenge budget staring at a page that has already finished loading.
+DEAD_END_TITLE_MARKERS = (
+    "access to this page has been denied",
+)
+
 
 class PlaywrightMiddleware:
     def __init__(self, crawler):
         self.crawler = crawler
-        self.headless = os.getenv("PLAYWRIGHT_HEADLESS", "1").strip().lower() not in (
-            "0", "false", "no", "off",
-        )
         self.channel = os.getenv("PLAYWRIGHT_CHANNEL", "").strip() or None
         self.timeout_ms = crawler.settings.getfloat("DOWNLOAD_TIMEOUT", 60) * 1000
 
-        # Resolved per SPIDER in _resolve_storage_state, not here: this
-        # middleware is built before it is told which spider it serves, and
-        # the storage-state file IS an account. Reading one fixed variable
-        # would hand Indeed's session to whatever spider asked for a browser.
+        # Resolved per SPIDER, not here - see _resolve_headless and
+        # _resolve_storage_state. This middleware is built before it is told
+        # which spider it serves, and both answers belong to the spider: the
+        # storage-state file IS an account, so one fixed variable would hand
+        # Indeed's session to whatever spider asked for a browser, and
+        # headless is the difference between a crawl and a block page on
+        # kariyer.net while being free everywhere else.
+        self.headless = None
+        self.profile_dir = None
         self.storage_state_env = None
         self.storage_state_path = None
 
@@ -110,10 +149,13 @@ class PlaywrightMiddleware:
             return
 
         self._spider = spider
+        self._resolve_headless(spider)
+        self._resolve_profile_dir(spider)
         self._resolve_storage_state(spider)
         logger.info(
-            "Starting Playwright (headless=%s, channel=%s) for %s",
-            self.headless, self.channel or "bundled chromium", spider.name,
+            "Starting Playwright (headless=%s, channel=%s, profile=%s) for %s",
+            self.headless, self.channel or "bundled chromium",
+            self.profile_dir or "ephemeral", spider.name,
         )
         self._worker = threading.Thread(
             target=self._worker_main, name="playwright-" + spider.name,
@@ -127,6 +169,89 @@ class PlaywrightMiddleware:
             )
         if self._startup_error:
             raise self._startup_error
+
+    ###################################################################
+    # WINDOW OR NO WINDOW - THE ONE SETTING kariyer.net CARES ABOUT   #
+    ###################################################################
+    def _resolve_headless(self, spider):
+        """
+        Headless unless the spider says it cannot be, and never headless
+        behind the spider's back.
+
+        PLAYWRIGHT_HEADLESS still overrides, because a one-off experiment
+        needs to be able to say "show me". What it may no longer do is
+        silently switch a NEEDS_A_WINDOW spider into the mode that returns a
+        block page - see the interleaved measurement in the module docstring.
+        Refusing there is the difference between a run that fails with a
+        reason and a run that reports zero postings and looks like rot in the
+        selectors.
+        """
+        needs_window = bool(getattr(spider, "NEEDS_A_WINDOW", False))
+        raw = os.getenv("PLAYWRIGHT_HEADLESS", "").strip().lower()
+        asked_for = None
+        if raw:
+            asked_for = raw not in ("0", "false", "no", "off")
+
+        if needs_window and asked_for:
+            raise RuntimeError(
+                f"{spider.name} sets NEEDS_A_WINDOW but PLAYWRIGHT_HEADLESS="
+                f"{raw!r} asks for a headless browser. On this site headless "
+                f"is answered with a 9 kB block page and no cards at all, so "
+                f"the run would 'succeed' having found nothing. Unset "
+                f"PLAYWRIGHT_HEADLESS, or run the spider that does not need a "
+                f"window."
+            )
+
+        self.headless = False if needs_window else (
+            True if asked_for is None else asked_for
+        )
+
+        if self.headless:
+            return
+
+        # A windowed browser needs somewhere to draw. Say so now, with the
+        # fix, rather than let Chromium fail to start 60 seconds from here
+        # with "Missing X server or $DISPLAY".
+        if os.getenv("DISPLAY") or os.getenv("WAYLAND_DISPLAY"):
+            return
+        raise RuntimeError(
+            f"{spider.name} needs a windowed browser but neither DISPLAY nor "
+            f"WAYLAND_DISPLAY is set, so there is nothing to draw into. For an "
+            f"unattended run install Xvfb (`sudo apt install xvfb`) and start "
+            f"the job with `xvfb-run -a python main.py --spider {spider.name}` "
+            f"- that is a real window on a virtual screen, not headless."
+        )
+
+    ###################################################################
+    # A PROFILE THAT SURVIVES THE NIGHT                               #
+    ###################################################################
+    def _resolve_profile_dir(self, spider):
+        """
+        Where this spider's browser keeps its cookies, history and storage
+        between runs, or None for a fresh one every time.
+
+        A person visiting kariyer.net every other day arrives with the
+        visitor id PerimeterX gave them weeks ago; a crawl that builds a new
+        context each night arrives as a stranger, every night, forever. The
+        directory costs nothing and makes the second visit look like a second
+        visit.
+
+        Deliberately NOT combinable with a storage-state file: Playwright's
+        persistent context owns its own on-disk state and `storage_state` is
+        an argument to the ephemeral one. A spider that carries a signed-in
+        session wants the file; a spider that just wants to be a returning
+        anonymous visitor wants the directory. Nobody needs both, and letting
+        both through would quietly ignore one of them.
+        """
+        configured = getattr(spider, "PLAYWRIGHT_PROFILE_DIR", None)
+        raw = (os.getenv("PLAYWRIGHT_PROFILE_DIR") or configured or "").strip()
+        if not raw:
+            self.profile_dir = None
+            return
+
+        path = os.path.abspath(os.path.expanduser(raw))
+        os.makedirs(path, exist_ok=True)
+        self.profile_dir = path
 
     def _resolve_storage_state(self, spider):
         """
@@ -161,6 +286,16 @@ class PlaywrightMiddleware:
         self.storage_state_env = env_var
         self.storage_state_path = raw_path or None
 
+        if self.storage_state_path and self.profile_dir:
+            raise RuntimeError(
+                f"{spider.name} has both a persistent profile "
+                f"({self.profile_dir}) and a storage-state file "
+                f"({env_var}={raw_path}). Playwright can honour only one - a "
+                f"persistent context owns its own on-disk state - so one of "
+                f"them would be silently ignored and the run would carry a "
+                f"session nobody could point at. Pick one."
+            )
+
     def _worker_main(self):
         try:
             from playwright.sync_api import sync_playwright
@@ -174,116 +309,178 @@ class PlaywrightMiddleware:
 
         try:
             with sync_playwright() as p:
-                launch_kwargs = {
-                    "headless": self.headless,
-                    # The full browser rather than Playwright's headless
-                    # shell, which is what `headless=True` picks by default.
-                    # Measured 28.08.2026, same flags otherwise:
-                    # navigator.plugins is 0 on the shell and 5 on this, and
-                    # 0 plugins is a documented headless tell. Override with
-                    # PLAYWRIGHT_CHANNEL if a machine only has the shell.
-                    "channel": self.channel or "chromium",
-                    # navigator.webdriver is `true` without this, which is the
-                    # browser volunteering that it is automated before any
-                    # fingerprinting has to work for it. tools/save_session.py
-                    # has always launched with this flag - the browser that
-                    # CREATES the session was harder to spot than the one that
-                    # replays it, which is backwards.
-                    "args": ["--disable-blink-features=AutomationControlled"],
-                }
-                browser = p.chromium.launch(**launch_kwargs)
-
-                ###########################################################
-                # THE BROWSER DESCRIBES ITSELF                            #
-                ###########################################################
-                # user_agent is deliberately NOT set here any more.
-                #
-                # MEASURED 28.08.2026. The impersonation profile's UA was
-                # being applied to the context, and document_headers() was
-                # sending the same one as an HTTP header, so a page asking
-                # who this was got:
-                #
-                #   navigator.userAgent   Macintosh ... Safari/605.1.15
-                #   navigator.platform    Linux x86_64
-                #   navigator.webdriver   true
-                #   WebGL renderer        SwiftShader
-                #   navigator.plugins     0
-                #
-                # A UA claiming macOS Safari on a headless Linux Chromium that
-                # is also announcing itself as automated. Five contradictions
-                # in the first fifty milliseconds of any fingerprinting
-                # script, and Cloudflare has challenged the fourth search page
-                # on every run since.
-                #
-                # The profile's UA exists to be PAIRED WITH A TLS HANDSHAKE -
-                # that is what browser_session.py's table is for, and it is
-                # right for curl_cffi, which really does replay the handshake
-                # it is told to. Playwright brings its own engine and its own
-                # handshake, so borrowing the label without the thing it
-                # labels only creates the mismatch.
-                #
-                # Left unset, Chromium reports itself, and the UA, the Client
-                # Hints, the platform and the engine finally agree.
-                # ...with ONE correction. Headless Chromium puts the word
-                # into its own User-Agent - "HeadlessChrome/151.0.0.0" - which
-                # is a plainer statement of what we are than any of the
-                # mismatches this replaced. Taken from the browser itself and
-                # edited by one word, so the version, the platform and the
-                # engine all stay true; we are not claiming to be a different
-                # browser, only declining to announce the mode.
-                scratch = browser.new_context()
-                scratch_page = scratch.new_page()
-                real_ua = scratch_page.evaluate("() => navigator.userAgent")
-                scratch_page.close()
-                scratch.close()
-                honest_ua = real_ua.replace("HeadlessChrome/", "Chrome/")
-
+                launch_kwargs = self._launch_kwargs()
                 context_kwargs = {
-                    "user_agent": honest_ua,
                     "locale": "tr-TR",
                     "viewport": {"width": 1280, "height": 800},
                 }
-                if honest_ua != real_ua:
-                    logger.info("User-Agent: %s", honest_ua)
 
-                # storage_state carries cookies AND localStorage/sessionStorage
-                # from an actual by-hand login (see tools/save_session.py) -
-                # takes priority because a plain cookie replay was measured
-                # 05.08.2026 to get every search's page 1 through cleanly and
-                # then hit a sign-in wall on page 2 every time, which reads
-                # like Indeed's own page-two check wants more than cookies
-                # from a Google/OAuth-linked account.
-                storage_state_path = self.storage_state_path
-                cookies = getattr(self._spider, "session_cookies", None)
-                if storage_state_path:
-                    context_kwargs["storage_state"] = storage_state_path
-                    logger.info(
-                        "Loading full session state from %s (cookies + "
-                        "localStorage/sessionStorage)", storage_state_path,
+                if self.profile_dir:
+                    browser, context = self._open_persistent(
+                        p, launch_kwargs, context_kwargs
                     )
-                elif cookies:
-                    logger.info(
-                        "No %s set - loading %s cookie(s) only, no "
-                        "localStorage/sessionStorage.",
-                        self.storage_state_env, len(cookies),
+                else:
+                    browser, context = self._open_ephemeral(
+                        p, launch_kwargs, context_kwargs
                     )
 
-                context = browser.new_context(**context_kwargs)
-
-                if cookies and not storage_state_path:
-                    context.add_cookies([
-                        {"name": name, "value": value, "url": self._spider.origin}
-                        for name, value in cookies.items()
-                    ])
+                self._seed_cookies(context)
 
                 self._ready.set()
                 self._run_job_loop(context)
 
                 context.close()
-                browser.close()
+                if browser is not None:
+                    browser.close()
         except Exception as error:
             self._startup_error = error
             self._ready.set()
+
+    def _launch_kwargs(self):
+        return {
+            "headless": self.headless,
+            # The full browser rather than Playwright's headless shell, which
+            # is what `headless=True` picks by default. Measured 28.08.2026,
+            # same flags otherwise: navigator.plugins is 0 on the shell and 5
+            # on this, and 0 plugins is a documented headless tell. Override
+            # with PLAYWRIGHT_CHANNEL if a machine only has the shell.
+            "channel": self.channel or "chromium",
+            # navigator.webdriver is `true` without this, which is the browser
+            # volunteering that it is automated before any fingerprinting has
+            # to work for it. tools/save_session.py has always launched with
+            # this flag - the browser that CREATES the session was harder to
+            # spot than the one that replays it, which is backwards.
+            #
+            # Worth knowing what it is NOT doing: kariyer.net's PerimeterX was
+            # measured on 10.09.2026 to serve cards to a browser whose
+            # navigator.webdriver read `true` throughout, and a block page to
+            # a headless one with the flag in place. This hides a tell that at
+            # least one vendor is not reading; the window is what it reads.
+            "args": ["--disable-blink-features=AutomationControlled"],
+        }
+
+    ###################################################################
+    # A BROWSER THAT REMEMBERS LAST NIGHT                             #
+    ###################################################################
+    def _open_persistent(self, p, launch_kwargs, context_kwargs):
+        """
+        One on-disk profile, reused every run. Returns (None, context) -
+        launch_persistent_context hands back the context and owns the browser
+        behind it, so there is no separate object to close.
+
+        No user_agent override on this path, unlike the ephemeral one below.
+        The correction there exists for exactly one string, "HeadlessChrome",
+        and a profile directory is what a spider that must run windowed asks
+        for - so on this path the browser's own answer is already true and
+        editing it would only reintroduce the mismatch the comment below
+        spent a paragraph removing. The warning covers the combination
+        nobody has asked for yet.
+        """
+        if self.headless:
+            logger.warning(
+                "Persistent profile with headless=True: navigator.userAgent "
+                "will read HeadlessChrome, which this path does not rewrite. "
+                "If that matters here, the spider probably wants a window."
+            )
+        context = p.chromium.launch_persistent_context(
+            self.profile_dir, **launch_kwargs, **context_kwargs
+        )
+        logger.info(
+            "Browser profile kept at %s - cookies and storage from the "
+            "previous run come with it.", self.profile_dir,
+        )
+        return None, context
+
+    def _open_ephemeral(self, p, launch_kwargs, context_kwargs):
+        """A fresh context per run, the way this middleware started."""
+        browser = p.chromium.launch(**launch_kwargs)
+
+        ###########################################################
+        # THE BROWSER DESCRIBES ITSELF                            #
+        ###########################################################
+        # user_agent is deliberately NOT set to a profile's any more.
+        #
+        # MEASURED 28.08.2026. The impersonation profile's UA was
+        # being applied to the context, and document_headers() was
+        # sending the same one as an HTTP header, so a page asking
+        # who this was got:
+        #
+        #   navigator.userAgent   Macintosh ... Safari/605.1.15
+        #   navigator.platform    Linux x86_64
+        #   navigator.webdriver   true
+        #   WebGL renderer        SwiftShader
+        #   navigator.plugins     0
+        #
+        # A UA claiming macOS Safari on a headless Linux Chromium that
+        # is also announcing itself as automated. Five contradictions
+        # in the first fifty milliseconds of any fingerprinting
+        # script, and Cloudflare has challenged the fourth search page
+        # on every run since.
+        #
+        # The profile's UA exists to be PAIRED WITH A TLS HANDSHAKE -
+        # that is what browser_session.py's table is for, and it is
+        # right for curl_cffi, which really does replay the handshake
+        # it is told to. Playwright brings its own engine and its own
+        # handshake, so borrowing the label without the thing it
+        # labels only creates the mismatch.
+        #
+        # Left unset, Chromium reports itself, and the UA, the Client
+        # Hints, the platform and the engine finally agree.
+        # ...with ONE correction. Headless Chromium puts the word
+        # into its own User-Agent - "HeadlessChrome/151.0.0.0" - which
+        # is a plainer statement of what we are than any of the
+        # mismatches this replaced. Taken from the browser itself and
+        # edited by one word, so the version, the platform and the
+        # engine all stay true; we are not claiming to be a different
+        # browser, only declining to announce the mode.
+        scratch = browser.new_context()
+        scratch_page = scratch.new_page()
+        real_ua = scratch_page.evaluate("() => navigator.userAgent")
+        scratch_page.close()
+        scratch.close()
+        honest_ua = real_ua.replace("HeadlessChrome/", "Chrome/")
+
+        context_kwargs = {**context_kwargs, "user_agent": honest_ua}
+        if honest_ua != real_ua:
+            logger.info("User-Agent: %s", honest_ua)
+
+        # storage_state carries cookies AND localStorage/sessionStorage
+        # from an actual by-hand login (see tools/save_session.py) -
+        # takes priority because a plain cookie replay was measured
+        # 05.08.2026 to get every search's page 1 through cleanly and
+        # then hit a sign-in wall on page 2 every time, which reads
+        # like Indeed's own page-two check wants more than cookies
+        # from a Google/OAuth-linked account.
+        if self.storage_state_path:
+            context_kwargs["storage_state"] = self.storage_state_path
+            logger.info(
+                "Loading full session state from %s (cookies + "
+                "localStorage/sessionStorage)", self.storage_state_path,
+            )
+
+        return browser, browser.new_context(**context_kwargs)
+
+    def _seed_cookies(self, context):
+        """
+        The cookie-only export, for a spider that has one and no
+        storage-state file to supersede it.
+
+        Applies to both context flavours, which is why it is here rather
+        than inside either of them: a persistent profile that has never
+        been signed in still wants the exported session on its first run.
+        """
+        cookies = getattr(self._spider, "session_cookies", None)
+        if not cookies or self.storage_state_path:
+            return
+        logger.info(
+            "No %s set - loading %s cookie(s) only, no "
+            "localStorage/sessionStorage.",
+            self.storage_state_env, len(cookies),
+        )
+        context.add_cookies([
+            {"name": name, "value": value, "url": self._spider.origin}
+            for name, value in cookies.items()
+        ])
 
     def _run_job_loop(self, context):
         """
@@ -507,6 +704,16 @@ class PlaywrightMiddleware:
             try:
                 title = (page.title() or "").lower()
             except Exception:
+                return
+            if any(marker in title for marker in DEAD_END_TITLE_MARKERS):
+                logger.warning(
+                    "Served a press-and-hold block page (%r) - that one never "
+                    "clears itself, so this navigation is already lost. If "
+                    "this is kariyer.net, check that the browser really has a "
+                    "window: headless is answered with exactly this page.",
+                    title[:60],
+                )
+                self.crawler.stats.inc_value("playwright/dead_end_challenge")
                 return
             if not any(marker in title for marker in CHALLENGE_TITLE_MARKERS):
                 return

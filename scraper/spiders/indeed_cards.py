@@ -323,10 +323,17 @@ class IndeedCardsSpider(BaseApiSpider):
         THE DEAD SETTING HAS BEEN REMOVED, NOT REPAIRED. Repairing it would
         install a transport that raises TypeError and take a working crawl
         down with it. If Indeed ever does start refusing us on the handshake,
-        the way in is CurlImpersonateMiddleware - already written, already
-        proven on kariyer.net - by setting IMPERSONATE_WITH_CURL = True on
-        this class. Read that middleware's docstring first: it fetches
-        synchronously and would serialise a sixty-request crawl.
+        the way in is CurlImpersonateMiddleware - already written - by setting
+        IMPERSONATE_WITH_CURL = True on this class. Read that middleware's
+        docstring first: it fetches synchronously and would serialise a
+        sixty-request crawl.
+
+        That sentence used to end "already proven on kariyer.net". It is not
+        proven there any more: kariyer.net's PerimeterX refused every
+        handshake in the ladder for two days and that spider moved to a
+        windowed browser on 10.09.2026. So the middleware is untested against
+        a live site as of that date - it worked for six weeks and then the one
+        site using it stopped answering it at all.
 
         TWISTED_REACTOR below is a real, live setting and stays.
     '''

@@ -44,7 +44,7 @@ from scrapy.utils.response import response_status_message
 
 from .browser_session import profile_for_impersonate
 from .proxy import ProxyConfig, new_session_id
-from .throttle import SlotThrottle
+from .throttle import SlotThrottle, sleep_out_loud
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +234,11 @@ class BlockDetectionMiddleware:
         self.budget = crawler.settings.getint("DOMAIN_BLOCK_BUDGET", 8)
         self.gave_up_on = set()
 
+        # See _cool_off. domain -> blocks since the last response that was not
+        # one, and how many pauses this run has already spent.
+        self.blocks_in_a_row = defaultdict(int)
+        self.cooldowns_taken = 0
+
     @classmethod
     def from_crawler(cls, crawler):
         return cls(crawler)
@@ -289,6 +294,92 @@ class BlockDetectionMiddleware:
             self.crawler.stats.inc_value("blocks/dropped_after_budget")
             raise IgnoreRequest(f"{domain}: block budget spent this run")
         return None
+
+    ###################################################################
+    # THE OTHER ANSWER TO A BLOCK: WAIT, THEN CARRY ON                #
+    ###################################################################
+    '''
+        _over_budget above ends the run. That is right when there is nothing
+        left to change and every further request is spending the address's
+        credit for nothing - which was the whole story while the ladder was
+        the only tool. It is the wrong answer for a spider with hours to
+        spend and a site whose refusals expire.
+
+        MEASURED 10.09.2026 on kariyer.net, first live run through a windowed
+        browser: ten pages served, then every request refused, in one step,
+        and it stayed refused for the rest of the run. The block is a STATE,
+        not a coin flip - so retrying immediately, however many hats we put
+        on, cannot work, and eight tries at it is just eight more refusals on
+        an address that needs quiet.
+
+        Quiet is exactly what is cheap here. The crawl is thirty-odd pages on
+        a job that runs overnight, so ten minutes of doing nothing costs the
+        run nothing and is the one thing documented to actually clear this -
+        docs/sites/indeed.md measured a home address recovering on its own in
+        about eight minutes after the same treatment.
+
+        OPT-IN, so the spiders that would rather fail fast still do. A spider
+        sets BLOCK_COOLDOWN_S to ask for it; kariyer.net is the only one that
+        does. Three things keep this from becoming an infinite crawl:
+
+          * the pause only starts after BLOCK_COOLDOWN_AFTER refusals IN A
+            ROW, so a single blip is still just a retry
+          * BLOCK_COOLDOWNS_ALLOWED caps how many pauses one run may take
+          * once they are used up, the budget takes over again and ends the
+            run the way it always did
+
+        The wait blocks the reactor, like every other wait in this project -
+        see throttle.py - and says so once every thirty seconds, because ten
+        silent minutes is indistinguishable from a hang.
+    '''
+    def _cool_off(self, request, spider, domain, reason):
+        """
+        Wait out a refusal and hand back a retry, or None to let the caller
+        escalate the way it always has.
+        """
+        seconds = getattr(spider, "BLOCK_COOLDOWN_S", 0)
+        if not seconds:
+            return None
+
+        after = getattr(spider, "BLOCK_COOLDOWN_AFTER", 2)
+        allowed = getattr(spider, "BLOCK_COOLDOWNS_ALLOWED", 3)
+
+        if self.blocks_in_a_row[domain] < after:
+            return None
+
+        if self.cooldowns_taken >= allowed:
+            logger.warning(
+                "%s is still refusing us and this run has already waited %s "
+                "time(s) - not waiting again. Whatever the site is unhappy "
+                "about, it is not a burst that a pause fixes.",
+                domain, self.cooldowns_taken,
+            )
+            return None
+
+        self.cooldowns_taken += 1
+        self.crawler.stats.inc_value("blocks/cooldowns")
+        logger.warning(
+            "%s has refused %s requests in a row (%s). Pausing %s minute(s) "
+            "and picking up where this left off - refusals here expire, and "
+            "this crawl has nowhere to be. Pause %s of %s.",
+            domain, self.blocks_in_a_row[domain], reason,
+            round(seconds / 60), self.cooldowns_taken, allowed,
+        )
+        sleep_out_loud(seconds, f"cool-off: {domain} refused us", every_s=30)
+
+        # The run starts again from here as far as both counters are
+        # concerned. Not resetting them would mean the pause bought time and
+        # nothing else: the next refusal would still land on a budget that a
+        # burst before the pause had already half spent.
+        self.blocks_in_a_row[domain] = 0
+        self.blocks_by_domain[domain] = 0
+
+        retry = request.copy()
+        retry.meta.pop("proxy", None)
+        retry.meta.pop("_via_proxy", None)
+        retry.dont_filter = True
+        retry.priority = request.priority + 1
+        return retry
 
     ###########################################
     # WHY (IF AT ALL) IS THIS RESPONSE A BLOCK #
@@ -420,13 +511,26 @@ class BlockDetectionMiddleware:
         return profile
 
     def process_response(self, request, response, spider):
+        domain = request.url.split("/")[2] if "://" in request.url else ""
+
         reason = self._block_reason(request, response)
         if not reason:
+            # A served page ends the streak. _cool_off counts refusals IN A
+            # ROW rather than in total, because a run that is mostly working
+            # with the odd refusal in it does not want a ten-minute pause.
+            self.blocks_in_a_row[domain] = 0
             return response
 
         self.crawler.stats.inc_value("blocks/detected")
-        domain = request.url.split("/")[2] if "://" in request.url else ""
+        self.blocks_in_a_row[domain] += 1
         escalations = request.meta.get("_escalations", 0)
+
+        # Before spending the budget on it. A spider that has asked to wait
+        # would rather wait than be given up on, and waiting is the only
+        # answer measured to work against a refusal that has become a state.
+        waited = self._cool_off(request, spider, domain, reason)
+        if waited is not None:
+            return waited
 
         # A sign-in wall means something specific to a spider carrying an
         # exported session: the session is gone. Only the spider knows whether

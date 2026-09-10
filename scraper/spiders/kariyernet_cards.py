@@ -28,13 +28,19 @@ in ten cards survives, so nine out of ten detail pages are never fetched.
 
 Attribute names are matched in lowercase - HTML parsers normalise
 `workTypeId` to `worktypeid`, and the CamelCase form silently matches nothing.
+
+HOW IT REACHES THE PAGE IS NO LONGER AN HTTP CLIENT. Since 10.09.2026 this
+spider drives a real Chromium with a real window, because that is the one
+thing kariyer.net's PerimeterX turned out to be checking - see "WHAT THIS
+SPIDER IS: A BROWSER WINDOW, OPENED ON PURPOSE" below for the measurement
+that says so and the two days of wrong answers it replaced.
 """
 
 import os
+import time
 from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
 
 from ..api_spider import BaseApiSpider, logo_url
-from ..browser_session import BrowserSession, profile_for_impersonate
 from ..job_filters import looks_like_internship
 from ..loaders import KariyerNetLoader
 
@@ -134,36 +140,117 @@ class KariyerNetCardsSpider(BaseApiSpider):
     # So this set is a safety net, not the mechanism.
     WANTED_WORK_TYPES = {"P", "S"}
 
-    #########################################################
-    # WHY THIS SPIDER REPLAYS A BROWSER HANDSHAKE TOO       #
-    #########################################################
+    ###############################################################
+    # WHAT THIS SPIDER IS: A BROWSER WINDOW, OPENED ON PURPOSE    #
+    ###############################################################
     '''
-        "Nothing exotic is needed while the exit IP looks residential"
-        stopped being true on 31.07.2026. The crawl came back with zero
-        postings twice while the residential proxy was up and the search URLs
-        opened normally in a browser, which reads like a dead selector and is
-        not one. Measured through the proxy that day:
+        Everything above describes reading the site. This describes reaching
+        it, and on 10.09.2026 the answer changed completely.
 
-            safari184   403,   5 kB      firefox147  200, 460 kB, data
-            chrome124   403,   5 kB      firefox135  403,   5 kB
+        WHAT WAS HERE BEFORE. curl_cffi replaying a browser's TLS ClientHello,
+        with a ladder of four handshakes to fall through when one was refused.
+        That worked from 31.07 until it did not: 09.09 produced roughly two
+        hours of uninterrupted 403 across every rung of the ladder, and by
+        10.09 the very first probe of the day was refused as well -
 
-        So the page was there the whole time and PerimeterX was refusing the
-        handshake, exactly the failure indeed_cards met on 29.07 - and the
-        comment there ("only this spider needs it; kariyer.net and
-        techcareer.net are fine with Scrapy's own downloader") had simply gone
-        stale. Scrapy's own downloader sends Python's ClientHello, which is
-        refused before a header is read; the residential proxy cannot help,
-        because CONNECT tunnels our fingerprint through unchanged.
+            firefox147   403,  5 065 bytes,  marker absent
 
-        techcareer.net is still fine without this - it defines no handshake
-        of its own and nothing here reaches it.
+        - while the same address, in a browser, opened any page on the site
+        the moment a human asked it to. So the address was fine and the client
+        was not, which is exactly the shape indeed_cards met on 05.08.
 
-        The transport is CurlImpersonateMiddleware, not the scrapy-impersonate
-        package that requirements.txt has carried all along: that package is
-        broken against the pinned Scrapy and never actually ran. The middleware
-        docstring has the whole story, including why nobody noticed.
+        WHAT THE MEASUREMENT ACTUALLY FOUND. Not what anyone expected. Working
+        down from "a real browser" to "our real browser", one variable at a
+        time, all of it on 10.09.2026 from this machine:
+
+            plain `google-chrome <url>`, new profile, nothing attached   CARDS
+            the same Chrome, attached to over CDP afterwards             CARDS
+            Playwright launching Chrome, --enable-automation left in,
+                navigator.webdriver reading `true` the whole way         CARDS
+            the same, headless                                    BLOCK PAGE
+
+        Then interleaved, so that a cooling-off effect could not be mistaken
+        for a verdict - headless, headed, headless, headed, same minute:
+
+            headless #1     9 495 B   0 cards   "Access to this page ... denied"
+            headed   #1   621 239 B  36 cards   "Istanbul Staj Ilanlari ..."
+            headless #2     9 495 B   0 cards   "Access to this page ... denied"
+            headed   #2   621 665 B  36 cards   "Istanbul Staj Ilanlari ..."
+
+        PerimeterX is not reading navigator.webdriver here, and it is not
+        reading the debugging protocol. It is refusing a browser with no
+        window. Everything else we spent two days changing - handshakes,
+        exit addresses, impersonation ladders - was answering a question the
+        site was not asking.
+
+        WHAT THAT MAKES THIS SPIDER. A window. Not a fingerprint that argues
+        it is one: NEEDS_A_WINDOW below makes PlaywrightMiddleware refuse to
+        start headless for this spider at all, because headless does not fail
+        loudly - it returns 9 kB of block page, zero cards, and a run that
+        exits 0 having found nothing, which is indistinguishable from a
+        selector that has rotted.
+
+        FOR AN UNATTENDED RUN AT MIDNIGHT the display is the new dependency.
+        A desktop session already has one. Otherwise Xvfb:
+
+            sudo apt install xvfb
+            xvfb-run -a .venv/bin/python main.py --spider kariyernet_cards
+
+        which is a genuinely windowed browser painting into a virtual screen,
+        not a headless one wearing a hat. The middleware says this, with the
+        command, if it is asked for a window and finds no display.
+
+        THE CANDIDATE LADDER IS GONE, and so is KARIYERNET_IMPERSONATE. There
+        is no handshake to choose any more; Chromium brings its own. Both are
+        in git history alongside the numbers that justified them.
     '''
-    IMPERSONATE_WITH_CURL = True
+    USE_PLAYWRIGHT = True
+    NEEDS_A_WINDOW = True
+
+    # Not Indeed's, which is what the middleware falls back to when a spider
+    # does not name its own - and that default would load a signed-in Indeed
+    # session into a browser about to navigate to kariyer.net. Nothing is
+    # expected at this variable: the site needs no account, and leaving it
+    # unset is what says so.
+    STORAGE_STATE_ENV = "KARIYERNET_STORAGE_STATE"
+
+    ###############################################################
+    # THE BROWSER KEEPS ITS PROFILE BETWEEN RUNS                  #
+    ###############################################################
+    '''
+        A person who checks this site every other day arrives carrying the
+        visitor id PerimeterX gave them weeks ago. A crawl that builds a fresh
+        context every night arrives as a stranger every night, forever.
+
+        The directory costs nothing and it is the closest thing to what the
+        human actually does, which is the whole brief for this spider. It is
+        NOT what unblocked the site - the window did that, and the measurement
+        above passed with throwaway profiles - so do not read this as load
+        bearing. It is here because a second visit should look like one.
+
+        One directory, shared with kariyernet_check, which subclasses this.
+        Chrome locks a profile while it is open, so the two must not run at
+        the same time; main.py runs every spider as its own sequential
+        subprocess, so they do not.
+
+        UNDER ~/.cache, NOT UNDER THE REPO. A profile inside the checkout
+        would be a different profile in every git worktree, so the returning
+        visitor would go back to being a stranger the moment anyone worked on
+        a branch - which is precisely the property this is here for. It also
+        keeps a browser cache out of a directory people grep. Override with
+        PLAYWRIGHT_PROFILE_DIR.
+    '''
+    PLAYWRIGHT_PROFILE_DIR = os.path.join(
+        os.getenv("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
+        "internship-tracker", "browser-profiles", "kariyernet",
+    )
+
+    # The identity in browser_session.py that describes THIS machine rather
+    # than a plausible other one. Under Playwright almost all of these headers
+    # are dropped in favour of the browser's own (see the middleware), but
+    # Accept-Language survives, and a run whose header set and whose engine
+    # disagree is the one avoidable mismatch left.
+    browser_profile_name = "chrome-151-linux"
 
     #############################################
     # HOW HARD TO KNOCK - AND THE DAY WE LEARNT #
@@ -178,26 +265,37 @@ class KariyerNetCardsSpider(BaseApiSpider):
         one of the four handshakes returned the same 5065-byte block page,
         while from a home address all four returned 460 kB of cards. Same
         tokens, same minute; the only difference was where the request came
-        from. An hour earlier the proxy had still been good for one handshake
-        out of four, so the penalty had been building all day - the morning's
-        refused crawls went out from that address too.
+        from.
 
-        Hence one request at a time, four seconds apart, matching indeed_cards.
-        Concurrency was never real anyway: CurlImpersonateMiddleware fetches
-        synchronously and blocks the reactor, so CONCURRENT_REQUESTS=2 bought
-        nothing while reading as permission to go twice as fast. The searches
-        are small - two of them, around 35 requests all told - so this costs
-        about two and a half minutes on a job that runs every other day.
+        That measurement was taken through curl_cffi and a proxy, neither of
+        which is in the picture any more, so treat the number below as
+        inherited caution rather than a measured floor - unlike indeed_cards'
+        20, which was earned twice. What has not changed is the shape of the
+        cost: a refusal here is not free, it moves the address into a bucket
+        with a memory, and this crawl is small enough that patience is nearly
+        free. Two searches, one page each, and a detail page for the roughly
+        one card in ten worth opening - about 30 navigations. At 8 seconds
+        that is some seven minutes including render time, on a job that runs
+        overnight and has nowhere to be.
 
-        And yes, this comment is outside the dict for the reason the other
-        block gives. It was written inside it first.
+        Concurrency stays at 1 for a reason that survived the transport
+        change: PlaywrightMiddleware drives ONE browser page at a time from a
+        single worker thread, so a higher number would not buy parallelism, it
+        would only queue requests behind a lock while reading as permission to
+        go faster.
     '''
     custom_settings = {
         **BaseApiSpider.custom_settings,
         "CONCURRENT_REQUESTS": 1,
         "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
-        "DOWNLOAD_DELAY": 4,
+        "DOWNLOAD_DELAY": 8,
         "RANDOMIZE_DOWNLOAD_DELAY": True,
+
+        # Playwright's sync API cannot start on a thread that already has a
+        # running asyncio loop, which is why the browser lives on its own
+        # thread - see the middleware. This is the reactor that arrangement
+        # was built for, and indeed_cards and linkedin_cards both set it.
+        "TWISTED_REACTOR": "twisted.internet.asyncioreactor.AsyncioSelectorReactor",
 
         # 403 is not in Scrapy's default retry list, and the first page of a
         # search is the one that must not be lost: no page 1, no pagination,
@@ -206,63 +304,178 @@ class KariyerNetCardsSpider(BaseApiSpider):
         "RETRY_TIMES": 3,
     }
 
-    #####################################################
-    # WHICH HANDSHAKE TO REPLAY - A LADDER, NOT A VALUE #
-    #####################################################
+    ###############################################################
+    # WHEN IT IS REFUSED, WAIT - DO NOT GIVE UP AND DO NOT KNOCK  #
+    ###############################################################
     '''
-        Ordered by what the 31.07.2026 measurement above said, firefox147
-        first because it was the only token that came back with data. The
-        losers stay in the list: BlockDetectionMiddleware walks them when a
-        response comes back as a block, so a stale first entry costs one
-        retry instead of the whole crawl.
+        MEASURED 10.09.2026, the first live run through the browser. Ten
+        pages served, then every single request after that refused, in one
+        step, for the rest of the run:
 
-        Do NOT pin this to the one token that works today. Indeed's ladder
-        reversed twice in two days - safari184 and chrome124 were carrying it
-        on 30.07 and are the ones refused here on 31.07. Re-measure with
+            listing page 1, 7 postings, listing page 2      200
+            everything after                               403, press-and-hold
 
-            python -m scraper.tls_probe --proxy \
-                --url "<a search URL from SEARCHES>" --expect "ad-card"
+        A refusal here is a STATE, not a coin flip, so the escalation ladder
+        has nothing to offer it: there is no proxy configured, no handshake
+        left to swap, and trying the same request again a second later just
+        collects another refusal. Eight of those and DOMAIN_BLOCK_BUDGET ends
+        the run with two thirds of the postings uncollected - which is what
+        happened.
 
-        and reorder from what it prints. KARIYERNET_IMPERSONATE pins one
-        token for a one-off experiment.
+        The one thing documented to clear it is quiet. docs/sites/indeed.md
+        measured a home address recovering on its own in about eight minutes
+        after the same treatment. Ten is that with room, and this crawl can
+        afford it completely: thirty-odd pages on a job that runs overnight.
+
+        SIX PAUSES, so an hour of waiting is available to a run that would
+        otherwise take ten minutes. main.py gives this spider a two-hour
+        ceiling to match (SPIDER_TIMEOUTS) - without that the pause would be
+        interrupted by the kill it exists to avoid.
+
+        AFTER TWO IN A ROW rather than one, so an isolated refusal is still
+        just a retry and nobody waits ten minutes for a blip.
     '''
-    IMPERSONATE_CANDIDATES = (
-        "firefox147", "safari184", "chrome124", "firefox135",
-    )
+    BLOCK_COOLDOWN_S = 600
+    BLOCK_COOLDOWN_AFTER = 2
+    BLOCK_COOLDOWNS_ALLOWED = 6
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    ###############################################################
+    # WHAT THE BROWSER DOES ON EACH PAGE BEFORE IT IS READ        #
+    ###############################################################
+    '''
+        Two different things, because a listing page and a posting page are
+        read differently - by a person and now by this spider. The split is on
+        `search_key`, which is on every listing request and on no posting
+        request. _read_the_listing and _read_the_posting below carry the
+        measurement behind each.
+    '''
+    # A wall clock over the scrolling rather than a step count, for the reason
+    # linkedin_cards gives at length: page.evaluate() runs javascript in the
+    # page and takes no timeout, so a wedged renderer waits forever. This does
+    # not rescue one wedged call - nothing here can - but it stops the loop
+    # from adding to it.
+    SCROLL_BUDGET_S = 20
+    SCROLL_STEP_PX = 900
+    SCROLL_SETTLE_MS = 400
 
-        override = os.getenv("KARIYERNET_IMPERSONATE", "").strip()
-        self.impersonate_candidates = (
-            [override] if override else list(self.IMPERSONATE_CANDIDATES)
-        )
+    ###############################################################
+    # A PAGE HAS TO LIVE LONG ENOUGH TO BE READ                   #
+    ###############################################################
+    '''
+        MEASURED 10.09.2026, and it cost the first live run its second half.
 
-        # The handshake and the headers have to describe the same browser: a
-        # Firefox 147 ClientHello arriving under a random profile's Chrome
-        # user-agent is a mismatch of exactly the kind PerimeterX looks for.
-        # BaseApiSpider picked a random profile in its __init__; replace it
-        # with the one that belongs to the token we are about to use.
-        token = self.impersonate_candidates[0]
-        self.session = BrowserSession(
-            profile=profile_for_impersonate(token), origin=self.origin,
-        )
+        PlaywrightMiddleware opens a page, navigates, hands it here and closes
+        it. With no actions to run, a posting page therefore existed for the
+        length of `goto` and no longer - 0.1 to 0.6 seconds, DOMContentLoaded
+        and gone. The run's shape came out like this:
 
-        self.logger.info(
-            "Handshake ladder: %s (identity: %s)",
-            ", ".join(self.impersonate_candidates), self.session.profile.name,
-        )
+            listing page 1   scrolled 2.6s     200
+            7 posting pages  ~0.3s each        200
+            listing page 2   scrolled 1.7s     200
+            every request after that           403, press-and-hold
+
+        The two pages that lived for seconds were served. The pages that lived
+        for a fraction of one were served seven times and then never again.
+
+        WHY THAT IS THE LIKELY MECHANISM. PerimeterX's sensor is javascript on
+        the page; it collects, then POSTs to its collector, and the response is
+        what re-issues `_px3` with a score attached. Counted directly on a
+        listing page with a four-second dwell: FOUR sensor requests. A page
+        torn down 300ms after DOMContentLoaded has not made any of them, so
+        the crawl was spending the one good `_px3` the first page earned and
+        never refreshing it. When it went stale, everything was refused.
+
+        So the dwell is not politeness and it is not a rate limit. It is
+        leaving the page open long enough to finish loading - which is the
+        one thing a person does that this spider was not doing.
+
+        FOUR SECONDS because that is where the sensor calls were counted, not
+        because four was tuned to be the minimum. It could well be less. At
+        roughly 30 postings a run it costs two minutes on a job that runs
+        overnight, so nobody has spent a measurement finding out - and each
+        measurement of this costs the address some credit with the site.
+    '''
+    POSTING_DWELL_S = 4
+
+    def page_actions(self, page, request):
+        """Called by PlaywrightMiddleware between goto() and content()."""
+        if request.meta.get("search_key"):
+            self._read_the_listing(page, request)
+        else:
+            self._read_the_posting(page)
+
+    ###############################################################
+    # THE LOGOS ARE ONLY THERE IF SOMEBODY SCROLLS PAST THEM      #
+    ###############################################################
+    def _read_the_listing(self, page, request):
+        """
+        Scroll to the bottom, which is what makes the lazily-loaded logos
+        load. MEASURED 09.09.2026 without scrolling: 25 of 40 cards carried a
+        1x1 transparent SVG. MEASURED 10.09.2026 with it: 41 of 46 cards
+        yielded a real logo url, so this is the difference between a third of
+        a page having a mark and nearly all of it.
+
+        It doubles as the dwell - the scroll took 1.7-2.6s on the two listing
+        pages of the first run, and neither was ever refused.
+        """
+        deadline = time.monotonic() + self.SCROLL_BUDGET_S
+        was_at_the_bottom = False
+        while time.monotonic() < deadline:
+            # One evaluate rather than two: scroll, then report where that
+            # left us, so the answer cannot describe a page that has moved on
+            # between the two calls.
+            at_the_bottom = page.evaluate(
+                """(step) => {
+                    window.scrollBy(0, step);
+                    const height = Math.max(
+                        document.body.scrollHeight,
+                        document.documentElement.scrollHeight,
+                    );
+                    return window.scrollY + window.innerHeight >= height - 2;
+                }""",
+                self.SCROLL_STEP_PX,
+            )
+            page.wait_for_timeout(self.SCROLL_SETTLE_MS)
+            # Twice, not once. The first time the bottom is reached the page
+            # may still be growing underneath - kariyer.net appends nothing
+            # here today, but a list that did would be cut short by a single
+            # check, and the extra step costs 400ms.
+            if at_the_bottom and was_at_the_bottom:
+                break
+            was_at_the_bottom = at_the_bottom
+        else:
+            self.logger.info(
+                "Still scrolling %s after %ss - reading it as it stands; the "
+                "logo counter will show what that cost.",
+                request.url[:70], self.SCROLL_BUDGET_S,
+            )
+            self.crawler.stats.inc_value("cards/scroll_budget_spent")
+
+        # Back to the top, because that is where a reader leaves a page they
+        # are about to click a link on, and because a screenshot taken by
+        # anyone debugging this should show the page rather than its footer.
+        page.evaluate("() => window.scrollTo(0, 0)")
+
+    def _read_the_posting(self, page):
+        """
+        Leave a posting page open for as long as reading its first screen
+        would take. See POSTING_DWELL_S above for what this is actually for.
+
+        Nothing is scrolled here. The description is server-rendered into
+        `[data-test="qualifications-and-job-description"]` and is in the DOM
+        whether or not anyone has scrolled to it - measured across every
+        posting the first run collected, 630 to 2 537 characters each.
+        """
+        page.wait_for_timeout(int(self.POSTING_DWELL_S * 1000))
 
     def default_meta(self):
         """
-        On EVERY request, warm-up included - see the base class. This spider
-        has no warm-up today, but a request built anywhere else and sent with
-        Python's fingerprint would be refused and look like a site block.
+        Meta that belongs on every request, warm-up included - see the base
+        class. Nothing to add now that the transport is a browser: the
+        impersonation token this used to carry described a handshake curl_cffi
+        would replay, and there is no curl_cffi here any more.
         """
-        return {
-            "impersonate": self.impersonate_candidates[0],
-            "impersonate_candidates": self.impersonate_candidates,
-        }
+        return {}
 
     ###############################################################
     # PAGINATION IDENTITY - THE POSTING LINK, NOT THE ELEMENT     #

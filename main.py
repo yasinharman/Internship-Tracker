@@ -122,6 +122,30 @@ CHECK_SPIDERS = ["kariyernet_check", "techcareer_check", "indeed_check",
 # A wedged spider must not hold the scheduled task open forever.
 SPIDER_TIMEOUT = int(os.getenv("SPIDER_TIMEOUT", "1800"))
 
+###############################################################
+# THE SPIDERS THAT ARE LEGITIMATELY LONGER THAN THAT          #
+###############################################################
+'''
+    A ceiling is only useful if it separates "wedged" from "working", and
+    from 10.09.2026 kariyer.net's does not fit the shared one.
+
+    Its transport is a real browser window, and its answer to a refusal is to
+    wait ten minutes and carry on rather than to give up - see
+    BlockDetectionMiddleware._cool_off and the measurement in
+    docs/sites/kariyernet.md. Six such pauses is an hour of deliberate,
+    logged, doing-nothing on a crawl that otherwise takes ten minutes. Under
+    the shared 1800s that run would be KILLED mid-pause and reported as a
+    failure, which is the opposite of what the pause is for.
+
+    Two hours, then: enough for every pause the spider is allowed plus the
+    crawl around them, and still short enough that a genuinely stuck browser
+    does not hold a nightly job open until morning.
+'''
+SPIDER_TIMEOUTS = {
+    "kariyernet_cards": int(os.getenv("KARIYERNET_TIMEOUT", "7200")),
+    "kariyernet_check": int(os.getenv("KARIYERNET_TIMEOUT", "7200")),
+}
+
 # 150 postings at 8 concurrent requests finish in well under a minute; this is
 # a ceiling for a hung provider, not an expected duration.
 CLASSIFY_TIMEOUT = int(os.getenv("CLASSIFY_TIMEOUT", "900"))
@@ -184,11 +208,19 @@ def run_spider(spider_name, timeout=None):
     Returns (ok, stats). stats is the dict from _read_spider_stats(), or
     None when the spider did not report one.
 
-    timeout defaults to SPIDER_TIMEOUT. The check spiders pass CHECK_TIMEOUT
+    timeout defaults to SPIDER_TIMEOUT, or to this spider's own entry in
+    SPIDER_TIMEOUTS where it has one. The check spiders pass CHECK_TIMEOUT
     instead: they make one request per stored posting rather than a handful of
     listing pages, so they are a different shape of long.
+
+    A caller's explicit timeout still wins over SPIDER_TIMEOUTS, but takes the
+    higher of the two - that is what keeps kariyernet_check from being handed
+    CHECK_TIMEOUT and killed inside a cool-off it was told it could take.
     """
-    timeout = SPIDER_TIMEOUT if timeout is None else timeout
+    if timeout is None:
+        timeout = SPIDER_TIMEOUTS.get(spider_name, SPIDER_TIMEOUT)
+    else:
+        timeout = max(timeout, SPIDER_TIMEOUTS.get(spider_name, 0))
     print(f"\n=== {spider_name}: starting ===", flush=True)
     started = time.monotonic()
 

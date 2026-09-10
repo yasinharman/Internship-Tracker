@@ -50,6 +50,42 @@ HEARTBEAT_ABOVE_S = 8
 HEARTBEAT_EVERY_S = 10
 
 
+###############################################################
+# WAITING, WITHOUT LOOKING LIKE A CRASH                       #
+###############################################################
+def sleep_out_loud(remaining, what, every_s=HEARTBEAT_EVERY_S):
+    """
+    Wait, saying so often enough that a long delay is never mistaken for a
+    dead crawl.
+
+    This sleep blocks the reactor - deliberately, see the module docstring -
+    which also blocks Scrapy's own LogStats extension, the thing that would
+    otherwise print "Crawled N pages" once a minute. At the 3-6s delays this
+    project started with, that cost nothing. At the 20s Indeed needs to stay
+    under Cloudflare's rate trigger the log would go quiet for twenty seconds
+    at a stretch, and the only way to tell a throttled crawl from a wedged one
+    would be to go and look at the process.
+
+    So the heartbeat comes from inside the wait instead. INFO, because "is it
+    still alive" is a question you want answered without turning DEBUG on.
+
+    Module level rather than a method because the other caller is
+    BlockDetectionMiddleware's cool-off, which waits MINUTES rather than
+    seconds and needs this far more than the throttle does.
+    """
+    if remaining <= HEARTBEAT_ABOVE_S:
+        time.sleep(remaining)
+        return
+
+    deadline = time.monotonic() + remaining
+    while True:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return
+        logger.info("%s (%.0fs to go)", what, left)
+        time.sleep(min(every_s, left))
+
+
 class SlotThrottle:
     """Per-domain DOWNLOAD_DELAY, enforced by the caller instead of the engine."""
 
@@ -83,32 +119,7 @@ class SlotThrottle:
         self._last[key] = time.monotonic()
 
     def _sleep_out_loud(self, remaining, key):
-        """
-        Wait, saying so often enough that a long delay is never mistaken for
-        a dead crawl.
-
-        This sleep blocks the reactor - deliberately, see the module docstring
-        - which also blocks Scrapy's own LogStats extension, the thing that
-        would otherwise print "Crawled N pages" once a minute. At the 3-6s
-        delays this project started with, that cost nothing. At the 20s Indeed
-        needs to stay under Cloudflare's rate trigger the log would go quiet
-        for twenty seconds at a stretch, and the only way to tell a throttled
-        crawl from a wedged one would be to go and look at the process.
-
-        So the heartbeat comes from inside the wait instead. INFO, because
-        "is it still alive" is a question you want answered without turning
-        DEBUG on.
-        """
-        if remaining <= HEARTBEAT_ABOVE_S:
-            time.sleep(remaining)
-            return
-
-        deadline = time.monotonic() + remaining
-        while True:
-            left = deadline - time.monotonic()
-            if left <= 0:
-                return
-            logger.info(
-                "throttle: waiting %.0fs more before the next %s request", left, key
-            )
-            time.sleep(min(HEARTBEAT_EVERY_S, left))
+        """The shared waiter, named for what this particular wait is."""
+        sleep_out_loud(
+            remaining, f"throttle: waiting before the next {key} request"
+        )

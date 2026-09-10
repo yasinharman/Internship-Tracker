@@ -104,6 +104,23 @@ go back to - but going back needs a Chromium layer in the image and a
 residential proxy first, because two of the four sites will not answer a
 datacenter address. The header of `main.py` has the details.
 
+**Three of the four sites now need a browser, and kariyer.net needs a browser
+with a WINDOW.** Measured 10.09.2026: its PerimeterX answers a headless
+Chromium with a 9 kB block page and a windowed one with 621 kB of job cards,
+every other variable held equal (`docs/sites/kariyernet.md`). A desktop
+session already provides the display. Anything unattended - cron, systemd,
+a container - has to provide one:
+
+```bash
+sudo apt install xvfb
+xvfb-run -a .venv/bin/python main.py
+```
+
+That is a real browser window painted into a virtual screen, which is the
+distinction the site is drawing. Without a display the spider refuses to
+start and prints this command rather than crawling headless and reporting
+zero postings.
+
 ## Two things worth knowing before changing anything
 
 **Sessions are accounts.** `indeed-storage-state.json` and

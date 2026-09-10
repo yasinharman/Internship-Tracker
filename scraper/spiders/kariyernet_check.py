@@ -4,9 +4,22 @@ IS THIS kariyer.net POSTING STILL OPEN?
     python -m scrapy crawl kariyernet_check -a dry_run=1    verdicts only
     python -m scrapy crawl kariyernet_check                 write them
 
-Subclasses the crawl spider so the curl_cffi transport, the impersonation
-ladder and the 4s delay all come along; only the urls and the verdict differ.
-See scraper/openings.py for why this is a spider at all.
+Subclasses the crawl spider so the transport comes along - a real windowed
+browser, the profile directory it keeps between runs and the delay between
+navigations. Only the urls and the verdict differ. See scraper/openings.py
+for why this is a spider at all.
+
+IT SHARES THE BROWSER PROFILE, so it must not run while kariyernet_cards is
+running: Chrome locks a profile directory while it has it open, and the
+second launch fails outright rather than quietly making do. main.py runs
+every spider as its own sequential subprocess, which is what makes that safe;
+two hand-started `scrapy crawl` commands in two terminals is what does not.
+
+IT NEEDS A WINDOW TOO, inherited from NEEDS_A_WINDOW on the parent. Headless
+does not fail here, it lies: PerimeterX answers it with a block page that
+carries neither an apply button nor a description container, which is
+verdict() 's exact definition of UNKNOWN. A headless run would therefore
+report every posting in the database as unverifiable rather than as blocked.
 """
 
 from ..openings import CLOSED, OPEN, UNKNOWN, OpeningCheckMixin
