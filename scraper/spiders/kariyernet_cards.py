@@ -307,7 +307,26 @@ class KariyerNetCardsSpider(BaseApiSpider):
         **BaseApiSpider.custom_settings,
         "CONCURRENT_REQUESTS": 1,
         "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
-        "DOWNLOAD_DELAY": 8,
+        # 8 -> 180 on 10.09.2026, and the 8 is worth recording because it was
+        # measured to be too fast rather than guessed at. At 8 seconds the run
+        # collected 34 consecutive postings - a large improvement on the 7
+        # before it - and was then refused, having made 34 requests in five
+        # minutes. That is roughly seven new visitors a minute from one
+        # address, because every request now arrives as a new visitor: the fix
+        # for the per-request signal became a per-hour one.
+        #
+        # 180 is picked from the budget rather than from a measurement, and
+        # says so. ~50 requests at 90-270s is about two and a half hours,
+        # inside the three to four this job was told it may take, and it is a
+        # completely different kind of visitor - one page every few minutes,
+        # overnight, on a site whose whole result set is 46 postings.
+        #
+        # UNVERIFIED. The address that would have to confirm it had taken
+        # about a hundred refusals when this was written, so a clean run has
+        # to wait for a rested one. If that run is also refused, the next
+        # thing to try is not a smaller number here - it is fewer requests
+        # (see OPENINGS_MAX_PER_SITE in docs/pipeline.md).
+        "DOWNLOAD_DELAY": 180,
         "RANDOMIZE_DOWNLOAD_DELAY": True,
 
         # Playwright's sync API cannot start on a thread that already has a

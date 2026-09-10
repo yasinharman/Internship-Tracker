@@ -134,11 +134,36 @@ def test_a_spider_that_has_not_asked_never_waits(middleware, waits):
 
 
 def test_kariyernet_asks_for_it_and_main_gives_it_the_room():
-    # A pause the runner kills halfway through is worse than no pause: the
-    # spider is reported as failed for doing what it was told.
+    """
+    The ceiling has to clear the WORST case, not the expected one.
+
+    A run killed while it is doing exactly what it was told - waiting out a
+    refusal, or drawing the long end of a randomised delay fifty times - is
+    reported as a failure and throws away what it had collected. The first
+    attempt at this ceiling was four hours and would have done that: the
+    worst case works out at 4h50m, which nothing would have noticed until a
+    run died at four in the morning.
+
+    So the arithmetic lives here rather than only in a comment. Raise
+    DOWNLOAD_DELAY, BLOCK_COOLDOWN_S or BLOCK_COOLDOWNS_ALLOWED and this
+    fails until the ceiling follows.
+    """
     import main
 
-    longest = (KariyerNetCardsSpider.BLOCK_COOLDOWN_S
-               * KariyerNetCardsSpider.BLOCK_COOLDOWNS_ALLOWED)
-    assert main.SPIDER_TIMEOUTS["kariyernet_cards"] > longest
-    assert main.SPIDER_TIMEOUTS["kariyernet_check"] > longest
+    spider = KariyerNetCardsSpider
+    # The whole result set is 46 postings plus a handful of listing pages.
+    requests = 55
+    # RANDOMIZE_DOWNLOAD_DELAY spreads uniformly over 0.5x - 1.5x, so every
+    # request landing on the upper bound is the honest worst case.
+    slowest_delay = spider.custom_settings["DOWNLOAD_DELAY"] * 1.5
+    # goto plus the dwell plus the scroll, generously.
+    per_page = spider.POSTING_DWELL_S + 6
+    waiting = spider.BLOCK_COOLDOWN_S * spider.BLOCK_COOLDOWNS_ALLOWED
+
+    worst_case = requests * (slowest_delay + per_page) + waiting
+
+    for name in ("kariyernet_cards", "kariyernet_check"):
+        assert main.SPIDER_TIMEOUTS[name] > worst_case, (
+            f"{name} can legitimately take {worst_case / 3600:.1f}h but is "
+            f"killed at {main.SPIDER_TIMEOUTS[name] / 3600:.1f}h"
+        )
