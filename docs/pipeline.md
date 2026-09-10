@@ -3,14 +3,18 @@
 What happens to a posting once it is in `job_posts`. `main.py` runs these in
 order and the order is load-bearing - see `run_post_crawl()` there.
 
-    crawl  ->  dedupe  ->  notify  ->  classify  ->  check
+    crawl  ->  dedupe  ->  notify  ->  check  ->  classify
 
 | Step | Code | What it decides |
 |---|---|---|
 | dedupe | `pipeline/dedupe_jobs.py` | is this the same job as one on another board? |
 | notify | `pipeline/notify_watchlist.py` | does a watched company appear? (no measurements to record - the rule is a case-insensitive substring match, see `config/watched_companies.yml`) |
+| check | `scraper/spiders/*_check.py` | is it still on offer? (and, since 09.09.2026, what does it say? the description is in the same response) |
 | classify | `pipeline/classify_jobs.py` | is this our field? |
-| check | `scraper/spiders/*_check.py` | is it still on offer? |
+
+**check moved ahead of classify on 09.09.2026** and this line did not follow
+it until 10.09. `run_post_crawl()` is the authority; when the two disagree,
+the code is right and this table is stale.
 
 Three of the four write a column of their own and none of them deletes a row,
 so every verdict here is one UPDATE away from reversal. `scraper/models.py`
@@ -313,3 +317,129 @@ It hid because the crawl spiders make few requests. The checkers make one per
 posting - 60 against Indeed, the site most likely to refuse us - which is
 where it stopped being a technicality. `scraper/throttle.py` now
 keeps the delay for both.
+
+---
+
+## Should the flow be per-site? - considered 10.09.2026, mostly already true
+
+**The proposal.** Crawl every site, then run each site's check and classify
+as a pair, so the sequence reads:
+
+    kariyernet-crawl, techcareer-crawl, indeed-crawl, linkedin-crawl,
+    kariyernet-check, kariyernet-classify,
+    techcareer-check, techcareer-classify,
+    indeed-check,     indeed-classify,
+    linkedin-check,   linkedin-classify
+
+Two reasons were given for it, and **both describe things the pipeline
+already does.** Writing that down so nobody spends an afternoon rediscovering
+it - the ordering looks like an obvious improvement until you check.
+
+### Reason 1: "don't check a site while it is still warm from being crawled"
+
+Already how it works, and the gap is not small. `run_post_crawl()` runs
+**after every crawl spider has finished**, so kariyer.net's check is
+separated from kariyer.net's crawl by the techcareer, Indeed and LinkedIn
+crawls plus dedupe and notify. Measured durations put that at well over an
+hour - Indeed alone is ~41 minutes and LinkedIn ~65.
+
+The proposed order does not lengthen that gap for kariyer.net at all; its
+check sits in the same position either way. It lengthens LinkedIn's slightly,
+by the three classify runs that would now precede it. That is not worth
+restructuring for.
+
+**Where the concern is REAL is `--spider`**, and this is a genuine bug rather
+than a matter of taste:
+
+```bash
+python main.py --spider kariyernet_cards      # crawls ONE site...
+```
+
+...and then calls `run_post_crawl()`, which runs **all four checkers**. So
+`kariyernet_check` starts moments after `kariyernet_cards` finished, with no
+gap at all - exactly the back-to-back pattern the proposal was trying to
+avoid - and three other sites are probed for a crawl that never touched them.
+This is also the command `PLAN-*.md` tells you to run when verifying one
+site, so it is the path a person actually takes.
+
+The fix is small and belongs to `--spider`, not to the nightly order: run
+only the checker that matches the spider that ran.
+
+### Reason 2: "don't pay to classify a posting that has closed"
+
+Already true since 09.09.2026. `classify_jobs.load_unclassified()` filters
+
+```python
+.filter(JobPost.job_category.is_(None))     # not already sorted
+.filter(JobPost.duplicate_of.is_(None))     # not a copy from another board
+.filter(JobPost.closed_at.is_(None))        # not found closed by the checks
+```
+
+and the checks run before classify precisely so that third line has something
+to act on. A posting the checks just found gone is never sent to the LLM
+today.
+
+### The part of the proposal that is genuinely new, and why it is not taken
+
+Splitting classify into four per-site runs. It costs:
+
+* **new code that does not exist** - `pipeline/classify_jobs.py` has no
+  `--site` and no notion of one
+* **efficiency** - the classifier fans out over rows with 8 concurrent calls
+  and finishes 150 postings in under a minute. Four smaller batches are four
+  process starts and less fan-out for the same per-row price. **The LLM bill
+  does not change**: it is charged per posting, not per run.
+* **a correctness trap** - the proposed sequence omits `dedupe`. It must stay
+  ahead of *every* classify, or the copy of a job that also appeared on
+  another board gets classified and paid for. That is what
+  `duplicate_of IS NULL` above relies on.
+
+What it buys is that one site's classify failure cannot take the others down,
+and that the first site's results land sooner. On a job that runs at midnight,
+neither is worth the three costs.
+
+### One part to NOT do: deleting closed postings
+
+The proposal describes "deleting each site's inactive postings from the db"
+before classifying. Nothing here deletes rows and nothing should:
+
+* `closed_at` is a **soft** flag. The dashboard shows those postings behind
+  the "Kapananlar" toggle - deliberately, see `docs/dashboard.md`.
+* A posting that has left a board **can never be fetched again**. The row is
+  the only remaining copy, which is why `backups/job_posts-*.csv` is kept
+  rather than tidied away.
+* `job_posts.url` is the upsert key. Delete a closed posting and, if the site
+  lists it again, the next crawl inserts it as new and **pays for classify a
+  second time**. Deleting costs money here; it does not save it.
+
+### The real problem underneath all of this
+
+The proposal is circling something true: **a site is visited twice on the
+same night** - once by the crawl and once by the checker. On kariyer.net,
+which as of 10.09.2026 starts refusing after about ten pages
+(`docs/sites/kariyernet.md`), that is ~46 crawl navigations plus one per
+stored posting.
+
+Reordering does not reduce that number. The lever that does is
+
+```bash
+OPENINGS_MAX_PER_SITE=25
+```
+
+`scraper/openings.py` orders the queue `checked_at ASC NULLS FIRST`, so a cap
+is fair rather than arbitrary: every row still gets its turn, just over more
+nights. Unset today (0 = no cap).
+
+### Decision
+
+Keep `crawl -> dedupe -> notify -> check -> classify`. Fix `--spider` so it
+runs only its own checker. Reach for `OPENINGS_MAX_PER_SITE` if a site starts
+refusing the check after a clean crawl.
+
+Revisit if any of these change:
+
+* classify grows a `--site` flag for another reason, making the split free
+* a site is measured to refuse its checker *because of* its own crawl an hour
+  earlier - which would make the gap, not the volume, the thing to lengthen
+* the crawl set grows enough that one classify run stops finishing inside
+  `CLASSIFY_TIMEOUT`
