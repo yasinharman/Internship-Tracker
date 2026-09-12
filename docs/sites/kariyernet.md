@@ -12,6 +12,10 @@ postings stored, every one with a description. Then the wall, which is a
 COUNT rather than a rate and which waiting does not clear - see "The limit is
 a count, not a rate" below for what that changed.
 
+**Step by step, what a run actually does:**
+[kariyernet-flow.md](kariyernet-flow.md). This file is the why and the
+measurements; that one is the what and the order.
+
 **Investigated 27.07.2026:**
 
 | | |
