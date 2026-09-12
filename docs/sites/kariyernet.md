@@ -230,10 +230,23 @@ does not change, so the posting page is worth a request the first time and
 nothing after it.
 
 ```
-not in job_posts yet              -> fetch the posting page
-stored, description is real       -> skip, yield the item from the listing
-stored, description is "N/A"      -> fetch it again
+every card                        -> stored from parse_listing, always
+  ... description is real         -> and no posting-page request
+  ... description is NULL or N/A  -> and the posting page is fetched
 ```
+
+**The card is stored whatever happens to the posting page**, added 12.09.2026
+after the run above wrote 24 rows for 46 kept cards. `parse_detail` was the
+only place an item was yielded, so a title, a company, a city, a work type, a
+logo and a link - all already collected - were thrown away for the 22
+postings whose pages were refused. Now they are stored immediately and the
+description catches up tonight or tomorrow.
+
+Those rows are **visible but unsorted** while they wait:
+`classify_jobs.load_unclassified()` skips a row with no description rather
+than judging it by its title, because `job_category` is written once and a
+title-only guess would outlive the description that arrives the next night.
+`report_waiting()` prints how many are waiting, per site, on every run.
 
 **The third line is the one that matters**, and a url-only check would have
 got it wrong. On 10.09 twelve of forty-six postings were refused and stored

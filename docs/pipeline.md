@@ -141,6 +141,14 @@ consequences, both intended:
   shows as `sınıflandırılmadı` behind the "Kapananlar" toggle. That is the
   price of not paying for a dead posting; one `UPDATE` puts it back in the
   queue.
+- **A posting with no description yet WAITS** - added 12.09.2026, and it is
+  the other half of moving the checks first. A row whose description had not
+  arrived was being classified from its title, and `job_category` is written
+  once, so the guess outlived the description that turned up the next night.
+  On kariyer.net that is ~22 of 46 postings a night. The row is visible while
+  it waits, just unsorted, and `report_waiting()` prints the pile per site on
+  every run - a handful is the overnight lag, a number that grows week on week
+  means a site has stopped giving up its descriptions.
 - The checks write `job_description` on their way past, so the classifier
   reads the posting's own text instead of guessing from the title. See the
   reversal in `main.py run_post_crawl()`.

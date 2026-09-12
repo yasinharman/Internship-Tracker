@@ -102,8 +102,9 @@ def test_a_posting_with_no_description_yet_is_fetched():
     items, requests = _split(spider, _listing(2))
 
     assert len(requests) == 2, "both postings are new, both should be opened"
-    assert items == [], "nothing is stored until the description arrives"
     assert spider.crawler.stats.values.get("detail/fetched") == 2
+    # And stored from the card at the same time - see the next test.
+    assert len(items) == 2
 
 
 def test_a_posting_that_already_has_one_is_not_opened_again():
@@ -116,19 +117,44 @@ def test_a_posting_that_already_has_one_is_not_opened_again():
     assert spider.crawler.stats.values.get("detail/already_described") == 1
 
 
-def test_the_skipped_one_is_still_yielded():
+def test_every_card_is_stored_whatever_happens_to_its_posting_page():
     """
-    THE TRAP. parse_detail used to be the only place this spider yielded an
-    item, so skipping the fetch without yielding here would stop
-    pipelines.py stamping last_seen_at - and every known posting would look
-    like it had left the board.
+    MEASURED 12.09.2026: 46 cards were kept and 24 rows were written, because
+    parse_detail was the only place an item was yielded and 22 posting pages
+    were refused. A title, a company, a city, a work type, a logo and a link
+    - all of it already collected from the card - were thrown away because
+    one field was missing.
+
+    So the card goes in from parse_listing, always, and the description
+    catches up whenever the posting page answers. This is also what keeps
+    pipelines.py stamping last_seen_at, which is the evidence that a posting
+    is still on the board.
     """
     described = ["https://www.kariyer.net/is-ilani/bir-firma-stajyer-1"]
     spider = _spider(described=described)
-    items, _ = _split(spider, _listing(2))
+    items, requests = _split(spider, _listing(2))
 
-    assert len(items) == 1
-    assert items[0]["url"] == described[0]
+    assert len(items) == 2, "both cards stored: one described, one waiting"
+    assert {i["url"] for i in items} == {
+        "https://www.kariyer.net/is-ilani/bir-firma-stajyer-1",
+        "https://www.kariyer.net/is-ilani/bir-firma-stajyer-2",
+    }
+    # ...and only the undescribed one costs a request.
+    assert len(requests) == 1
+    assert requests[0].url.endswith("stajyer-2")
+
+
+def test_the_detail_request_gets_its_own_copy_of_the_item():
+    """
+    The item above has already gone to the pipeline by then. parse_detail adds
+    the description to what it is handed and yields it again, so handing it
+    the same object would be mutating a row mid-flight.
+    """
+    spider = _spider(described=[])
+    items, requests = _split(spider, _listing(1))
+
+    assert requests[0].meta["partial_item"] is not items[0]
+    assert requests[0].meta["partial_item"]["url"] == items[0]["url"]
 
 
 def test_the_skipped_item_says_nothing_about_the_description():

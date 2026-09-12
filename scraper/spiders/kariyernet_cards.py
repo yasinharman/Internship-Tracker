@@ -776,15 +776,38 @@ class KariyerNetCardsSpider(BaseApiSpider):
                 card, response, href, force_internship=is_internship,
             )
 
-            # The description only exists on the posting page - but it does
-            # not change, so it is worth a request exactly once. See "THE
-            # POSTING PAGE IS FETCHED ONCE, NOT EVERY NIGHT" above; the item
-            # is yielded straight from here when there is nothing to learn,
-            # which is also what keeps last_seen_at stamped.
             url = response.urljoin(href)
+
+            ###########################################################
+            # THE CARD IS STORED NOW. THE DESCRIPTION CAN BE LATE.    #
+            ###########################################################
+            # MEASURED 12.09.2026: 46 cards were kept and 24 rows were
+            # written. The other 22 postings produced NO ROW AT ALL, because
+            # parse_detail was the only place an item was yielded and their
+            # posting pages were refused - so a title, a company, a city, a
+            # work type, a logo and a link, all of it already collected from
+            # the card, were thrown away because ONE field was missing.
+            #
+            # That is the opposite of this project's rule about never losing
+            # a posting, so the card goes in immediately and the description
+            # catches up when the posting page answers - tonight if it
+            # answers, tomorrow if it does not. `job_description` is nullable
+            # (models.py) and pipelines.py only overwrites the column when
+            # the incoming value is real, so the late arrival wins and
+            # nothing blanks it in between.
+            #
+            # The posting is visible on the dashboard from the first night
+            # either way: an unclassified row is shown, not hidden. What it
+            # waits for is being SORTED - classify_jobs skips a row with no
+            # description rather than judging it by its title, which is the
+            # whole reason the checks were moved ahead of it on 09.09.
+            yield partial
+
+            # The description does not change, so the posting page is worth
+            # a request exactly once - see "THE POSTING PAGE IS FETCHED
+            # ONCE, NOT EVERY NIGHT" above.
             if url in self.described_urls():
                 self.crawler.stats.inc_value("detail/already_described")
-                yield partial
                 continue
 
             # fresh_context is what makes the posting page answerable at all -
@@ -792,12 +815,17 @@ class KariyerNetCardsSpider(BaseApiSpider):
             # above. The referer stays, because it is true and it is what a
             # person's browser would send; it is simply not the thing that
             # mattered.
+            #
+            # A COPY, because the item above has already gone to the
+            # pipeline. parse_detail adds the description to what it is given
+            # and yields it again; handing it the same object would be
+            # mutating a row mid-flight for no reason.
             self.crawler.stats.inc_value("detail/fetched")
             yield self.document_request(
                 url,
                 callback=self.parse_detail,
                 referer=response.url,
-                meta={"partial_item": partial, "fresh_context": True},
+                meta={"partial_item": partial.copy(), "fresh_context": True},
             )
 
         search_key = response.meta["search_key"]

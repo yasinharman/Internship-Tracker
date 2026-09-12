@@ -25,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
+from sqlalchemy import func, or_
 from sqlalchemy.orm import sessionmaker
 
 from scraper.classifier import DEFAULT_MODELS, classify
@@ -48,10 +49,16 @@ CONCURRENCY = int(os.getenv("CLASSIFY_CONCURRENCY", "8"))
 
 CATEGORY_ORDER = ["it", "general_program", "other"]
 
-
 #####################################################
 # READ                                              #
 #####################################################
+# What "no description" looks like in the column. The spiders write the
+# literal "N/A" when they have nothing (BaseApiSpider.DEFAULT_VALUE), and a
+# row stored from a listing card alone has NULL - see
+# kariyernet_cards.parse_listing.
+NO_DESCRIPTION = ("N/A", "")
+
+
 def load_unclassified(session, limit=None):
     # Duplicates are skipped rather than classified: the same job on another
     # board would cost a second call and could come back with a different
@@ -71,11 +78,75 @@ def load_unclassified(session, limit=None):
         # price of not spending on a dead posting, and it is recoverable - the
         # row is still there and one UPDATE puts it back in the queue.
         .filter(JobPost.closed_at.is_(None))
+        ###############################################################
+        # AND A ROW WITH NOTHING TO READ WAITS - ADDED 12.09.2026     #
+        ###############################################################
+        # A description is the input this step was reorganised around. The
+        # checks were moved ahead of classify on 09.09.2026 precisely so the
+        # model would read the posting instead of guessing from its title,
+        # and 32 of 993 rows carried a real description when that decision
+        # was measured.
+        #
+        # What was still missing is the other half of it: a row that has no
+        # description YET was classified anyway, from the title, and
+        # job_category is only ever written once - so the guess became
+        # permanent and the description that arrived the next night changed
+        # nothing. On kariyer.net that is 22 of 46 postings a night, because
+        # its posting pages are refused past a certain count and the card is
+        # stored on its own (kariyernet_cards.parse_listing).
+        #
+        # So the row waits. It is VISIBLE while it waits - an unclassified
+        # posting is shown on the dashboard, not hidden - it is simply not
+        # sorted until there is something to sort it by. A day's delay for a
+        # decision made on the real text is the trade, and it was the owner's
+        # call on 12.09.2026.
+        #
+        # THE RISK, stated rather than discovered: a posting whose
+        # description never arrives is never classified. It stays visible and
+        # unsorted, and report_waiting below counts it out loud every run so
+        # that a growing pile is noticed rather than accumulating in silence.
+        .filter(JobPost.job_description.isnot(None))
+        .filter(JobPost.job_description.notin_(NO_DESCRIPTION))
         .order_by(JobPost.created_at.desc())
     )
     if limit:
         query = query.limit(limit)
     return query.all()
+
+
+def report_waiting(session):
+    """
+    How many rows are sorted-able but for a missing description, per site.
+
+    Printed every run. A handful is the normal overnight lag; the same number
+    growing week on week means a site has stopped giving up its descriptions
+    and the postings are piling up unsorted rather than being classified
+    badly, which is the failure this is designed to have.
+    """
+    rows = (
+        session.query(JobPost.source_site, func.count(JobPost.id))
+        .filter(JobPost.job_category.is_(None))
+        .filter(JobPost.duplicate_of.is_(None))
+        .filter(JobPost.closed_at.is_(None))
+        .filter(
+            or_(
+                JobPost.job_description.is_(None),
+                JobPost.job_description.in_(NO_DESCRIPTION),
+            )
+        )
+        .group_by(JobPost.source_site)
+        .all()
+    )
+    if not rows:
+        return
+
+    total = sum(count for _, count in rows)
+    print(
+        f"{total} posting(s) waiting for a description before being "
+        f"classified - visible on the dashboard, just unsorted:"
+    )
+    for site, count in sorted(rows, key=lambda r: -r[1]):
+        print(f"    {count:>4}  {site}")
 
 
 def snapshot(posting):
@@ -252,9 +323,15 @@ def main():
     session = sessionmaker(bind=engine)()
 
     try:
+        # Before anything else, because it is the line that explains a
+        # smaller-than-expected batch - and it prints whether or not there
+        # is anything to classify.
+        report_waiting(session)
+
         postings = load_unclassified(session, args.limit)
         if not postings:
-            print("0 new rows - everything is already classified.")
+            print("0 new rows - everything is already classified, or waiting "
+                  "for a description.")
             return
 
         rows = [snapshot(posting) for posting in postings]
