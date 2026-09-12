@@ -83,10 +83,19 @@ run that put the fix through 34 consecutive successes was then refused again
 - with the owner's own browser getting the press-and-hold challenge shortly
 after. So 34 is a floor measured under bad conditions, not a limit.
 
-**What the pacing should be.** 8 seconds between requests is what the 34 were
-collected at, which is far too brisk for a site that ends the run at 35. The
-crawl is ~50 requests and runs overnight; three minutes apart would fit in
-2.5 hours and is a completely different kind of visitor. Untested.
+**What the pacing should be.** 8 seconds is what the 34 were collected at,
+which is too brisk for a site that ends the run at 35. It is now **20s**, and
+that number is a guess with a reason rather than a measurement: it is
+`indeed_cards`' floor, measured twice on a site with the same shape of
+problem, and it is what the nightly budget can afford once the other three
+sites have taken their ~3h 12m (see `../pipeline.md`). 180s was tried first
+and was a budgeting mistake - three to four hours is the budget for the WHOLE
+run, not for this site.
+
+If 20s is refused too, **do not raise it** - there is no budget to raise it
+into. Cut the request count: "The posting page is opened once" below already
+takes the nightly total from ~96 to ~55, and a per-site
+`OPENINGS_MAX_PER_SITE` would halve the checker's 46 after that.
 
 ## PerimeterX refuses a browser with no window - MEASURED 10.09.2026
 
@@ -222,6 +231,69 @@ smaller number costs this address some credit with the site.
 
 Listing pages need no separate dwell: the scroll that loads the logos already
 takes 1.7-2.6s, and neither listing page has ever been refused.
+
+
+## The posting page is opened once, not every night - 12.09.2026
+
+The site refuses this crawl somewhere around its 35th request, and ~46 of
+them were being spent re-reading descriptions already stored. A description
+does not change, so the posting page is worth a request the first time and
+nothing after it.
+
+```
+not in job_posts yet              -> fetch the posting page
+stored, description is real       -> skip, yield the item from the listing
+stored, description is "N/A"      -> fetch it again
+```
+
+**The third line is the one that matters**, and a url-only check would have
+got it wrong. On 10.09 twelve of forty-six postings were refused and stored
+with `"N/A"`; under "skip anything already stored" they would never be opened
+again and would sit there without a description forever. This way a refused
+posting rejoins the queue tomorrow, and the queue shrinks as descriptions
+land - so the load on the site falls as it succeeds rather than staying flat.
+
+### What it costs the site, per night
+
+| | before | after the first night |
+|---|---|---|
+| `kariyernet_cards` | 4 listing + 46 detail | 4 listing + however many are new |
+| `kariyernet_check` | 46 | 46 |
+| **total** | **~96** | **~55** |
+
+At `DOWNLOAD_DELAY = 20` that is the difference between ~55 minutes and ~28
+for this site, which is what brings the whole nightly run back under four
+hours (see `../pipeline.md`).
+
+**The first run is unchanged** - an empty `job_posts` means every posting is
+new - so the saving starts on the second night.
+
+### Two things this does NOT change
+
+**Whether a posting is still open.** Nothing in `parse_detail` ever answered
+that. `last_seen_at` is stamped by `pipelines.py` for any item the crawl
+yields, and its evidence is the card appearing in a search result, not the
+posting page opening; `kariyernet_check` still visits every posting for the
+verdict, which is its whole job.
+
+**The stored description.** A skipped item carries no `job_description` field
+at all - deliberately, not `"N/A"`. `pipelines.py` only overwrites when the
+incoming value is truthy and not `"N/A"`, so either would be safe, but an
+absent field says "nothing to say about this column" and that is the true
+one.
+
+### The trap it nearly walked into
+
+`parse_detail` used to be **the only place this spider yielded an item**.
+Skipping the fetch without yielding from `parse_listing` would have stopped
+`last_seen_at` being stamped, and every known posting would have looked like
+it had left the board - `_reopen_seen_again` would have had nothing to work
+with and the checker's closes would have stood unchallenged. Covered by
+`tests/test_detail_once.py`.
+
+A database that cannot be read returns an empty set, so every posting looks
+new and every detail page is fetched: the old behaviour, and the safe
+direction to fail in.
 
 ## When it refuses, wait - it is a state, not a coin flip
 

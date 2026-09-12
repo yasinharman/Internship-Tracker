@@ -526,6 +526,14 @@ class KariyerNetCardsSpider(BaseApiSpider):
         """
         page.wait_for_timeout(int(self.POSTING_DWELL_S * 1000))
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Populated on first use by described_urls(). None rather than an
+        # empty set, so "not loaded yet" and "loaded, nothing stored" stay
+        # tellable apart - the second is the normal state of a fresh database
+        # and must not be retried on every card.
+        self._described_urls = None
+
     def default_meta(self):
         """
         Meta that belongs on EVERY request, warm-up included - see the base
@@ -548,6 +556,100 @@ class KariyerNetCardsSpider(BaseApiSpider):
         The impersonation token this used to carry is gone with curl_cffi.
         """
         return {"fresh_context": True}
+
+    ###############################################################
+    # THE POSTING PAGE IS FETCHED ONCE, NOT EVERY NIGHT           #
+    ###############################################################
+    '''
+        MEASURED 10.09.2026: this site refuses the crawl somewhere around the
+        35th request, and the crawl was spending ~46 of them re-reading
+        descriptions it already had.
+
+        A description does not change. The posting page was being opened every
+        single night for every single posting, to extract text identical to
+        what was stored the night before - and then kariyernet_check opened
+        the SAME pages again an hour later for the open/closed verdict. Two
+        visits per posting per night, one of which was pure repetition.
+
+        So the detail page is now requested only when there is something to
+        learn from it:
+
+            not in the database yet          -> fetch it
+            stored, description is real      -> skip, spend nothing
+            stored, description is "N/A"     -> fetch it again
+
+        THE THIRD CASE IS THE ONE THAT MATTERS and a url-only check would
+        have missed it. On 10.09 twelve of the forty-six postings were refused
+        and stored with "N/A"; under "skip anything already stored" they would
+        never be opened again and would sit there without a description
+        forever. This way a refused posting simply rejoins the queue tomorrow,
+        and the queue shrinks as the descriptions land - which also means the
+        load on the site falls as it succeeds rather than staying flat.
+
+        WHAT THIS DOES NOT TOUCH is whether a posting is still open. Nothing
+        in parse_detail ever answered that: `last_seen_at` is stamped by
+        pipelines.py for any item the crawl yields, and its evidence is the
+        card appearing in a search result, not the posting page opening.
+        kariyernet_check still visits every posting for the verdict - that is
+        its whole job and none of it changes here. The one real trap was that
+        parse_detail used to be the ONLY place this spider yielded an item, so
+        skipping it would have stopped `last_seen_at` from being stamped and
+        made every known posting look like it had left the board; parse_listing
+        yields the item itself now.
+
+        A SKIPPED ITEM CARRIES NO job_description AT ALL, deliberately - not
+        "N/A". pipelines.py only overwrites the stored description when the
+        incoming one is truthy and not "N/A", so either would be safe, but an
+        absent field says "I have nothing to say about this column" while
+        "N/A" says "it is unknown", and only one of those is true here.
+    '''
+    def described_urls(self):
+        """
+        Urls this site already has a real description for, read once per run.
+
+        One query rather than one per card. Loaded lazily so that a hand-run
+        `scrapy crawl` against a machine with no database still works: a
+        failure here returns an EMPTY set, which means every posting looks new
+        and every detail page is fetched - the old behaviour, and the safe
+        direction to fail in. Skipping fetches on a failed query would quietly
+        collect nothing.
+        """
+        if self._described_urls is not None:
+            return self._described_urls
+
+        from sqlalchemy.orm import sessionmaker
+
+        from ..models import JobPost, db_connect
+        from ..pipelines import NO_DESCRIPTION
+
+        try:
+            session = sessionmaker(bind=db_connect())()
+            try:
+                rows = (
+                    session.query(JobPost.url)
+                    .filter(JobPost.source_site == self.site_name)
+                    .filter(JobPost.job_description.isnot(None))
+                    .filter(JobPost.job_description != NO_DESCRIPTION)
+                    .filter(JobPost.job_description != "")
+                    .all()
+                )
+                self._described_urls = {row[0] for row in rows}
+            finally:
+                session.close()
+        except Exception as error:
+            self.logger.warning(
+                "Could not read which postings already have a description "
+                "(%s: %s) - fetching every posting page, which is what this "
+                "spider did before the optimisation.",
+                type(error).__name__, error,
+            )
+            self._described_urls = set()
+
+        self.logger.info(
+            "%s posting(s) already have a description and will not be "
+            "re-opened tonight.", len(self._described_urls),
+        )
+        return self._described_urls
 
     ###############################################################
     # PAGINATION IDENTITY - THE POSTING LINK, NOT THE ELEMENT     #
@@ -641,15 +743,25 @@ class KariyerNetCardsSpider(BaseApiSpider):
                 card, response, href, force_internship=is_internship,
             )
 
-            # The description only exists on the posting page. This is the
-            # only request we spend per posting, and only for the ones we want.
-            #
-            # fresh_context is what makes it answerable at all - see "A
-            # POSTING PAGE IS OPENED BY SOMEBODY WHO HAS JUST ARRIVED" above.
-            # The referer stays, because it is true and it is what a person's
-            # browser would send; it is simply not the thing that mattered.
+            # The description only exists on the posting page - but it does
+            # not change, so it is worth a request exactly once. See "THE
+            # POSTING PAGE IS FETCHED ONCE, NOT EVERY NIGHT" above; the item
+            # is yielded straight from here when there is nothing to learn,
+            # which is also what keeps last_seen_at stamped.
+            url = response.urljoin(href)
+            if url in self.described_urls():
+                self.crawler.stats.inc_value("detail/already_described")
+                yield partial
+                continue
+
+            # fresh_context is what makes the posting page answerable at all -
+            # see "A POSTING PAGE IS OPENED BY SOMEBODY WHO HAS JUST ARRIVED"
+            # above. The referer stays, because it is true and it is what a
+            # person's browser would send; it is simply not the thing that
+            # mattered.
+            self.crawler.stats.inc_value("detail/fetched")
             yield self.document_request(
-                response.urljoin(href),
+                url,
                 callback=self.parse_detail,
                 referer=response.url,
                 meta={"partial_item": partial, "fresh_context": True},
