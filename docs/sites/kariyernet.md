@@ -7,10 +7,10 @@ browser context that has never been to the site.** Both halves of that are
 load bearing and neither is obvious - "Two gates, not one" below is the
 section to read if the crawl ever comes back empty.
 
-**Not yet verified on a rested address.** Everything measured on 10.09 was
-measured on an address that had taken about a hundred refusals that
-afternoon, and the run that proved the fix (34 consecutive successes, up from
-7) was refused again afterwards. Treat the numbers as a floor.
+**Verified on a rested address 12.09.2026**: 36 consecutive requests, 24
+postings stored, every one with a description. Then the wall, which is a
+COUNT rather than a rate and which waiting does not clear - see "The limit is
+a count, not a rate" below for what that changed.
 
 **Investigated 27.07.2026:**
 
@@ -75,27 +75,16 @@ that listings had never been refused while sharing a context - and that run
 had its SECOND listing page refused. One rule instead of two, and there is no
 second rule to forget when a new kind of request is added.
 
-### What is still not known
+### Answered on 12.09.2026, on a rested address
 
-**Whether this holds on a rested address.** Everything above was measured on
-an address that had taken roughly a hundred refusals that afternoon, and the
-run that put the fix through 34 consecutive successes was then refused again
-- with the owner's own browser getting the press-and-hold challenge shortly
-after. So 34 is a floor measured under bad conditions, not a limit.
+This section used to ask whether any of it held once the address had
+recovered, because everything above was measured on one that had taken a
+hundred refusals that afternoon. It does: 45 hours later the same code got
+**36 consecutive requests and 24 postings, every one with a description.**
 
-**What the pacing should be.** 8 seconds is what the 34 were collected at,
-which is too brisk for a site that ends the run at 35. It is now **20s**, and
-that number is a guess with a reason rather than a measurement: it is
-`indeed_cards`' floor, measured twice on a site with the same shape of
-problem, and it is what the nightly budget can afford once the other three
-sites have taken their ~3h 12m (see `../pipeline.md`). 180s was tried first
-and was a budgeting mistake - three to four hours is the budget for the WHOLE
-run, not for this site.
-
-If 20s is refused too, **do not raise it** - there is no budget to raise it
-into. Cut the request count: "The posting page is opened once" below already
-takes the nightly total from ~96 to ~55, and a per-site
-`OPENINGS_MAX_PER_SITE` would halve the checker's 46 after that.
+What it also settled is that there is a wall and no delay reaches past it -
+see "The limit is a count, not a rate" below, which is the section that
+matters now.
 
 ## PerimeterX refuses a browser with no window - MEASURED 10.09.2026
 
@@ -295,7 +284,68 @@ A database that cannot be read returns an empty set, so every posting looks
 new and every detail page is fetched: the old behaviour, and the safe
 direction to fail in.
 
-## When it refuses, wait - it is a state, not a coin flip
+## The limit is a count, not a rate - MEASURED 12.09.2026 on a rested address
+
+The first clean measurement this site has had: 45 hours since the last
+request, against the 10.09 numbers taken on an address that had absorbed a
+hundred refusals that afternoon.
+
+| | delay | consecutive requests before the wall | elapsed |
+|---|---|---|---|
+| 10.09.2026 | 8s | 34 | ~5 min |
+| **12.09.2026** | **20s** | **36** | **~10.5 min** |
+
+**Two and a half times the spacing bought two more requests.** Whatever this
+site counts, it is not a rate, so there is no delay that gets a 50-request
+crawl through and no point looking for one. The delay is now set by the
+nightly budget instead (see `../pipeline.md`), not by chasing the wall.
+
+That run stored **24 postings, every one of them with a description**, and 21
+with a logo, before the wall - which is what the crawl is for.
+
+### Waiting does not clear it either
+
+A ten-minute cool-off was added on 10.09 on the strength of
+`docs/sites/indeed.md`, where a home address recovered on its own in about
+eight minutes. Measured against this site:
+
+| | what the pause bought |
+|---|---|
+| 10.09 | after each 10-minute pause, exactly **one** request got through |
+| 12.09 | after the first 10-minute pause, **zero** did |
+
+Six pauses is an hour of waiting for nothing, and each one ends with two more
+refused requests finding that out. So `BLOCK_COOLDOWNS_ALLOWED = 0`, and with
+it `RETRY_TIMES = 1` and `DOMAIN_BLOCK_BUDGET = 3`: once the wall is up, the
+run stops and keeps what it collected instead of spending another twenty
+refusals confirming it.
+
+The cool-off machinery stays in `BlockDetectionMiddleware` - it is opt-in and
+a site whose refusals really do expire would want it - but no spider asks for
+it now.
+
+### Why hitting the wall is survivable
+
+Because the crawl drains its own queue over a few nights. A posting stored
+without a description is fetched again next time ("The posting page is opened
+once", above), so:
+
+| night | requests | outcome |
+|---|---|---|
+| 1 | 4 listing + 46 detail | ~36 get through, ~24 stored with a description |
+| 2 | 4 listing + ~22 detail | **~26 requests - under the wall** |
+| 3+ | 4 listing + that day's new postings | ~8 requests |
+
+The first night is the only one that hits the wall, and hitting it costs
+nothing but the postings that wait until tomorrow. The steady state is
+comfortably inside whatever the limit is.
+
+**If the wall ever moves down** far enough that night 2 cannot finish, the
+next lever is still request count and not time: a per-site
+`OPENINGS_MAX_PER_SITE` halves the checker's share. The checker is the half
+that should give, because the crawl is what discovers new postings at all.
+
+## ~~When it refuses, wait~~ - SUPERSEDED 12.09.2026, see the section above
 
 The same run says the other thing worth knowing: the refusals did not trickle
 in, they arrived all at once and never stopped. There is nothing for the

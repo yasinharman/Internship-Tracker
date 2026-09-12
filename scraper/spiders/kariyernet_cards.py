@@ -362,44 +362,77 @@ class KariyerNetCardsSpider(BaseApiSpider):
         # 403 is not in Scrapy's default retry list, and the first page of a
         # search is the one that must not be lost: no page 1, no pagination,
         # no postings. Same reasoning as indeed_cards.
+        #
+        # ONE retry, not three, since 12.09.2026. Once this site starts
+        # refusing it does not stop (see below), so the second and third
+        # attempts are spent refusals - three of them per url, on every url
+        # left in the queue. One covers the blip that the entry above is
+        # about and stops there.
         "RETRY_HTTP_CODES": [403, 408, 429, 500, 502, 503, 504, 522, 524],
-        "RETRY_TIMES": 3,
+        "RETRY_TIMES": 1,
+
+        # The run ends after three refusals rather than the shared eight.
+        # Same reason: they are not evidence of a bad patch, they are the wall,
+        # and five more of them only spend the address's credit on the way to
+        # the same place. Whatever was collected before the wall is kept.
+        "DOMAIN_BLOCK_BUDGET": 3,
     }
 
     ###############################################################
-    # WHEN IT IS REFUSED, WAIT - DO NOT GIVE UP AND DO NOT KNOCK  #
+    # THE LIMIT IS A COUNT, NOT A RATE - AND WAITING DOES NOT FIX #
     ###############################################################
     '''
-        MEASURED 10.09.2026, the first live run through the browser. Ten
-        pages served, then every single request after that refused, in one
-        step, for the rest of the run:
+        MEASURED TWICE, and the second measurement killed the first one's
+        remedy.
 
-            listing page 1, 7 postings, listing page 2      200
-            everything after                               403, press-and-hold
+        10.09.2026, delay 8s:   34 consecutive requests, then refused
+        12.09.2026, delay 20s:  36 consecutive requests, then refused
 
-        A refusal here is a STATE, not a coin flip, so the escalation ladder
-        has nothing to offer it: there is no proxy configured, no handshake
-        left to swap, and trying the same request again a second later just
-        collects another refusal. Eight of those and DOMAIN_BLOCK_BUDGET ends
-        the run with two thirds of the postings uncollected - which is what
-        happened.
+        Two and a half times the spacing bought TWO more requests. Whatever
+        this site is counting, it is not a rate - so slowing down is not the
+        lever and there is no point looking for a delay that works.
 
-        The one thing documented to clear it is quiet. docs/sites/indeed.md
-        measured a home address recovering on its own in about eight minutes
-        after the same treatment. Ten is that with room, and this crawl can
-        afford it completely: thirty-odd pages on a job that runs overnight.
+        WAITING IS NOT THE LEVER EITHER, which is what this section used to
+        say and was wrong about. A cool-off of ten minutes was added on
+        10.09 on the strength of docs/sites/indeed.md, where a home address
+        recovered on its own in about eight. Measured against THIS site:
 
-        SIX PAUSES, so an hour of waiting is available to a run that would
-        otherwise take ten minutes. main.py gives this spider a two-hour
-        ceiling to match (SPIDER_TIMEOUTS) - without that the pause would be
-        interrupted by the kill it exists to avoid.
+            10.09  after each 10-minute pause, exactly ONE request got
+                   through before the wall came back
+            12.09  after the first 10-minute pause, ZERO did
 
-        AFTER TWO IN A ROW rather than one, so an isolated refusal is still
-        just a retry and nobody waits ten minutes for a blip.
+        Six pauses is an hour of waiting for nothing, and every pause ends
+        with two more refused requests finding that out. So
+        BLOCK_COOLDOWNS_ALLOWED is 0: the run stops at the wall and keeps
+        what it has. The cool-off machinery stays in
+        BlockDetectionMiddleware - it is opt-in per spider, tested, and a
+        site whose refusals really do expire would want it - but this spider
+        does not ask for it any more.
+
+        WHAT ACTUALLY WORKS IS FEWER REQUESTS, and the crawl already gets
+        there by itself over a few nights, because a posting stored without a
+        description is fetched again next time (see "THE POSTING PAGE IS
+        FETCHED ONCE"):
+
+            night 1   4 listing + 46 detail   ~36 get through, ~24 stored
+                                               with a description
+            night 2   4 listing + ~22 detail  = ~26 requests, under the wall
+            night 3+  4 listing + that day's new postings ~ 8 requests
+
+        So the queue drains and then stays drained, and the steady state is
+        comfortably inside whatever the limit is. The first night is the only
+        one that hits the wall, and hitting it costs nothing except the
+        postings that wait until tomorrow.
+
+        IF THE WALL EVER MOVES DOWN far enough that night 2 cannot finish
+        either, the next lever is still request count, not time: a per-site
+        OPENINGS_MAX_PER_SITE would halve the checker's share (see
+        docs/pipeline.md), and it is the checker rather than the crawl that
+        would have to give, because the crawl is what discovers new postings.
     '''
     BLOCK_COOLDOWN_S = 600
     BLOCK_COOLDOWN_AFTER = 2
-    BLOCK_COOLDOWNS_ALLOWED = 6
+    BLOCK_COOLDOWNS_ALLOWED = 0
 
     ###############################################################
     # WHAT THE BROWSER DOES ON EACH PAGE BEFORE IT IS READ        #

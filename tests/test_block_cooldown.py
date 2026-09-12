@@ -1,15 +1,15 @@
 """
 What a spider does when a site stops answering it.
 
-MEASURED 10.09.2026 (docs/sites/kariyernet.md): kariyer.net served ten pages
-through a windowed browser and then refused every request after that, in one
-step, for the rest of the run. A refusal there is a state rather than a coin
-flip, so retrying it immediately collects another refusal and spends
-DOMAIN_BLOCK_BUDGET on nothing. The answer is to wait.
+The mechanism is opt-in per spider and these lock down when it fires and
+when it stops. Nothing here sleeps: `sleep_out_loud` is replaced with a
+recorder, which is also how the tests check the wait was asked for.
 
-These lock down when the waiting happens and when it stops. Nothing here
-sleeps: `sleep_out_loud` is replaced with a recorder, which is also how the
-tests check the wait was actually asked for.
+WORTH KNOWING BEFORE YOU READ THE REST: kariyer.net, the site this was
+written for, no longer uses it. Waiting was measured twice against that site
+and bought nothing (see the last three tests). The machinery stays because it
+is opt-in and a site whose refusals really do expire would want it - but no
+spider asks for it today, so treat it as untested against a live site.
 """
 
 from collections import defaultdict
@@ -133,7 +133,7 @@ def test_a_spider_that_has_not_asked_never_waits(middleware, waits):
     assert waits == []
 
 
-def test_kariyernet_asks_for_it_and_main_gives_it_the_room():
+def test_main_gives_kariyernet_room_for_its_slowest_legitimate_run():
     """
     The ceiling has to clear the WORST case, not the expected one.
 
@@ -167,3 +167,48 @@ def test_kariyernet_asks_for_it_and_main_gives_it_the_room():
             f"{name} can legitimately take {worst_case / 3600:.1f}h but is "
             f"killed at {main.SPIDER_TIMEOUTS[name] / 3600:.1f}h"
         )
+
+
+###############################################################
+# kariyer.net DOES NOT ASK FOR THE PAUSE - MEASURED TWICE     #
+###############################################################
+def test_kariyernet_stops_at_the_wall_instead_of_waiting():
+    """
+    The pause was added for this site on 10.09.2026 and taken away on 12.09,
+    because it was measured not to work HERE:
+
+        10.09  after each 10-minute pause, exactly ONE request got through
+        12.09  after the first 10-minute pause, ZERO did
+
+    Six pauses is an hour of waiting for nothing, and each one ends with two
+    more refused requests finding that out. The run stops at the wall and
+    keeps what it collected; the postings it did not reach are fetched
+    tomorrow, because a posting stored without a description is fetched
+    again (see KariyerNetCardsSpider, "THE POSTING PAGE IS FETCHED ONCE").
+
+    If this ever goes back above zero it should be because someone measured
+    a pause working, not because six looked tidier than none.
+    """
+    assert KariyerNetCardsSpider.BLOCK_COOLDOWNS_ALLOWED == 0
+
+
+def test_the_wall_is_not_knocked_on_eight_times():
+    """
+    Once it starts refusing it does not stop, so the shared budget of eight
+    - and three retries per url on top - is five refusals spent finding out
+    what the first three already said.
+    """
+    settings = KariyerNetCardsSpider.custom_settings
+    assert settings["DOMAIN_BLOCK_BUDGET"] == 3
+    assert settings["RETRY_TIMES"] == 1
+
+
+def test_slowing_down_is_not_the_lever():
+    """
+    8s bought 34 consecutive requests, 20s bought 36. The limit is a count,
+    not a rate, so the delay is set by the nightly budget (see
+    docs/sites/kariyernet.md) rather than by chasing the wall. This locks
+    the number in so that raising it "to be safe" is a deliberate act with a
+    test to argue with.
+    """
+    assert KariyerNetCardsSpider.custom_settings["DOWNLOAD_DELAY"] == 20
