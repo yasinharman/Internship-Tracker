@@ -362,8 +362,27 @@ avoid - and three other sites are probed for a crawl that never touched them.
 This is also the command `PLAN-*.md` tells you to run when verifying one
 site, so it is the path a person actually takes.
 
-The fix is small and belongs to `--spider`, not to the nightly order: run
-only the checker that matches the spider that ran.
+**FIXED 12.09.2026**, in two parts, because only the first half is about
+`--spider`:
+
+* `CHECKER_FOR` maps each crawl spider to its own checker, and `run_checks()`
+  derives the list from the spiders that actually ran. `--spider X` probes X
+  and nobody else.
+* `SITE_COOLDOWN_S` makes the gap explicit instead of incidental. Before a
+  site's checker starts, if that site's own crawl finished less than the
+  cooldown ago, `main.py` waits out the remainder. In a full run the wait is
+  zero - the other three crawls already provide an hour and a half - so this
+  costs nothing there and is the whole thing on a single-site run.
+  kariyer.net is the only entry, at 30 minutes, and that number is a guess:
+  the site is measured to refuse its crawl around the 35th request, but
+  nothing has measured how long it wants between bursts.
+
+The second part is what stops a future reordering of `run_post_crawl()` from
+removing the gap silently. Covered by `tests/test_check_scheduling.py`.
+
+For a verification crawl that should trigger none of this, `--skip-classify`
+skips the post-crawl steps entirely, checkers included - the flag name
+undersells it.
 
 ### Reason 2: "don't pay to classify a posting that has closed"
 
@@ -465,7 +484,7 @@ just once every four nights instead of every night. Unset today (0 = no cap).
 ### Decision
 
 Keep `crawl -> dedupe -> notify -> check -> classify`, with one classify run
-for everything. Fix `--spider` so it runs only its own checker. **Leave
+for everything. `--spider` now runs only its own checker (done 12.09.2026). **Leave
 `OPENINGS_MAX_PER_SITE` at 0** - kariyer.net's block problem is answered by
 `BLOCK_COOLDOWN_S` (wait ten minutes, carry on) rather than by checking fewer
 postings, and that answer costs no descriptions.

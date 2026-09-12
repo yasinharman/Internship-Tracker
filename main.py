@@ -26,8 +26,10 @@ returns would be reported as still running and the next tick would pile a
 second crawl on top of the first.
 
     python main.py                          all spiders, then classify
-    python main.py --spider indeed_cards    one spider (schedule sites separately)
-    python main.py --skip-classify          crawl only, skip dedupe + classify
+    python main.py --spider indeed_cards    one spider, and only that
+                                            site's checker after it
+    python main.py --skip-classify          crawl only - skips dedupe, notify,
+                                            THE CHECKS and classify
     python main.py --list                   show the spider names
     python main.py --schedule               legacy in-process APScheduler loop,
                                             for running without an external
@@ -116,8 +118,60 @@ FOLLOW_UP_SPIDERS = {}
 # they add no postings, and folding them in would make run_spiders' "every
 # spider found nothing = failed run" rule fire on a checker that legitimately
 # had nothing left to check.
-CHECK_SPIDERS = ["kariyernet_check", "techcareer_check", "indeed_check",
-                 "linkedin_check"]
+#
+# A MAP RATHER THAN A LIST since 12.09.2026, because `--spider X` used to run
+# all four of these. Crawling one site and then probing three others is
+# pointless on its own; what made it a bug is the fourth - X's own checker
+# starting moments after X's crawl, which is the one pairing the whole
+# SITE_COOLDOWN_S below exists to prevent.
+CHECKER_FOR = {
+    "kariyernet_cards": "kariyernet_check",
+    "techcareer_api": "techcareer_check",
+    "indeed_cards": "indeed_check",
+    "linkedin_cards": "linkedin_check",
+}
+
+CHECK_SPIDERS = list(CHECKER_FOR.values())
+
+###############################################################
+# DO NOT VISIT A SITE TWICE IN QUICK SUCCESSION               #
+###############################################################
+'''
+    A site is visited twice a night: once by its crawl and once by its
+    checker. In a full run they are an hour and a half apart, because the
+    other three sites' crawls happen in between - and that gap has been
+    keeping kariyer.net out of trouble by ACCIDENT, not by design.
+
+    Two ways the accident stops holding, and the first one is already here:
+
+      * `python main.py --spider kariyernet_cards` crawls one site and then
+        runs the post-crawl steps, so kariyernet_check started moments after
+        kariyernet_cards with no gap at all. That is the command the docs
+        tell you to run when verifying one site.
+      * any reordering of run_post_crawl() would remove it silently.
+
+    So the gap is explicit now. Before a site's checker starts, if that
+    site's own crawl finished less than this long ago, wait out the
+    remainder. In a full run the wait is zero, because the gap is already
+    bigger; in a single-site run it is the whole thing.
+
+    kariyer.net is the only entry, and 30 minutes is a GUESS - the site is
+    measured to refuse this crawl around its 35th request (see
+    docs/sites/kariyernet.md) but nothing has measured how long it needs
+    between bursts. The other three sites have never shown the problem and
+    are absent rather than set to zero, so adding one is a deliberate act.
+
+    For a verification crawl that should not trigger any of this at all,
+    --skip-classify skips the post-crawl steps entirely, checkers included.
+'''
+SITE_COOLDOWN_S = {
+    "kariyernet_cards": int(os.getenv("KARIYERNET_SITE_COOLDOWN", "1800")),
+}
+
+# Crawl spider -> monotonic time its subprocess returned. Filled in by
+# run_spider; read by run_checks to work out how much of the cooldown above
+# has already elapsed on its own.
+_CRAWL_FINISHED_AT = {}
 
 # A wedged spider must not hold the scheduled task open forever.
 SPIDER_TIMEOUT = int(os.getenv("SPIDER_TIMEOUT", "1800"))
@@ -280,6 +334,12 @@ def run_spider(spider_name, timeout=None):
         return False, None
 
     elapsed = time.monotonic() - started
+    # When this site was last touched, for SITE_COOLDOWN_S. Recorded whatever
+    # the outcome was: a crawl that got as far as being refused has spent the
+    # address's credit just as thoroughly as one that succeeded, and that is
+    # precisely when its checker should not follow it straight in.
+    _CRAWL_FINISHED_AT[spider_name] = time.monotonic()
+
     stats = _read_spider_stats(stats_path)
     items = stats["items"] if stats else None
     found = "?" if items is None else items
@@ -478,9 +538,44 @@ def run_step(label, module, timeout):
     return False
 
 
-def run_checks():
+def _wait_out_site_cooldown(crawl_spider):
+    """
+    Hold a checker back until its own site has had a rest.
+
+    Returns immediately - and silently - when the gap is already there, which
+    is every site in a full run. It only ever costs anything on a single-site
+    run, which is exactly the case it was written for.
+    """
+    cooldown = SITE_COOLDOWN_S.get(crawl_spider)
+    finished = _CRAWL_FINISHED_AT.get(crawl_spider)
+    if not cooldown or finished is None:
+        return
+
+    remaining = cooldown - (time.monotonic() - finished)
+    if remaining <= 0:
+        return
+
+    print(
+        f"  (waiting {remaining / 60:.0f} more minute(s) before checking "
+        f"{crawl_spider}'s site - its crawl finished too recently, and "
+        f"visiting twice in quick succession is what gets this one refused)",
+        flush=True,
+    )
+    deadline = time.monotonic() + remaining
+    while True:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return
+        time.sleep(min(60, left))
+
+
+def run_checks(crawled=None):
     """
     Ask each site whether the postings we hold are still on offer.
+
+    `crawled` is the list of crawl spiders that just ran; the checkers are
+    derived from it so a `--spider X` run probes X and nobody else. None
+    means a full run and checks everything.
 
     Reuses run_spider() rather than run_step(): these ARE spiders, and that
     gets the per-spider timeout, the stats handoff and the log formatting for
@@ -493,8 +588,14 @@ def run_checks():
     still lists something that closed, which is where it was before any of
     this existed.
     """
+    if crawled is None:
+        pairs = list(CHECKER_FOR.items())
+    else:
+        pairs = [(c, CHECKER_FOR[c]) for c in crawled if c in CHECKER_FOR]
+
     ok = True
-    for spider in CHECK_SPIDERS:
+    for crawl_spider, spider in pairs:
+        _wait_out_site_cooldown(crawl_spider)
         succeeded, stats = run_spider(spider, timeout=CHECK_TIMEOUT)
         if not succeeded:
             ok = False
@@ -511,7 +612,7 @@ def run_checks():
     return ok
 
 
-def run_post_crawl():
+def run_post_crawl(crawled=None):
     """
     Everything that happens after the postings are in the database.
 
@@ -564,7 +665,7 @@ def run_post_crawl():
     """
     deduped = run_step("dedupe", "pipeline.dedupe_jobs", DEDUPE_TIMEOUT)
     notified = run_step("notify", "pipeline.notify_watchlist", NOTIFY_TIMEOUT)
-    checked = run_checks()
+    checked = run_checks(crawled)
     classified = run_step("classify", "pipeline.classify_jobs", CLASSIFY_TIMEOUT)
     return deduped and notified and checked and classified
 
@@ -664,7 +765,7 @@ if __name__ == "__main__":
     # Classify whatever the crawl added. Runs even when a spider failed: the
     # other spiders' postings are in the database and deserve to be sorted.
     if not args.skip_classify:
-        if not run_post_crawl():
+        if not run_post_crawl(selected):
             print(
                 "  (a post-crawl step did not finish - postings are stored and "
                 "visible; they may be unsorted, or a closed one may still be "

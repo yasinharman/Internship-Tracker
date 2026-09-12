@@ -1,0 +1,118 @@
+"""
+Which checkers run, and when they are allowed to start.
+
+Two things `main.py --spider kariyernet_cards` used to get wrong, and both
+matter to a site that refuses this crawl around its 35th request:
+
+  * it ran ALL FOUR checkers, so three uncrawled sites were probed for
+    nothing
+  * kariyernet_check started moments after kariyernet_cards, with none of
+    the hour-and-a-half gap a full run provides by accident
+
+Nothing here runs a spider or sleeps: run_spider and the wait are replaced.
+"""
+
+import time
+
+import pytest
+
+import main
+
+
+@pytest.fixture
+def ran(monkeypatch):
+    """Record which spiders run_checks would start, without starting any."""
+    started = []
+
+    def fake_run_spider(name, timeout=None):
+        started.append(name)
+        return True, {"items": 1}
+
+    monkeypatch.setattr(main, "run_spider", fake_run_spider)
+    return started
+
+
+@pytest.fixture
+def waits(monkeypatch):
+    """
+    Every cooldown actually waited out, in seconds, without waiting.
+
+    The clock has to move with the sleeps. _wait_out_site_cooldown loops
+    until monotonic() passes a deadline, so a fake sleep that does nothing
+    while monotonic() stands still spins forever - which is exactly what the
+    first version of this fixture did, and it hung the suite.
+    """
+    slept = []
+    clock = {"now": time.monotonic()}
+
+    def fake_sleep(seconds):
+        slept.append(seconds)
+        clock["now"] += seconds
+
+    monkeypatch.setattr(main.time, "sleep", fake_sleep)
+    monkeypatch.setattr(main.time, "monotonic", lambda: clock["now"])
+    return slept
+
+
+def test_a_full_run_checks_every_site(ran, waits):
+    main.run_checks()
+    assert ran == list(main.CHECKER_FOR.values())
+
+
+def test_one_spider_checks_only_its_own_site(ran, waits):
+    main.run_checks(["kariyernet_cards"])
+    assert ran == ["kariyernet_check"], (
+        "crawling one site must not send three other sites a probe"
+    )
+
+
+def test_an_unknown_spider_name_is_skipped_rather_than_crashing(ran, waits):
+    main.run_checks(["something_that_has_no_checker"])
+    assert ran == []
+
+
+###############################################################
+# THE GAP BETWEEN A SITE'S CRAWL AND ITS OWN CHECK            #
+###############################################################
+def test_a_crawl_that_just_finished_holds_its_checker_back(ran, waits,
+                                                           monkeypatch):
+    monkeypatch.setitem(main._CRAWL_FINISHED_AT, "kariyernet_cards",
+                        time.monotonic())
+    main.run_checks(["kariyernet_cards"])
+
+    assert waits, "the checker should have been made to wait"
+    assert sum(waits) > main.SITE_COOLDOWN_S["kariyernet_cards"] * 0.9
+    assert ran == ["kariyernet_check"], "and then run, not be skipped"
+
+
+def test_a_gap_that_is_already_there_costs_nothing(ran, waits, monkeypatch):
+    # What a full run looks like: the other three crawls happened in between.
+    long_ago = time.monotonic() - main.SITE_COOLDOWN_S["kariyernet_cards"] - 60
+    monkeypatch.setitem(main._CRAWL_FINISHED_AT, "kariyernet_cards", long_ago)
+    main.run_checks(["kariyernet_cards"])
+
+    assert waits == [], "no wait when the gap is already bigger"
+    assert ran == ["kariyernet_check"]
+
+
+def test_sites_with_no_cooldown_never_wait(ran, waits, monkeypatch):
+    # Absent from SITE_COOLDOWN_S rather than set to zero: adding one is a
+    # deliberate act, and the other three have never shown the problem.
+    monkeypatch.setitem(main._CRAWL_FINISHED_AT, "indeed_cards",
+                        time.monotonic())
+    main.run_checks(["indeed_cards"])
+
+    assert waits == []
+    assert ran == ["indeed_check"]
+    assert "indeed_cards" not in main.SITE_COOLDOWN_S
+
+
+def test_a_refused_crawl_still_starts_the_clock(monkeypatch):
+    """
+    run_spider records the finish time whatever the outcome. A crawl that got
+    as far as being refused has spent the address's credit just as
+    thoroughly, and that is exactly when its checker must not follow it in.
+    """
+    assert "_CRAWL_FINISHED_AT[spider_name] = time.monotonic()" in (
+        open("main.py").read()
+    )
