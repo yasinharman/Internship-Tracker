@@ -133,37 +133,41 @@ SPIDER_TIMEOUT = int(os.getenv("SPIDER_TIMEOUT", "1800"))
     wait ten minutes and carry on rather than to give up - see
     BlockDetectionMiddleware._cool_off and the measurement in
     docs/sites/kariyernet.md. Six such pauses is an hour of deliberate,
-    logged, doing-nothing on a crawl that otherwise takes ten minutes. Under
-    the shared 1800s that run would be KILLED mid-pause and reported as a
-    failure, which is the opposite of what the pause is for.
+    logged, doing-nothing on a crawl that is otherwise under half an hour.
+    Under the shared 1800s that run would be KILLED mid-pause and reported as
+    a failure, which is the opposite of what the pause is for.
 
-    Six hours, and the arithmetic is worth keeping because the first attempt
-    at this number was FOUR and would have killed a legitimate run. A ceiling
-    has to clear the worst case, not the expected one:
+    TWO HOURS, and the arithmetic is here because this number has now been
+    wrong twice in two days, in both directions:
 
-                                   expected        worst case
-        ~50 requests, delay 180s    ~2h 40m    ~3h 50m (all at the 1.5x
-                                                        upper bound)
-        cool-offs, 6 x 600s          0-20m     1h
-                                   --------    ----------
-                                     ~3h       ~4h 50m
+        first attempt   4h   too LOW  - the worst case was 4h50m, so a run
+                                        drawing the long end of its delay
+                                        fifty times would have been killed
+                                        for doing as it was told
+        second          6h   too HIGH - it was sized for a 180s delay that
+                                        had itself been sized against the
+                                        wrong budget (see kariyernet_cards)
 
-    Expected is what the owner signed up for when they said three to four
-    hours. Worst case is what the ceiling exists for: killing a run that is
-    doing exactly what it was told - waiting out a refusal, or simply drawing
-    the long end of a randomised delay fifty times - would report it as a
-    failure and throw away the postings it had collected.
+    At the 20s the spider actually uses:
 
-    Under the shared 1800s it would not have got a fifth of the way through.
+                                       expected     worst case
+        ~55 requests, delay 20s        ~28 min      ~37 min  (every delay at
+                                                              the 1.5x bound)
+        cool-offs, 6 x 600s             0-20 min      60 min
+                                       --------     --------
+                                        ~30 min      ~1h 37m
 
-    RAISE DOWNLOAD_DELAY, BLOCK_COOLDOWN_S OR BLOCKS_ALLOWED AND THIS MOVES
-    TOO. tests/test_block_cooldown.py does that arithmetic and fails if the
-    ceiling stops clearing it, because nothing else would notice until a run
-    was killed at four in the morning.
+    Two hours clears the worst case with room and is short enough that a
+    genuinely wedged browser does not hold a nightly job open until morning.
+
+    RAISE DOWNLOAD_DELAY, BLOCK_COOLDOWN_S OR BLOCK_COOLDOWNS_ALLOWED AND
+    THIS MOVES TOO. tests/test_block_cooldown.py does that arithmetic and
+    fails if the ceiling stops clearing it, because nothing else would notice
+    until a run was killed at four in the morning.
 '''
 SPIDER_TIMEOUTS = {
-    "kariyernet_cards": int(os.getenv("KARIYERNET_TIMEOUT", "21600")),
-    "kariyernet_check": int(os.getenv("KARIYERNET_TIMEOUT", "21600")),
+    "kariyernet_cards": int(os.getenv("KARIYERNET_TIMEOUT", "7200")),
+    "kariyernet_check": int(os.getenv("KARIYERNET_TIMEOUT", "7200")),
 }
 
 # 150 postings at 8 concurrent requests finish in well under a minute; this is

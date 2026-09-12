@@ -307,26 +307,50 @@ class KariyerNetCardsSpider(BaseApiSpider):
         **BaseApiSpider.custom_settings,
         "CONCURRENT_REQUESTS": 1,
         "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
-        # 8 -> 180 on 10.09.2026, and the 8 is worth recording because it was
-        # measured to be too fast rather than guessed at. At 8 seconds the run
-        # collected 34 consecutive postings - a large improvement on the 7
-        # before it - and was then refused, having made 34 requests in five
-        # minutes. That is roughly seven new visitors a minute from one
-        # address, because every request now arrives as a new visitor: the fix
-        # for the per-request signal became a per-hour one.
+
+        ###########################################################
+        # 8 -> 180 -> 20, AND THE 180 WAS A BUDGETING MISTAKE     #
+        ###########################################################
+        # The 8 is worth recording because it was MEASURED to be too fast
+        # rather than guessed at: at 8 seconds the run collected 34
+        # consecutive postings - a large improvement on the 7 before it - and
+        # was then refused, having made those 34 in five minutes. Every
+        # request now arrives as a new browser context, so that is about seven
+        # brand-new visitors a minute from one address; the fix for the
+        # per-request signal had become a per-hour one.
         #
-        # 180 is picked from the budget rather than from a measurement, and
-        # says so. ~50 requests at 90-270s is about two and a half hours,
-        # inside the three to four this job was told it may take, and it is a
-        # completely different kind of visitor - one page every few minutes,
-        # overnight, on a site whose whole result set is 46 postings.
+        # 180 came next and was wrong for a reason worth keeping. The owner
+        # had said a full run may take three to four hours, and that was read
+        # as three to four hours FOR THIS SITE. It is the budget for the whole
+        # job, and the whole job is mostly other people's sites:
         #
-        # UNVERIFIED. The address that would have to confirm it had taken
-        # about a hundred refusals when this was written, so a clean run has
-        # to wait for a rested one. If that run is also refused, the next
-        # thing to try is not a smaller number here - it is fewer requests
-        # (see OPENINGS_MAX_PER_SITE in docs/pipeline.md).
-        "DOWNLOAD_DELAY": 180,
+        #     indeed_cards                             ~41 min   (measured)
+        #     linkedin_cards                           ~65 min   (measured)
+        #     indeed_check    60 postings x 20s        ~20 min
+        #     linkedin_check  487 postings x 8s        ~65 min
+        #     techcareer, dedupe, notify, classify      ~5 min
+        #     ----------------------------------------------------
+        #     everything except kariyer.net           ~3h 12m
+        #
+        # So the share available here is forty to fifty minutes, not three
+        # hours, and 180s would have spent the entire nightly budget on the
+        # smallest site on the board.
+        #
+        # 20 fits that share: this site costs ~50 requests on the crawl and
+        # ~46 on the check, and at 20s plus ~10s of page time each that is
+        # about 25 minutes and 23 minutes. It is also not an arbitrary number
+        # - it is indeed_cards' floor, measured twice on a site with the same
+        # shape of problem (docs/sites/indeed.md), which makes it the most
+        # defensible guess available without spending another afternoon of
+        # this address's credit to find out.
+        #
+        # STILL A GUESS. The only measurement is that 8 was too fast. If 20 is
+        # also refused, do NOT raise it - there is no room left in the budget
+        # to raise it into. Cut the REQUEST COUNT instead: a per-site
+        # OPENINGS_MAX_PER_SITE would halve the checker's 46 without touching
+        # LinkedIn, which is where the descriptions come from (see
+        # docs/pipeline.md).
+        "DOWNLOAD_DELAY": 20,
         "RANDOMIZE_DOWNLOAD_DELAY": True,
 
         # Playwright's sync API cannot start on a thread that already has a
