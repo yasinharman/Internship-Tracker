@@ -120,8 +120,8 @@ def test_a_posting_that_already_has_one_is_not_opened_again():
 def test_every_card_is_stored_whatever_happens_to_its_posting_page():
     """
     MEASURED 12.09.2026: 46 cards were kept and 24 rows were written, because
-    parse_detail was the only place an item was yielded and 22 posting pages
-    were refused. A title, a company, a city, a work type, a logo and a link
+    parse_detail was the only place an item was yielded and the rest of the
+    posting pages were refused. A title, a company, a city, a work type, a logo and a link
     - all of it already collected from the card - were thrown away because
     one field was missing.
 

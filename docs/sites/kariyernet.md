@@ -7,8 +7,11 @@ to the site.** The first half of this file is what a run does, request by
 request. The second half is why, and it is the half to read when the crawl
 comes back empty.
 
-**Last verified 12.09.2026** on a rested address: 36 consecutive requests, 46
-cards kept, 24 postings stored with a description before the site's wall.
+**Last verified 14.09.2026**, the second night: 21 requests, all answered, no
+refusal. The 24 postings described on the first night were not re-opened, and
+the 17 it had not reached were all fetched and described - so the queue
+really does drain. The first night, 12.09.2026, stored 24 postings before the
+site's wall at the 36th request.
 
 ---
 
@@ -89,8 +92,10 @@ third night on, a run is about 4 listing pages plus that day's new postings.
 ```
 
 On 12.09.2026 that wall came after the 36th request. The postings it cut off
-are requested again on the next run - that part is what the code is built to
-do, and has not yet been watched happening.
+were requested again on the next run, 14.09.2026, and all of them were
+described - the posting that took the very first 403 on 12.09,
+`vitra-karo-career-experience-drive-...`, came back with 3 699 characters of
+description. See "The second night" below.
 
 ### TABLE A - what is read from each card on a listing page
 
@@ -197,6 +202,61 @@ them looked right at the time, and two of them cost a day each.
 | Listings per page | 16 |
 | Structured data | `application/ld+json` is only a BreadcrumbList - useless. Job data lives in `window.__NUXT__` as `positionName` / `positionId` |
 
+
+
+## The second night - MEASURED 14.09.2026
+
+The run that tested whether the queue actually drains. Two days after the
+first night, on a rested address, with a snapshot of `job_posts` taken
+beforehand so that "new" could be told apart from "seen again":
+
+```
+before   24 kariyer.net rows, 24 with a description, 24 classified
+after    41 rows
+```
+
+| | Result |
+|---|---|
+| requests | 21 = 4 listing + 17 posting pages |
+| answered | **21 of 21, nothing refused** |
+| `described_urls()` loaded | 24 - exactly the rows that had a description |
+| the 24 old postings | all still there, all descriptions untouched, **none re-opened**, all stamped `last_seen_at` today |
+| new postings | **17, every one with a description** |
+| waiting to be classified | 17, all of them now with something to classify by |
+| run time | 415 s |
+
+**The one to point at:** on 12.09 the very first 403 of the run landed on
+`/is-ilani/vitra-karo-career-experience-drive-...`. On 14.09 both VitrA Career
+Experience Drive postings arrived with 3 699 and 3 870 characters of
+description.
+
+### Cards are not postings
+
+47 cards were kept and they were **41 postings** - six were found by both the
+part-time and the internship search. One url is one row, so the overlap is
+harmless for the data. For requests it should be too: posting-page requests do
+not set `dont_filter`, so Scrapy's duplicate filter would drop the second copy.
+That path did not actually come up on 14.09 - all six shared postings were
+already described, so neither copy asked for a page, and
+`dupefilter/filtered` never appeared in the stats.
+
+The overlap did make two numbers written earlier wrong, and they have been
+corrected where they appeared:
+
+- the first night's cut-off was written as "22 postings" - it was 46 cards
+  minus 24 rows, so probably about 16 postings. The 12.09 url list was not
+  kept, so that is inferred from the overlap rather than counted
+- the second night was forecast at ~26 requests and came in at 21, for the
+  same reason
+
+`detail/already_described` read 30 against 24 described urls for the same
+reason: it counts cards, and six of them were the same posting twice.
+
+### What it does not show
+
+That a third night stays down near 8 requests. That depends on how many
+postings the board gains in a day, which one run cannot say. Watch
+`detail/fetched` over the next few runs.
 
 ## Two gates, not one - and the second one is the cookie
 
@@ -413,9 +473,15 @@ every card                        -> stored from parse_listing, always
 **The card is stored whatever happens to the posting page**, added 12.09.2026
 after the run above wrote 24 rows for 46 kept cards. `parse_detail` was the
 only place an item was yielded, so a title, a company, a city, a work type, a
-logo and a link - all already collected - were thrown away for the 22
-postings whose pages were refused. Now they are stored immediately and the
-description catches up tonight or tomorrow.
+logo and a link - all already collected - were thrown away for the postings
+whose pages were refused. Now they are stored immediately and the description
+catches up tonight or tomorrow.
+
+(This used to say "the 22 postings". That was 46 cards minus 24 rows, and
+cards are not postings: the two searches overlap - 6 cards of 47 on
+14.09.2026 were the same posting found by both. The number cut off on 12.09
+was most likely about 16 postings. The 12.09 url list did not survive, so
+that figure is inferred from the overlap, not counted.)
 
 Those rows are **visible but unsorted** while they wait:
 `classify_jobs.load_unclassified()` skips a row with no description rather
@@ -520,9 +586,13 @@ once", above), so:
 
 | night | requests | outcome |
 |---|---|---|
-| 1 | 4 listing + 46 detail | ~36 get through, ~24 stored with a description |
-| 2 | 4 listing + ~22 detail | **~26 requests - under the wall** |
-| 3+ | 4 listing + that day's new postings | ~8 requests |
+| 1 - 12.09.2026 | 4 listing + 46 detail | 36 got through, 24 stored with a description, then the wall |
+| **2 - 14.09.2026, measured** | **4 listing + 17 detail = 21** | **21 of 21 answered, 0 refused, 17 new postings all with a description** |
+| 3+ | 4 listing + that day's new postings | expected ~8 requests |
+
+Night 2 was predicted at ~26 requests and came in at 21. The gap is the
+overlap between the two searches: the prediction counted cards, and six cards
+were postings the other search had already found.
 
 The first night is the only one that hits the wall, and hitting it costs
 nothing but the postings that wait until tomorrow. The steady state is

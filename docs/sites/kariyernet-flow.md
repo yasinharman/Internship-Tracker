@@ -180,9 +180,9 @@ because the crawl drains its own queue over a few nights:
 
 | Night | Requests | Outcome |
 |---|---|---|
-| 1 | 4 listing + 46 detail | ~36 get through, ~24 with a description |
-| 2 | 4 listing + ~22 detail | ~26 requests - under the wall |
-| 3+ | 4 listing + that day's new postings | ~8 requests |
+| 1 - 12.09.2026 | 4 listing + 46 detail | 36 got through, 24 with a description, then the wall |
+| 2 - 14.09.2026 | 4 listing + 17 detail = 21 | all 21 answered, 17 new postings, every one described |
+| 3+ | 4 listing + that day's new postings | expected ~8 requests |
 
 ## 9. Closing
 

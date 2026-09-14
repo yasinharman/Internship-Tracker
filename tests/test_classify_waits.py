@@ -8,8 +8,9 @@ classified anyway, from the title, and `job_category` is only ever written
 once - so the guess became permanent and the description that turned up the
 next night changed nothing.
 
-On kariyer.net that is ~22 of 46 postings a night, because its posting pages
-are refused past a certain count while the card is stored on its own.
+On kariyer.net's first night that was roughly 16 of 40 postings, because its
+posting pages are refused past a certain count while the card is stored on
+its own.
 
 The row stays VISIBLE while it waits - an unclassified posting is shown on the
 dashboard, not hidden. It is simply unsorted until there is something to sort

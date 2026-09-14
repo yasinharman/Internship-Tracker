@@ -414,10 +414,16 @@ class KariyerNetCardsSpider(BaseApiSpider):
         description is fetched again next time (see "THE POSTING PAGE IS
         FETCHED ONCE"):
 
-            night 1   4 listing + 46 detail   ~36 get through, ~24 stored
-                                               with a description
-            night 2   4 listing + ~22 detail  = ~26 requests, under the wall
-            night 3+  4 listing + that day's new postings ~ 8 requests
+            night 1   12.09  4 listing + 46 detail   36 through, 24 stored
+                                                      with a description,
+                                                      then the wall
+            night 2   14.09  4 listing + 17 detail   21 of 21 answered, 17 new
+                                                      postings all described
+            night 3+         4 listing + new ones    expected ~8 requests
+
+        Night 2 is MEASURED, not predicted - it was forecast at ~26 and came
+        in at 21, the difference being postings both searches find (six cards
+        of forty-seven on 14.09 were the same posting twice).
 
         So the queue drains and then stays drained, and the steady state is
         comfortably inside whatever the limit is. The first night is the only
@@ -782,7 +788,9 @@ class KariyerNetCardsSpider(BaseApiSpider):
             # THE CARD IS STORED NOW. THE DESCRIPTION CAN BE LATE.    #
             ###########################################################
             # MEASURED 12.09.2026: 46 cards were kept and 24 rows were
-            # written. The other 22 postings produced NO ROW AT ALL, because
+            # written. The rest produced NO ROW AT ALL - roughly 16 postings,
+            # not 22, since the two searches return some of the same ones -
+            # because
             # parse_detail was the only place an item was yielded and their
             # posting pages were refused - so a title, a company, a city, a
             # work type, a logo and a link, all of it already collected from

@@ -91,9 +91,10 @@ def load_unclassified(session, limit=None):
         # description YET was classified anyway, from the title, and
         # job_category is only ever written once - so the guess became
         # permanent and the description that arrived the next night changed
-        # nothing. On kariyer.net that is 22 of 46 postings a night, because
-        # its posting pages are refused past a certain count and the card is
-        # stored on its own (kariyernet_cards.parse_listing).
+        # nothing. On kariyer.net's first night that was roughly 16 of 40
+        # postings, because its posting pages are refused past a certain
+        # count and the card is stored on its own
+        # (kariyernet_cards.parse_listing).
         #
         # So the row waits. It is VISIBLE while it waits - an unclassified
         # posting is shown on the dashboard, not hidden - it is simply not
