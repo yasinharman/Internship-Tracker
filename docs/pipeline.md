@@ -164,7 +164,8 @@ stored, and unclassified rows stay visible on the dashboard.
 > almost entirely title-only: measured the same day, 32 of 993 rows carried a
 > real description. Now that the checks collect descriptions, `--compare`
 > should be run again on rows that have one before this table is trusted to
-> still be the answer.
+> still be the answer. **A first look on 17 rows, and the decision to wait for
+> every site before the real comparison, are at the end of this section.**
 
 Decided by measurement, not by price list. `pipeline/classify_jobs.py --compare` runs
 the same postings through several models and prints only the disagreements.
@@ -186,6 +187,65 @@ it reliably.
 Verdicts are not deterministic. The same model on the same rows produced
 27/12/91 in the comparison run and 29/13/88 when writing. Borderline postings
 move between runs; the stored decision is what counts.
+
+#### First look with descriptions - 14.09.2026, 17 rows
+
+The re-measurement the note at the top of this section asks for, on the first
+rows that had one: 17 kariyer.net postings from the second night's crawl,
+every one with a description, before they were written.
+
+    gpt-5.4-nano   it: 6   general_program: 3   other: 8
+    gpt-5.4-mini   it: 8   general_program: 2   other: 7
+    agreed on 15 of 17
+
+Both disagreements went mini's way, judged by reading the postings:
+
+| Posting | nano | mini | What the description says |
+|---|---|---|---|
+| BT İş Analist Stajyeri (Enterprise) | `general_program` | `it` | "Bilgi Teknolojileri ekibimize", "yazılım geliştirme ve test süreçlerinde" |
+| Bilgi Teknolojileri Lise Stajyeri (MSC) | **`other`** | `it` | "Meslek Lisesi Bilgisayar, yazılım ve türevi bölümler" |
+
+**This weakens the hope rather than confirming it.** Neither is a
+title-reading error - both titles say IT outright, and nano had the
+description - and the second one HIDES an IT posting, on the reasoning that a
+high-school internship is not in the field.
+
+It does not settle anything either. Seventeen rows is two disagreements, and
+kariyer.net titles are the plain ones: the case descriptions should rescue is
+LinkedIn's bare "Intern", which is where nano failed on 28.07.2026 and which
+this sample does not contain.
+
+#### DECIDED 14.09.2026: compare again once every site is back
+
+The comparison waits until all four spiders are producing clean rows. On
+14.09 the table was cut down to kariyer.net's 41 rows - the other 774 came
+from a single run on the morning of 10.09 with the old spiders and were
+deleted (`backups/job_posts-20260914-100439.csv` holds them) - so there is
+nothing else to measure on yet, and 41 plain-titled rows would test nano on
+the easiest exam there is.
+
+How to run it when the time comes, so the answer means something:
+
+1. **One variable.** Hold `DESCRIPTION_CHARS` where it is for the model
+   comparison. Raising it is a separate question, asked afterwards - it
+   truncated 14 of 24 kariyer.net descriptions, and LinkedIn's average was
+   3 383 characters, but it also raises every call's input tokens, so it
+   pulls against a cheaper model and the two cannot be read apart if they
+   move together.
+2. **Rows that have a description**, from every site, and enough of them -
+   130 was the size of the 28.07 study.
+3. **Judge the disagreements by reading them**, as above, rather than trusting
+   either model as the reference.
+4. **Count wrongly hidden postings separately.** `it` -> `general_program`
+   still shows on the board; `it` -> `other` does not. The rule at the top of
+   this section is that a wrong exclusion costs a real opportunity, so the
+   decision rule is: **switch to nano only if it wrongly hides roughly none.**
+
+**One change is needed first.** `--compare` reads `load_unclassified()`, so it
+sees only rows nobody has classified - and by then every row with a
+description will have been. It needs a read-only mode that runs over
+already-classified rows, writes nothing and touches no label. Clearing
+`job_category` to make rows comparable would throw away the stored verdicts.
 
 ### When a decision looks wrong
 
