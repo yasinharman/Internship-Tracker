@@ -1,20 +1,191 @@
 # kariyer.net
 
-**Status:** migrated - `spiders/kariyernet_cards.py`. The old DOM spider has
-been deleted; it is in git history if ever needed. **Transport since
-10.09.2026: a real Chromium, with a real window, opening every page from a
-browser context that has never been to the site.** Both halves of that are
-load bearing and neither is obvious - "Two gates, not one" below is the
-section to read if the crawl ever comes back empty.
+`spiders/kariyernet_cards.py` finds postings, `spiders/kariyernet_check.py`
+asks whether they are still open. Both drive **a real Chromium with a real
+window, and open every single page from a browser context that has never been
+to the site.** The first half of this file is what a run does, request by
+request. The second half is why, and it is the half to read when the crawl
+comes back empty.
 
-**Verified on a rested address 12.09.2026**: 36 consecutive requests, 24
-postings stored, every one with a description. Then the wall, which is a
-COUNT rather than a rate and which waiting does not clear - see "The limit is
-a count, not a rate" below for what that changed.
+**Last verified 12.09.2026** on a rested address: 36 consecutive requests, 46
+cards kept, 24 postings stored with a description before the site's wall.
 
-**Step by step, what a run actually does:**
-[kariyernet-flow.md](kariyernet-flow.md). This file is the why and the
-measurements; that one is the what and the order.
+---
+
+## A run, request by request
+
+What `python main.py --spider kariyernet_cards` does against an empty
+database. Timings on the page are measured; the waits between requests come
+from the settings named beside them.
+
+```
+ START ─ one Chromium window opens (headless is refused - NEEDS_A_WINDOW)
+   │
+   │  no wait - first request of the run
+   ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ REQUEST 1  listing · part-time search · page 1                           │
+│ GET https://www.kariyer.net/is-ilanlari/istanbul-part+time               │
+│     ?ct=34%2C82&wa=2%2C5%2C22%2C54%2C55%2C60%2C63%2C78%2C87&tpst=4&cp=1  │
+├──────────────────────────────────────────────────────────────────────────┤
+│  new browser context, no cookies                             ~4 ms       │
+│  page loads to DOMContentLoaded                              ~1 s        │
+│  scrolled to the bottom 900px at a time, then back up        ~2-3 s      │
+│  every card read  →  kept or dropped  →  stored   (see TABLE A)          │
+│  context closed - its cookies go with it                                 │
+└──────────────────────────────────────────────────────────────────────────┘
+   │  12.09.2026: 11 cards, 11 kept
+   │
+   │  wait 10-30 s  (DOWNLOAD_DELAY 20, randomised)
+   ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ REQUEST 2  listing · internship search · page 1                          │
+│ GET https://www.kariyer.net/is-ilanlari/stajyer                          │
+│     ?ct=34%2C82&wa=2%2C5%2C22%2C54%2C55%2C60%2C63%2C78%2C87&cp=1         │
+├──────────────────────────────────────────────────────────────────────────┤
+│  exactly as request 1                                                    │
+└──────────────────────────────────────────────────────────────────────────┘
+   │  12.09.2026: 35 cards, 35 kept - every result of this search is an
+   │  internship by definition, whatever the employer coded it as
+   │
+   │  wait 10-30 s
+   ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ REQUEST 3 onward  one POSTING page per kept card with no description     │
+│ GET https://www.kariyer.net/is-ilani/<company>-<title>-<id>              │
+│     e.g. /is-ilani/odeal-teknoloji-a-s-qa-test-stajyeri-4544898          │
+├──────────────────────────────────────────────────────────────────────────┤
+│  new browser context, no cookies                             ~4 ms       │
+│  page loads to DOMContentLoaded                              ~1 s        │
+│  page left open                                              4 s         │
+│  description read  →  stored onto the same row      (see TABLE B)        │
+│  context closed                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+   │  wait 10-30 s between each - 46 of these on 12.09.2026's first night
+   │
+   │  mixed in among these, the two PAGE 2 requests:
+   │    /is-ilanlari/istanbul-part+time?...&cp=2   → 0 cards → search done
+   │    /is-ilanlari/stajyer?...&cp=2              → 0 cards → search done
+   ▼
+ END ─ closing report: which search found what, requests, statuses, blocks
+```
+
+**On a later night** the same two listing pages are read and every card is
+stored again - that is what keeps a live posting marked as seen - but a card
+whose description is already stored gets **no** posting-page request. From the
+third night on, a run is about 4 listing pages plus that day's new postings.
+
+**The run stops early** if the site starts refusing:
+
+```
+ 403 ─ wait 10-30 s, retry once (RETRY_TIMES 1)
+   │
+ 403 ─ still refused - counted
+   │
+ 403 ─ third refusal this run (DOMAIN_BLOCK_BUDGET 3)
+   ▼
+ STOP ─ everything already stored is kept; no waiting, no more knocking
+        the postings not reached are fetched on the next run
+```
+
+On 12.09.2026 that wall came after the 36th request. The postings it cut off
+are requested again on the next run - that part is what the code is built to
+do, and has not yet been watched happening.
+
+### TABLE A - what is read from each card on a listing page
+
+Every posting is one `<div data-test="ad-card">`. Attribute names are matched
+**in lowercase**; the parser normalises `workTypeId` to `worktypeid`.
+
+| Read from the card | Becomes | Note |
+|---|---|---|
+| `worktypeid` attribute | kept if `P` or `S` | P = part-time, S = internship |
+| `positionname` attribute | kept if it names an internship | also the title's fallback |
+| `[data-test="ad-card-title"]` text | `job_title` | |
+| `img[data-test="company-image"]` → `alt` | `company` | falls back to `[data-test="subtitle"]` |
+| the same `<img>` → `src` | `company_logo_url` | only loaded because the page was scrolled |
+| `[data-test="location"]` text | `location` | NOT `cityname`, which says "Adana" for a nationwide ad |
+| `worktypetext` attribute | `job_type` | forced to `Staj` for anything the internship search found |
+| `a[data-test="ad-card-item"]` → `href` | `url` | the row's unique key |
+
+A card is **kept** if its work type is P or S, **or** its title reads as an
+internship, **or** it came from the internship search. A kept card is written
+to `job_posts` straight away - a new row, or the existing one updated and
+marked as seen tonight.
+
+### TABLE B - what is read from a posting page
+
+| Read from the page | Becomes |
+|---|---|
+| every text node under `div[data-test="qualifications-and-job-description"]`, joined | `job_description` |
+| if that is missing: `[data-test="job-description"]` | `job_description` |
+
+Only written when it is real. A posting whose page was refused keeps its row
+with no description, and gets its page requested again on the next run.
+
+---
+
+## After the crawl
+
+Only when `main.py` runs the post-crawl steps - `--skip-classify` skips all of
+this.
+
+```
+ kariyernet_cards finished
+   │
+   │  wait 30 min  (SITE_COOLDOWN_S) - zero in a full run, where the
+   │  other three sites' crawls already take longer than that
+   ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ kariyernet_check  one request per OPEN posting in the database           │
+│ GET https://www.kariyer.net/is-ilani/<company>-<title>-<id>              │
+├──────────────────────────────────────────────────────────────────────────┤
+│  wait 10-30 s  ·  new context  ·  load  ·  page left open 4 s            │
+│  apply button present                          → OPEN                    │
+│  no apply button, description block present   → CLOSED (closed_at set)   │
+│  neither                                      → UNKNOWN, nothing written │
+│  description block text                       → job_description refresh  │
+│  written in batches of 25                                                │
+└──────────────────────────────────────────────────────────────────────────┘
+   │
+   ▼
+ classify  - rows with no description yet are skipped until one arrives
+```
+
+Order of the queue: never-checked postings first, then the longest ago.
+
+---
+
+## The settings that shape a run
+
+| Setting | Value | Where | What it does |
+|---|---|---|---|
+| `DOWNLOAD_DELAY` | 20 s, randomised to 10-30 | `kariyernet_cards` | gap between the start of one request and the next |
+| `fresh_context` | on every request | `default_meta()` | a new cookie jar per page - without it the second posting page is refused |
+| `NEEDS_A_WINDOW` | True | `kariyernet_cards` | refuses to start headless |
+| `POSTING_DWELL_S` | 4 s | `kariyernet_cards` | how long a posting page stays open |
+| `SCROLL_BUDGET_S` | 20 s | `kariyernet_cards` | ceiling on scrolling a listing page |
+| `RETRY_TIMES` | 1 | `kariyernet_cards` | retries per refused page |
+| `DOMAIN_BLOCK_BUDGET` | 3 | `kariyernet_cards` | refusals before the run stops |
+| `BLOCK_COOLDOWNS_ALLOWED` | 0 | `kariyernet_cards` | no waiting at the wall - measured not to help |
+| `SITE_COOLDOWN_S` | 30 min | `main.py` | gap between this site's crawl and its check |
+| `SPIDER_TIMEOUTS` | 2 h | `main.py` | a run still going after this is killed |
+
+Every number above came from a measurement or a budget worked out below; none
+of them should be changed without reading the section that set it.
+
+For the same run organised by component rather than by request - middleware
+order, pagination rules, what each log line means and which counters are
+healthy - see [kariyernet-flow.md](kariyernet-flow.md).
+
+---
+---
+
+# Why it works this way
+
+Everything below is the record of how the run above came to be shaped like
+that, newest findings first. It includes the wrong turns, on purpose: most of
+them looked right at the time, and two of them cost a day each.
 
 **Investigated 27.07.2026:**
 
