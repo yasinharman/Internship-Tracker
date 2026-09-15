@@ -447,3 +447,133 @@ the apply `aria-label`s above and `[data-testid="expandable-text-box"]`.
 
 ---
 
+
+## 15.09.2026 - the checker is the bottleneck now, and three things it got wrong
+
+Since 12.09.2026 `pipeline/classify_jobs.py` does not classify a row until it
+has a description (kept on purpose - the model should read the posting, not
+guess from its title). On LinkedIn the description arrives from ONE place,
+`linkedin_check`, so from that date the checker decides when a LinkedIn
+posting gets sorted. Read with that in mind, three faults that no run had
+flagged:
+
+### 1. The time limit covered a sixth of the board
+
+`linkedin_check` ran under the shared `CHECK_TIMEOUT`, 1200s. At the measured
+8.2s a posting (28.08.2026: 83 in 680s) that is ~140 postings, against **760
+open LinkedIn rows** in the 09.09.2026 backup. The rest waited days for a
+description, and so for a category.
+
+Decided the same day: while LinkedIn is answering, the ceiling must not be
+what stops the checker - a refusal should, and `DOMAIN_BLOCK_BUDGET` already
+does that. `SPIDER_TIMEOUTS["linkedin_check"]` is now 5 hours
+(`LINKEDIN_CHECK_TIMEOUT`), sized for a board of 1000 at a worst rate of 14s
+a posting (the throttle's 1.5x bound on `DOWNLOAD_DELAY` 8, plus a ~1.7s
+fetch). If the set to check outgrows that, the checker says so in its first
+lines instead of being found cut short. Test: `tests/test_linkedin_check.py`.
+
+The cost of that decision, said plainly: one full check is one detail-page
+view per open posting on the burner account - several hundred in a sitting.
+Nothing has measured how LinkedIn treats that volume on one account.
+
+### 2. The wait never learned the third apply control
+
+`DETAIL_MARKERS` was a hand-written copy of the apply markers and said
+`[aria-label*="Apply to this job"]` - which covers "Easy Apply to this job" as
+a substring and not **"Apply on company website"**, the form measured on
+27.08.2026. The verdict learned it; the wait did not. A company-website
+posting whose page had no description box therefore sat out the whole 15s
+and was counted as `linkedin/detail_never_rendered`. The selector is now
+built from `APPLY_MARKERS`, and a test fails if they drift apart.
+
+### 3. The wait ended on the button, not on the description
+
+`DETAIL_MARKERS` is "any of these", so the wait ends when the apply button
+appears. That gives a second explanation for the 17-of-40 pages without a
+description box, next to the one written down on 09.09.2026:
+
+  1. a short description is rendered without the expandable wrapper, or
+  2. the box was still coming when `content()` was taken.
+
+Rather than pick one, the checker now waits up to 5s more for the box
+whenever the first marker was not the box, and counts the outcome - no extra
+request, and on most pages no extra time either, because the throttle's delay
+runs from the START of the previous fetch:
+
+| Stat | Means |
+|---|---|
+| `linkedin/description_box_late` | it came - explanation 2, and the wait is the fix |
+| `linkedin/description_box_absent` | it never came - explanation 1, a second container is needed |
+
+Pages that stay without a box are kept for reading by hand when
+`LINKEDIN_DUMP_DIR` is set (open pages only, `LINKEDIN_DUMP_MAX`, default 10).
+
+Also added, counted and not acted on: `linkedin/closed_marker_beside_apply`,
+for a page that carries "No longer accepting applications" AND an apply
+control. The marker is searched for in the whole body, which also holds other
+postings; 3 of 12 closures were hand-checked on 28.08.2026 and none had an
+apply control, so this has not been seen - the stat is there so a false close
+would name its page.
+
+### 4. Verdicts waited for dozens of pages before being read
+
+Found during the 15.09.2026 full run, from the log rather than a stat: 57 job
+pages had been downloaded before `parse_check` ran once, and the first 22
+verdicts then arrived in one burst, seven minutes in, with nothing yet
+written. `openings.WRITE_EVERY` (25) exists so a run cut short keeps what it
+paid for; here it could only act on whatever burst happened to arrive. The
+28.08.2026 log shows the same shape - its last 13 verdicts all printed in the
+same second as the close.
+
+The mechanism, reproduced with a toy spider and no network: requests yielded
+from a callback (the checker yields its probes from the warm-up's callback)
+while a downloader middleware blocks the reactor (PlaywrightMiddleware does,
+on purpose). Scrapy stops fetching to run callbacks only when the responses
+waiting for them add up to `SCRAPER_SLOT_MAX_ACTIVE_SIZE`, 5 MB by default.
+
+| 60 requests from a callback | first callback after | then |
+|---|---|---|
+| 5 MB, 380 kB pages | 14 fetches | 12 at a time |
+| 5 MB, 10 kB pages | **all 60** | - |
+| 1 byte, either size | 2 fetches | one per fetch |
+
+`linkedin_check` now sets it to 1: each page is read before the next is
+fetched. With `CONCURRENT_REQUESTS` 1 and a serial middleware this costs no
+throughput, and the process holds one page instead of dozens. The run below
+still had the 5 MB default - it had started before this was found.
+
+Not applied to any other spider. Indeed's checker shows bursts of 3-12 in its
+15.09.2026 log, so it has the same shape at a smaller size; that is for the
+Indeed session to decide.
+
+### The full run, 15.09.2026 - what the four changes above did
+
+`python main.py --spider linkedin_cards` on an empty LinkedIn board (the table
+was reset on 14.09), with 1-3 in place and 4 not yet. Log:
+`backups/linkedin-fullrun-20260915.log`. Session from 26.08, still valid.
+
+| Step | Result |
+|---|---|
+| crawl | 365s, 26 requests, all 200; 585 items / 555 unique; `filter-staj` 210 (ended on page 9 with 10 cards), `filter-parttime` 375 (**hit MAX_PAGES 15**, page still full) |
+| dedupe | 20 LinkedIn rows linked to Indeed/kariyer.net copies |
+| check | **535 postings in 4244s (7.9s each)**, 536 responses all 200, no wall, no block: 534 open, 0 closed, 1 inconclusive |
+| descriptions | **533 of 535** - against 23 of 40 on 09.09.2026 |
+| classify | 145s, 533 rows: **it 67, general_program 22, other 444** |
+
+The description question is settled: `linkedin/description_box_late` 532,
+`linkedin/description_box_absent` 2. **Explanation 2 was the right one** - the
+box was on its way on essentially every page, 0.3-1.0s after the apply button,
+and the old wait read the page before it arrived. There is no second
+container to find. The one open page kept without a box
+(`jobs/view/4456638271`) is 79 kB against the usual several hundred and is
+still to be read.
+
+`linkedin/closed_marker_beside_apply` never fired. Nothing closed, which is
+what a board crawled an hour earlier should say.
+
+**What the run says next, in order:** 444 of 533 (83%) classified `other` -
+the two routes filter by internship / part-time and Greater Istanbul and by
+nothing else, and one employer ("Fengkai Group Co., Limited", remote "PHD Peer
+Review Need – …" postings) is 145 rows on its own. 101 rows are region-wide
+remote ("EMEA", "Middle East"), not Türkiye. That, and `filter-parttime`
+running out of pages, are the same question and come first.
