@@ -36,8 +36,8 @@ is what `BaseApiSpider`'s warm-up hook is for.
 | `jobs[isCompleted]` | `false` = still open |
 | `jobs[page]` | page number, `pageSize` 20 |
 
-**A single value returns HTTP 500** - the endpoint wants a comma-separated
-list, so always send `2,4`. Slug pages also exist: `/jobs/stajyer`,
+**A single value returns HTTP 500** (re-checked 14.09.2026, `typeOfWork=4`) -
+the endpoint wants a comma-separated list, so always send `2,4`. Slug pages also exist: `/jobs/stajyer`,
 `/jobs/yari-zamanli`, `/jobs/tam-zamanli`, `/jobs/uzaktan`, `/jobs/hibrit`,
 `/jobs/freelance`, `/jobs/sozlesmeli`, `/jobs/deneyimli`, `/jobs/deneyimsiz`.
 
@@ -59,6 +59,45 @@ all of it is cheap. That matters, because the site's own filter is not enough:
 tag as an internship - the same mis-tagging that hid 22 of 26 internships on
 kariyer.net. And the one posting the site's filter adds is in Muğla. So both
 passes run and the results merge; the pipeline upserts on url.
+
+**On 14.09.2026 it was the other way round.** The run's discovery report read
+`typed found 2, sole finder of 1 | scan found 1, sole finder of 0`. The posting
+only `typed` could reach was 9830 *Assistant Product Manager*, tagged
+`Yarı Zamanlı` by the site, with no part-time word anywhere in its title. Each
+pass has now been the sole finder once, so neither one is redundant.
+
+## Is it thin because of our URL? No - measured 14.09.2026
+
+A run returning 2 postings raised the obvious question: are the filters or the
+url losing postings, or is the board really this empty? Twelve requests,
+2.5 s apart, all 200 except the deliberate single-value arm. The spider's own
+urls were compared with the pages a visitor lands on:
+
+| Arm | `pagination.total` |
+|---|---|
+| `GET /jobs`, the HTML a visitor gets (`__NEXT_DATA__`) | **139** |
+| `_next/data` `isCompleted=false`, what the scan sends | 139 - 7 pages, 139 unique ids |
+| `_next/data` without `isCompleted` | 139 - "open only" hides nothing |
+| `GET /jobs/stajyer`, the site's own internship page | **1**, the whole country |
+| `_next/data` `typeOfWork=2,4`, what `typed` sends | 3, all three also in the scan |
+| `_next/data` `typeOfWork=4` | HTTP 500, still |
+
+Every one of the 139 titles was then read, in any city, and not only for the
+Istanbul records the spider keeps. `is_wanted()` matched exactly one
+(9664 *IT Stajyeri*, already stored). A looser pass for *yeni mezun / junior /
+program / akademi / talent / trainee / öğrenci* found no internship either,
+only a robot programmer and the part-time 9830. The board is 77 Istanbul
+postings out of 139, and nearly all of them are full-time roles.
+
+So the url is not the problem: **the board has one internship and three
+internship-or-part-time postings in all of Turkey**, and the spider collects
+every one of them that is in Istanbul.
+
+Dropping the filters and searching `stajyer` alone was considered and
+rejected on these numbers. It would have returned 1 posting, which is also a
+kariyer.net duplicate that dedupe hides. It would have lost 9830, and it would
+have removed the scan, the only route that ever found 9612. The field decision
+(IT or general programme) was already the classifier's, not the spider's.
 
 ## Working type is NOT guessed here
 
@@ -106,6 +145,16 @@ description current without re-crawling.
 
 **2 postings**, both internships in Istanbul, one of them findable only by the
 full scan. `workPlaces` across the board: 169 on-site, 23 hybrid, 2 remote.
+
+**14.09.2026, `main.py --spider techcareer_api`:** 11 requests, all 200, 21 s,
+**2 postings** from a board of 139.
+
+- 9664 *Uzun Dönem Üniversite Stajyeri - IT Stajyeri* - dedupe hid it as a
+  copy of kariyer.net id=784.
+- 9830 *Assistant Product Manager* (part-time) - stored with company `N/A`
+  and no logo. That is correct: the payload has `isCompanyHidden: true` and
+  both `company.name` and `hiddenCompanyInfo` are empty, even though the
+  description names the employer in its text.
 
 ---
 
