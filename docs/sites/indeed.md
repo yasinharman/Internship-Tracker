@@ -424,6 +424,118 @@ on a schedule, an hour-long run is acceptable, and a gentler cadence is the
 cheaper side to err on. `throttle.py` now prints a line every ten seconds
 while it waits, so the quiet stretches are legible rather than alarming.
 
+## Out of TIME, not out of welcome - measured 15.09.2026
+
+One unmodified run, `python main.py --spider indeed_cards`, started 13:03 from
+the home connection. Log: `backups/indeed-baseline-20260915.log`. Nothing else
+touched the site that day.
+
+**Indeed did not refuse it.** Crawl and checker together: 130 HTTP 200, four
+429s (retried and answered), no 403, no sign-in wall past page one, block
+budget untouched. The 28.08 fingerprint fix still holds, and so does the
+Google-login session from 05.08 - six weeks old and still opening page two
+despite the SOCK/SHOE warning it prints.
+
+**Both halves were killed by main.py's clock instead.**
+
+| | ran for | got through | killed with |
+|---|---|---|---|
+| `indeed_cards` | 1800s (SPIDER_TIMEOUT) | 69 pages, 215 unique postings | the four broad searches on page 2-3, still finding 13-15 new a page |
+| `indeed_check` | 1200s (CHECK_TIMEOUT) | 61 of 214 postings | 23 verdicts and descriptions in memory, never written |
+
+The checker's loss is worse than it looks: the description only arrives
+through it (see the 09.09 section), so **189 postings went unclassified** and
+the database held a real description for 22 of 215 Indeed rows.
+
+### Where the crawl's time went: past the last page
+
+`start=` beyond the last result is not an empty page. Indeed serves the last
+page again - `developer-intern` pages 2-15 were page 1 verbatim. New postings
+per page, per search:
+
+| Search | New postings per page |
+|---|---|
+| yazilim-stajyer | 11 11 12 7 12 12 11 15 6 **0 0 0 0 0 0** |
+| bilgisayar-muhendisligi-stajyer | 13 10 11 6 7 13 13 12 7 12 10 12 7 **0 0** |
+| IT-intern | 15 13 4 **0 x12** |
+| software-intern | 11 6 **0 x13** |
+| developer-intern | 5 **0 x14** |
+| stajyer / intern / part-time / yari-zamanli | 15 13 / 15 15 / 9 5 4 / 8 10 - cut off |
+
+47 of 75 field-search pages brought nothing, about twenty minutes. **No page
+with a new posting ever followed a page without one** - not after two, not
+after one. Not quite "the last page again" every time, though: page 10 of
+yazilim-stajyer had nothing new without being a copy of page 9.
+
+`BaseApiSpider` stops on a repeated page already, and never fired here:
+`record_key()` knows `id`, `url` and the like but not `jobkey`, so it keyed on
+the whole record, which differs between two requests for the same posting.
+The log said "15 new of 15" for page 2 of developer-intern.
+
+**Changed:** `record_key` returns `jobkey`, and a search ends after
+`REPEATED_PAGES_BEFORE_STOP = 2` pages with nothing new. Two rather than one
+buys insurance against the single reshuffled page for one request per search.
+It judges all 15 records, not just the ones `is_wanted` keeps, so it can only
+stop later than the counts above, never earlier. **Unmeasured on the broad
+searches**, which never reached their end - that is the next run's question.
+
+### Do the field searches overlap?
+
+Postings found only by that search, of 215 (filter-kept, pre-classifier):
+
+| Search | Found | Only here |
+|---|---|---|
+| bilgisayar-muhendisligi-stajyer | 133 | 48 |
+| yazilim-stajyer | 97 | 13 |
+| yari-zamanli | 18 | 10 |
+| IT-intern | 32 | 9 |
+| part-time | 18 | 8 |
+| intern | 30 | 6 (2 pages) |
+| stajyer | 28 | 3 (2 pages) |
+| software-intern | 17 | 1 |
+| developer-intern | 5 | **0** |
+
+yazilim and bilgisayar share 82, and each still finds its own. Only
+developer-intern found nothing new, on one page - dropping it saves one
+request now the repeats stop, so it stays until another run agrees.
+
+### What the clock does now
+
+- `SPIDER_TIMEOUTS` gives `indeed_cards` 5400s and `indeed_check` 7200s, with
+  the sums next to them in `main.py`.
+- Every spider is also handed `CLOSESPIDER_TIMEOUT`, `CLOSE_GRACE_S` (300s)
+  before the kill. Scrapy then closes the spider properly: the checker
+  flushes, the stats file is written, and the summary says "sure siniri
+  doldu" instead of "Calismadi". Checked against a local spider that blocks
+  the reactor for 3s per request, as the throttle does: CLOSESPIDER_TIMEOUT=10
+  closed it at 12.2s with `closed()` run. The kill stays as the backstop.
+
+### The "no SOCK/SHOE" warning was about cookies nobody sent
+
+Every run since 05.08 has printed *Session has no SOCK/SHOE (native login)
+... proceeding as an unmeasured experiment*, and the 28.08 section above named
+the session its next suspect because of it. The warning read
+`INDEED_COOKIES_B64` - a 10-cookie export. The browser never sends that:
+`PlaywrightMiddleware._seed_cookies` skips it whenever `INDEED_STORAGE_STATE`
+is set, and it has been since 05.08. The file the browser does load holds 32
+Indeed cookies, **SOCK and SHOE among them, expiring 01.02.2027**.
+
+Read off that file on 15.09, without a request:
+
+| Cookie | Expires |
+|---|---|
+| `__cf_bm`, `__cflb`, `SURF`, `google_n` | 05-12.08.2026 - gone, and Cloudflare's are reissued every run |
+| `rememberMe` | **03.11.2026** - the nearest date; unmeasured whether it matters |
+| SOCK, SHOE, PPID, CTK, the PassportAuthProxy family, Google's | 01.02.2027 |
+
+The file is never written back, so every run starts from the 05.08 jar and
+Indeed has accepted that for six weeks. `_require_a_whole_session` now checks
+the storage-state file when one is set and names which source it checked.
+
+**Still coupled:** the spider decides whether it is signed in -
+`ANONYMOUS_MAX_PAGES` - from `INDEED_COOKIES_B64` being non-empty. Unset that
+and the crawl stops at page one with a perfectly good session in the file.
+
 ## The description is on the DETAIL page, and the checker already fetches it - 09.09.2026
 
 "The first investigation > Description" turned down fetching `/viewjob?jk=`
