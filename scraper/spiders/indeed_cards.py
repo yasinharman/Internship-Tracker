@@ -49,6 +49,7 @@ job_filters for the evidence.
 
 import json
 import os
+from collections import defaultdict
 
 from ..api_spider import BaseApiSpider, strip_html
 from ..browser_session import BrowserSession, profile_for_impersonate
@@ -262,6 +263,36 @@ class IndeedCardsSpider(BaseApiSpider):
     MAX_PAGES = 15
     ANONYMOUS_MAX_PAGES = 1
 
+    '''
+        PAST THE LAST PAGE, INDEED SERVES THE LAST PAGE AGAIN - 15.09.2026
+
+        Measured on one full run (backups/indeed-baseline-20260915.log).
+        `start=` beyond the results is not an empty page, it is the final
+        page repeated: developer-intern pages 2-15 were page 1 verbatim,
+        software-intern repeated page 3 twelve times. Five searches spent 47
+        of their pages on nothing, about twenty minutes at DOWNLOAD_DELAY 20 -
+        and the 1800s SPIDER_TIMEOUT then killed the run with the four broad
+        searches still on page 2-3 and still finding 13-15 new postings a page.
+
+        The base class stops on a repeated page already, and never fired here:
+        record_key() knows `id`, `url` and the like but not `jobkey`, so it fell
+        back to the whole record, which differs between two requests for the
+        same posting. Every page read "15 new of 15".
+
+        Not a single repeated page on the first one: on page 10 of
+        yazilim-stajyer Indeed stopped adding postings without copying page 9
+        - it reshuffled earlier ones - so "a page with nothing new" is not
+        quite the same thing as "the final page again". In the five searches
+        that reached their end, no page with new postings ever followed even
+        ONE page without, and this waits for two anyway: one page per search
+        is the whole price. The four broad searches never reached their end
+        on that run, so the rule is unmeasured on them - check it next run.
+    '''
+    REPEATED_PAGES_BEFORE_STOP = 2
+
+    def record_key(self, record):
+        return record.get("jobkey") or super().record_key(record)
+
     def next_page_allowed(self, page, records, search_key="default"):
         if not self.session_cookies and page >= self.ANONYMOUS_MAX_PAGES:
             if records:
@@ -272,6 +303,19 @@ class IndeedCardsSpider(BaseApiSpider):
                     search_key, page, len(records), page + 1,
                 )
             return False
+
+        keys = {self.record_key(record) for record in records}
+        if records and keys <= self._seen_keys[search_key]:
+            self._repeated_pages[search_key] += 1
+            if self._repeated_pages[search_key] < self.REPEATED_PAGES_BEFORE_STOP:
+                self.logger.info(
+                    "[%s] page %s: nothing new on it - asking for one more "
+                    "page before calling the search exhausted",
+                    search_key, page,
+                )
+                return page < self.MAX_PAGES
+        else:
+            self._repeated_pages[search_key] = 0
 
         return super().next_page_allowed(page, records, search_key)
 
@@ -516,6 +560,9 @@ class IndeedCardsSpider(BaseApiSpider):
         # spider complains about the session exactly once instead of on every
         # search left in the queue.
         self._warned_stale_session = False
+        # search -> consecutive pages with no posting new to that search.
+        # See REPEATED_PAGES_BEFORE_STOP.
+        self._repeated_pages = defaultdict(int)
 
         # The handshake and the User-Agent have to describe the same browser,
         # so the identity follows the token rather than being drawn at random.
