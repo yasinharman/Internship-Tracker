@@ -577,3 +577,59 @@ nothing else, and one employer ("Fengkai Group Co., Limited", remote "PHD Peer
 Review Need – …" postings) is 145 rows on its own. 101 rows are region-wide
 remote ("EMEA", "Middle East"), not Türkiye. That, and `filter-parttime`
 running out of pages, are the same question and come first.
+
+## Is the search too wide? - set up 15.09.2026, measured on the next run
+
+Harman's question after the run above: "çok fazla ilan geliyor, arama
+filtresini çok geniş koyuyor olabiliriz". Counted from the database, no
+request to the site:
+
+| Stored as | Rows | it | general_program | other | Visible |
+|---|---|---|---|---|---|
+| internship (`f_E=1`) | 167 | 35 | 21 | 111 | 34% |
+| part-time (`f_JT=P`) | 366 | 32 | 1 | 333 | **9%** |
+
+| Where the noise comes from | Rows | of which `it` |
+|---|---|---|
+| "Fengkai Group Co., Limited" - remote "PHD Peer Review Need – ..." | 145 | 3 |
+| MANGO - "VENDEDOR/A", "CAJERO/A" | 35 | 0 |
+| region-wide remote: "EMEA", "Middle East", "MENA" | 101 | 7 |
+
+Neither route filters by FIELD - the first axis `docs/sites/README.md` asks
+every site to apply at the source. The part-time route is where it costs:
+almost no company-wide programmes (1) to protect, and a 91% `other` rate.
+
+### What breadth actually costs, and what it does not
+
+Less than it looks. An `other` row is set `is_active=False` and
+`pipelines.py` does not reactivate it when a later crawl sees it again, so
+`linkedin_check` visits it once and never again. The repeated cost is per
+NEW posting: a card read, one detail page on the burner account, one
+classifier call. And `MAX_PAGES` on a most-recent-first search crawled daily
+only loses postings when more than 15 pages of them are new in a day - the 15.09
+run hit it because the board was empty. Both claims are measured on the next
+run rather than trusted:
+
+  * every search page now logs `N card(s), K kept, S already stored`
+    (`linkedin/cards_already_stored`), read against the rows that existed
+    before the run. Pages that come back fully stored are depth paying for
+    postings we have.
+  * `filter-parttime-it` (`f_JT=P&f_F=it,eng`) runs BESIDE `filter-parttime`
+    for that run. At close the spider logs, over postings an earlier run had
+    already classified, how many of the wide route's `it` and `other` the
+    narrow route also found (`linkedin/trial/*`).
+
+**How to read it.** Narrow keeps nearly all the known `it` and drops most of
+the `other`: the wide route goes, and the question of depth mostly goes with
+it. Narrow misses real `it` postings: LinkedIn's job function is employer
+free-text like every other filter this project has measured, and the narrow
+route goes instead. The internship route is not part of the trial - 21 of its
+56 visible rows are company-wide programmes whose job function says nothing
+about software.
+
+**Decisions left to Harman, not taken in code:** whether region-wide remote
+postings ("EMEA", "Middle East") belong on an Istanbul board at all - the
+26.08 entry kept "Türkiye (Remote)" on purpose but never saw these - and
+whether one employer posting 145 near-identical remote reviews is noise to
+drop by name. Both piles may shrink on their own under a field filter; the
+trial run will say.

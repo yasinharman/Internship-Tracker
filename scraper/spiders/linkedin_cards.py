@@ -238,6 +238,7 @@ class LinkedinCardsSpider(BaseApiSpider):
     '''
     ROUTES = {
         "filter-staj":         {"f_E": "1"},
+        "filter-parttime-it":  {"f_JT": "P", "f_F": "it,eng"},
         "filter-parttime":     {"f_JT": "P"},
     }
 
@@ -246,8 +247,44 @@ class LinkedinCardsSpider(BaseApiSpider):
     # whole value of the route is the postings whose titles say nothing.
     SITE_CLASSIFIED_ROUTES = {
         "filter-staj": "Staj",
+        "filter-parttime-it": "Yarı zamanlı",
         "filter-parttime": "Yarı zamanlı",
     }
+
+    ###################################################################
+    # IS THE PART-TIME SEARCH TOO WIDE? - ONE RUN TO FIND OUT         #
+    ###################################################################
+    '''
+        MEASURED 15.09.2026, the first full run on an empty board, after
+        classify:
+
+            stored as       rows    it   general_program   other
+            internship       167    35        21            111
+            part-time        366    32         1            333
+
+        The internship route shows a third of what it finds. The part-time
+        route shows 9%, fills its 15 pages, and brought in the board's two
+        biggest piles of noise: 145 remote "PHD Peer Review Need – ..."
+        postings from one employer, and 35 MANGO shop-floor jobs. Neither
+        route narrows by FIELD, which is the first axis docs/sites/README.md
+        asks every site to apply at the source.
+
+        LinkedIn has that axis: `f_F`, read out of the filter panel on
+        26.08.2026 - it=Information Technology, eng=Engineering. It is not
+        applied blind, for the reason the internship route exists at all:
+        a filter the EMPLOYER fills in leaks, and this one has never been
+        measured. The internship route keeps no field filter on purpose -
+        21 of its 56 visible rows are company-wide programmes whose job
+        function will say nothing about software.
+
+        So `filter-parttime-it` runs BESIDE the wide route for one run, and
+        FIELD_FILTER_TRIAL below makes that run report the answer: of the
+        wide route's postings the classifier has already called `it`, how
+        many the narrow route also found - and how much of the `other` pile
+        it leaves behind. High on the first, low on the second, and the
+        wide route goes. Anything else, and it is the narrow one that goes.
+    '''
+    FIELD_FILTER_TRIAL = ("filter-parttime-it", "filter-parttime")
 
     custom_settings = {
         **BaseApiSpider.custom_settings,
@@ -595,6 +632,7 @@ class LinkedinCardsSpider(BaseApiSpider):
         route = response.meta["route"]
         page = response.meta["page"]
         cards = response.css(CARD)
+        stored = self._stored_categories()
 
         if not cards:
             self.logger.warning(
@@ -643,13 +681,121 @@ class LinkedinCardsSpider(BaseApiSpider):
             kept += 1
             yield self._item_from_card(card, job_id, title, site_says)
 
+        # How much of this page the board already had before the run. On a
+        # most-recent-first search crawled daily this is what says whether
+        # depth still finds anything: once whole pages come back already
+        # stored, MAX_PAGES is paying for postings we have. `stored` was read
+        # at the top of this method, before any of this page's items could
+        # reach the pipeline and count themselves.
+        already = sum(
+            1 for card in cards
+            if self._posting_url(card.attrib.get("data-occludable-job-id")) in stored
+        )
         self.logger.info(
-            "[%s] page %s: %s card(s), %s kept", route, page, len(cards), kept,
+            "[%s] page %s: %s card(s), %s kept, %s already stored",
+            route, page, len(cards), kept, already,
         )
         self.crawler.stats.inc_value("jobs/seen", len(cards))
+        self.crawler.stats.inc_value("linkedin/cards_already_stored", already)
 
         if self.next_page_allowed(page, cards, route):
             yield self._search_request(route, page + 1, referer=response.url)
+
+    def _posting_url(self, job_id):
+        """The canonical url - the upsert key. See _item_from_card."""
+        return f"{self.origin}/jobs/view/{job_id}/"
+
+    ###################################################################
+    # WHAT THE BOARD ALREADY HELD WHEN THIS RUN STARTED               #
+    ###################################################################
+    def _stored_categories(self):
+        """
+        url -> job_category for every LinkedIn row, read once, on first use.
+
+        Read before this run's own items land, so "already stored" means
+        stored by an EARLIER run - which is what both questions it answers
+        need: how deep a daily crawl still finds new postings, and what the
+        classifier already said about the postings a route found
+        (FIELD_FILTER_TRIAL).
+
+        A database that cannot be read gives an empty dict: every card then
+        looks new and the trial reports nothing, which is a missing
+        measurement rather than a wrong one. The crawl itself never depended
+        on this.
+        """
+        if getattr(self, "_stored", None) is not None:
+            return self._stored
+        try:
+            from sqlalchemy.orm import sessionmaker
+
+            from ..models import JobPost, db_connect
+
+            session = sessionmaker(bind=db_connect())()
+            try:
+                rows = (
+                    session.query(JobPost.url, JobPost.job_category)
+                    .filter(JobPost.source_site == self.site_name)
+                    .all()
+                )
+            finally:
+                session.close()
+            self._stored = dict(rows)
+        except Exception as error:
+            self.logger.warning(
+                "Could not read the stored LinkedIn rows (%s) - 'already "
+                "stored' will read 0 and the field-filter trial will not "
+                "report.", type(error).__name__,
+            )
+            self._stored = {}
+        return self._stored
+
+    def closed(self, reason):
+        try:
+            self._report_field_filter_trial()
+        finally:
+            super().closed(reason)
+
+    def _report_field_filter_trial(self):
+        """
+        The answer FIELD_FILTER_TRIAL exists to get, in the run's own log.
+
+        Counted only over postings an earlier run already classified: a
+        posting first seen tonight has no verdict yet, and guessing one would
+        be the thing being measured.
+        """
+        narrow, wide = self.FIELD_FILTER_TRIAL
+        found_by = getattr(self, "_discovery", None) or {}
+        if not any(narrow in routes for routes in found_by.values()):
+            return
+        stored = self._stored_categories()
+
+        counts = {}
+        for job_id, routes in found_by.items():
+            if wide not in routes:
+                continue
+            category = stored.get(self._posting_url(job_id))
+            if category is None:
+                continue
+            seen, caught = counts.get(category, (0, 0))
+            counts[category] = (seen + 1, caught + (narrow in routes))
+
+        only_narrow = sum(
+            1 for routes in found_by.values() if narrow in routes and wide not in routes
+        )
+        self.logger.info(
+            "Field-filter trial - of the postings '%s' found that an earlier "
+            "run had already classified, how many '%s' found too:", wide, narrow,
+        )
+        for category in ("it", "general_program", "other"):
+            seen, caught = counts.get(category, (0, 0))
+            self.logger.info("  %-16s %3s of %3s", category, caught, seen)
+            self.crawler.stats.set_value(f"linkedin/trial/{category}/wide", seen)
+            self.crawler.stats.set_value(f"linkedin/trial/{category}/narrow", caught)
+        self.logger.info(
+            "  found only by '%s': %s (a subset should make this 0)",
+            narrow, only_narrow,
+        )
+        self.crawler.stats.set_value("linkedin/trial/only_narrow", only_narrow)
 
     ###########################################
     # CARD -> ITEM                            #
@@ -718,7 +864,7 @@ class LinkedinCardsSpider(BaseApiSpider):
         # that one carries refId/trackingId/eBP query parameters that change
         # on every crawl, and url is the UNIQUE upsert key. Taking the href
         # would store the same posting again under a new url every run.
-        loader.add_value("url", f"{self.origin}/jobs/view/{job_id}/")
+        loader.add_value("url", self._posting_url(job_id))
         loader.add_value("source_site", self.site_name)
 
         return loader.load_item()
