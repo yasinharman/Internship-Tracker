@@ -49,12 +49,16 @@ All of it through the burner session, headless Chromium, one navigation each:
 WHAT THIS SPIDER DOES NOT COLLECT
 ---------------------------------
 The description. A LinkedIn card carries a title, a company, a location and
-nothing else - there is no snippet to take, so job_description is "N/A" and
-the classifier decides on the title alone. Reading descriptions means one
-extra request per posting, which doubles the traffic on the account we are
-least able to replace. If the classifier's `general_program` pile grows to
-the point of being useless, that is when this becomes worth revisiting - not
-before, and it should be measured then rather than assumed now.
+nothing else - there is no snippet to take, so job_description is "N/A".
+Reading descriptions here would mean one extra request per posting, which
+doubles the traffic on the account we are least able to replace.
+
+It arrives anyway, one step later: linkedin_check opens every posting's page
+to ask whether it is still open, and reads the description out of that same
+response (09.09.2026). Since 12.09.2026 pipeline/classify_jobs.py does not
+classify a row until it has one - so on this site the checker, not this
+spider, decides when a posting gets sorted. That is why the checker's time
+limit in main.py is sized to the whole board.
 """
 
 import json

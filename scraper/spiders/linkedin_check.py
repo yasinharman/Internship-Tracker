@@ -53,6 +53,9 @@ pane a second or two after domcontentloaded. A verdict taken from that page
 would be UNKNOWN every single time, which is safe and also useless.
 """
 
+import os
+import time
+
 from ..openings import CLOSED, OPEN, UNKNOWN, OpeningCheckMixin
 from .linkedin_cards import LinkedinCardsSpider
 
@@ -103,6 +106,30 @@ class LinkedinCheckSpider(OpeningCheckMixin, LinkedinCardsSpider):
     custom_settings = {
         **LinkedinCardsSpider.custom_settings,
         "ITEM_PIPELINES": {},
+        # READ EACH PAGE BEFORE FETCHING THE NEXT ONE - 15.09.2026.
+        #
+        # openings.py writes verdicts every WRITE_EVERY so that a run cut
+        # short keeps what it paid for. On LinkedIn that never happened on
+        # time: in the 15.09 full run 57 job pages were downloaded before a
+        # single verdict was decided, and the first 22 then arrived at once.
+        # Seven minutes in, nothing had been written.
+        #
+        # Why: the probes are yielded from the warm-up's callback, and
+        # PlaywrightMiddleware blocks the reactor for every page. Scrapy only
+        # stops fetching to run callbacks when the responses waiting for them
+        # add up to SCRAPER_SLOT_MAX_ACTIVE_SIZE, 5 MB by default. Reproduced
+        # with a toy spider and no network: 60 requests from a callback and a
+        # blocking middleware -
+        #
+        #     5 MB, 380 kB pages   first callback after 14 fetches, then 12 at a time
+        #     5 MB,  10 kB pages   first callback after ALL 60
+        #     1 B,  either size    first callback after 2, then one per fetch
+        #
+        # So 1 byte: the engine backs off until the page in hand has been
+        # read, which costs nothing here - CONCURRENT_REQUESTS is 1 and the
+        # middleware is serial anyway - and holds one page in memory instead
+        # of dozens.
+        "SCRAPER_SLOT_MAX_ACTIVE_SIZE": 1,
     }
 
     # The detail pane, not the results list.
@@ -116,10 +143,92 @@ class LinkedinCheckSpider(OpeningCheckMixin, LinkedinCardsSpider):
     # The apply control is the obvious anchor but cannot be the only one: a
     # CLOSED posting has no apply button, and that is precisely the page this
     # checker exists to read. The description box is present on both.
-    DETAIL_MARKERS = (
-        '[aria-label*="Apply to this job"], '
-        '[data-testid="expandable-text-box"]'
+    #
+    # BUILT FROM APPLY_MARKERS, 15.09.2026, rather than written out a second
+    # time. It used to be a hand-written copy that said
+    # `[aria-label*="Apply to this job"]` - which covers "Easy Apply to this
+    # job" and "Apply to this job" as substrings and NOT "Apply on company
+    # website", the third form measured on 27.08.2026. The verdict learned
+    # that marker; this wait never did. So a company-website posting whose
+    # page carried no description box sat out the whole DETAIL_WAIT_MS and
+    # was counted as `linkedin/detail_never_rendered` on a page that had
+    # rendered perfectly well. tests/test_linkedin_check.py keeps the two
+    # lists from drifting apart again.
+    DESCRIPTION_BOX = '[data-testid="expandable-text-box"]'
+    DETAIL_MARKERS = ", ".join(
+        [f"[{marker}]" for marker in APPLY_MARKERS] + [DESCRIPTION_BOX]
     )
+
+    ###################################################################
+    # THE WAIT ENDS ON THE FIRST MARKER, NOT ON THE DESCRIPTION       #
+    ###################################################################
+    '''
+        DETAIL_MARKERS is "any of these", so the wait returns the moment the
+        apply button exists. Nothing says the description box has rendered
+        by then. On 09.09.2026 23 of 40 open pages carried the box and 17 did
+        not, with zero detail_never_rendered - and two explanations fit that
+        equally well:
+
+          1. a short description is rendered without the EXPANDABLE wrapper,
+             so those pages will never have it (the one docs/sites/linkedin.md
+             wrote down), or
+          2. the box was coming, and content() was taken before it arrived.
+
+        Since 12.09.2026 a row without a description is never classified, so
+        this is no longer a nicety. The two are told apart here without a
+        single extra request: when the first marker was not the box, wait a
+        little longer for the box specifically and count what happened.
+
+            linkedin/description_box_late     it came - explanation 2, and
+                                              this wait is the fix
+            linkedin/description_box_absent   it never came - explanation 1,
+                                              and a second container has to
+                                              be found (LINKEDIN_DUMP_DIR)
+
+        Five seconds costs nothing on most pages: the throttle measures its
+        8s (0.5x-1.5x) from the START of the previous fetch, and a detail
+        page measured 0.7s goto + 0.9s actions on 28.08.2026, so a fetch that
+        waits five more seconds usually still finishes inside the delay it
+        would have waited anyway.
+    '''
+    DESCRIPTION_LATE_WAIT_MS = 5000
+
+    ###################################################################
+    # HOW LONG ONE POSTING TAKES, FOR THE CEILING IN main.py          #
+    ###################################################################
+    '''
+        MEASURED 28.08.2026, full run: 83 postings in 680s, 8.2s each. The
+        throttle waits 0.5x-1.5x DOWNLOAD_DELAY from the start of the
+        previous fetch, and a detail page takes ~1.7s to fetch (goto 0.7,
+        actions 0.9, content 0.1), so the slowest ordinary posting is the
+        1.5x bound, 12s, plus that fetch and Scrapy's own turn: 14s.
+
+        main.py's SPIDER_TIMEOUTS["linkedin_check"] is sized against this
+        number, and tests/test_linkedin_check.py checks the sum.
+    '''
+    WORST_S_PER_POSTING = 14
+
+    def load_open_postings(self):
+        """
+        The parent's rows, plus a warning when the time limit cannot fit them.
+
+        Since 12.09.2026 a LinkedIn row is not classified until this checker
+        has brought its description, so a run that stops at its ceiling
+        leaves the rest of the board unsorted until a later run. Not lost -
+        the next run starts from the oldest unchecked row - but it should be
+        said at the start, not discovered at the end.
+        """
+        rows = super().load_open_postings()
+        limit = self.crawler.settings.getint("CLOSESPIDER_TIMEOUT", 0)
+        if limit and len(rows) * self.WORST_S_PER_POSTING > limit:
+            self.logger.warning(
+                "%s posting(s) to check at up to %ss each will not all fit in "
+                "the %s min time limit - roughly %s will. Raise "
+                "LINKEDIN_CHECK_TIMEOUT if LinkedIn is not refusing us.",
+                len(rows), self.WORST_S_PER_POSTING, limit // 60,
+                limit // self.WORST_S_PER_POSTING,
+            )
+        return rows
 
     def page_actions(self, page, request):
         """
@@ -136,10 +245,38 @@ class LinkedinCheckSpider(OpeningCheckMixin, LinkedinCardsSpider):
         """
         if request.meta.get("route"):
             return super().page_actions(page, request)
+        # The warm-up (the feed) carries no posting_id and has no job pane to
+        # wait for. It used to go through the wait below anyway, and got out
+        # of it in 0.1s on 28.08.2026 only because something on the feed
+        # happened to match DETAIL_MARKERS - luck, not design, and a feed
+        # without that element would have cost the full DETAIL_WAIT_MS.
+        if request.meta.get("posting_id") is None:
+            return
         try:
             page.wait_for_selector(self.DETAIL_MARKERS, timeout=self.DETAIL_WAIT_MS)
         except Exception:
             self.crawler.stats.inc_value("linkedin/detail_never_rendered")
+            return
+
+        # See DESCRIPTION_LATE_WAIT_MS. wait_for_selector rather than
+        # locator.count(): it takes a timeout, and count() is one of the calls
+        # that waited forever on a wedged renderer in August.
+        started = time.monotonic()
+        try:
+            page.wait_for_selector(
+                self.DESCRIPTION_BOX, timeout=self.DESCRIPTION_LATE_WAIT_MS,
+            )
+        except Exception:
+            self.crawler.stats.inc_value("linkedin/description_box_absent")
+            return
+        waited = time.monotonic() - started
+        # Already there when the first wait returned: nothing to count.
+        if waited > 0.25:
+            self.crawler.stats.inc_value("linkedin/description_box_late")
+            self.logger.debug(
+                "description box arrived %.1fs after the page rendered: %s",
+                waited, request.url[:100],
+            )
 
     def description(self, response):
         """
@@ -159,11 +296,39 @@ class LinkedinCheckSpider(OpeningCheckMixin, LinkedinCardsSpider):
         hashes its class names per build, and data-testid is one of the two
         anchors that survive (docs/sites/linkedin.md).
         """
-        node = response.css('[data-testid="expandable-text-box"]')
+        node = response.css(self.DESCRIPTION_BOX)
         if not node:
+            self._dump_page_without_description(response)
             return None
         text = " ".join(t.strip() for t in node.css("*::text").getall() if t.strip())
         return text or None
+
+    ###################################################################
+    # KEEP THE PAGES THAT HAD NO DESCRIPTION, TO LOOK AT BY HAND      #
+    ###################################################################
+    # `LINKEDIN_DUMP_DIR=/some/dir` writes the html of an OPEN page that came
+    # back without the description box, up to LINKEDIN_DUMP_MAX of them. Off
+    # unless set. It exists because docs/sites/linkedin.md refuses to guess a
+    # second selector for those pages, and the only honest way to find one is
+    # to read pages that need it - which this run has already downloaded.
+    # No request is added; walls and closed pages are not kept.
+    def _dump_page_without_description(self, response):
+        folder = (os.getenv("LINKEDIN_DUMP_DIR") or "").strip()
+        if not folder:
+            return
+        limit = int(os.getenv("LINKEDIN_DUMP_MAX", "10"))
+        dumped = self.crawler.stats.get_value("linkedin/pages_dumped", 0)
+        if dumped >= limit:
+            return
+        body = response.text.lower()
+        if not any(marker.lower() in body for marker in APPLY_MARKERS):
+            return
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, f"{response.meta.get('posting_id')}.html")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(response.text)
+        self.crawler.stats.inc_value("linkedin/pages_dumped")
+        self.logger.info("no description box - page kept at %s (%s)", path, response.url)
 
     def verdict(self, response):
         body = response.text.lower()
@@ -178,6 +343,20 @@ class LinkedinCheckSpider(OpeningCheckMixin, LinkedinCardsSpider):
                 response.url[:100],
             )
             self.crawler.stats.inc_value("linkedin/closed_marker_seen")
+            # The marker is searched for in the WHOLE body, and a job page
+            # carries more than its own posting - other postings, in the
+            # rail. 12 closures on 28.08.2026 were hand-checked 3 of 12 and
+            # none of those three had an apply control, so this has not been
+            # seen. Counted, not acted on: the verdict stays what it was
+            # until a run shows this firing, and the url says which page to
+            # open.
+            if any(marker.lower() in body for marker in APPLY_MARKERS):
+                self.crawler.stats.inc_value("linkedin/closed_marker_beside_apply")
+                self.logger.warning(
+                    "closed-marker AND an apply control on the same page - "
+                    "open it and see which one is about THIS posting: %s",
+                    response.url[:100],
+                )
             return CLOSED
 
         if any(marker.lower() in body for marker in APPLY_MARKERS):

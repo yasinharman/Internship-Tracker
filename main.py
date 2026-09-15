@@ -224,6 +224,7 @@ SPIDER_TIMEOUTS = {
     "kariyernet_check": int(os.getenv("KARIYERNET_TIMEOUT", "7200")),
     "indeed_cards": int(os.getenv("INDEED_TIMEOUT", "5400")),
     "indeed_check": int(os.getenv("INDEED_CHECK_TIMEOUT", "7200")),
+    "linkedin_check": int(os.getenv("LINKEDIN_CHECK_TIMEOUT", "18000")),
 }
 '''
     INDEED, 15.09.2026. The shared 1800s and 1200s killed both halves of the
@@ -252,6 +253,25 @@ SPIDER_TIMEOUTS = {
     what it has and the next run starts from the oldest unchecked row
     (openings.py, load_open_postings), so a cut-short check is slower, not
     lossy.
+'''
+'''
+    LINKEDIN, 15.09.2026. linkedin_check ran under the shared CHECK_TIMEOUT,
+    1200s, which at 8.2s a posting (measured 28.08.2026) is about 140 of
+    them. The board it has to get through was 760 LinkedIn rows on
+    09.09.2026. And since 12.09.2026 a row is not classified until its
+    description has arrived - which on LinkedIn only this checker brings -
+    so a checker cut off at 140 left most of the board unsorted for days.
+
+    The decision (Harman, 15.09.2026): the ceiling must not be what stops
+    this checker while LinkedIn is answering. A refusal is what should stop
+    it, and DOMAIN_BLOCK_BUDGET already does.
+
+    Sized for a board of 1000 - the 760 measured plus a third - at
+    linkedin_check.WORST_S_PER_POSTING, 14s: ~3.9 hours. Five hours less
+    CLOSE_GRACE_S clears it, and covers ~1260 postings at the worst rate or
+    ~2160 at the measured one. Past that the spider says so at its start
+    rather than being discovered cut short. tests/test_linkedin_check.py
+    does the sum from the spider's own numbers.
 '''
 
 ###############################################################
