@@ -304,31 +304,42 @@ class LinkedinCheckSpider(OpeningCheckMixin, LinkedinCardsSpider):
         return text or None
 
     ###################################################################
-    # KEEP THE PAGES THAT HAD NO DESCRIPTION, TO LOOK AT BY HAND      #
+    # KEEP THE PAGES NOBODY COULD READ, TO LOOK AT BY HAND             #
     ###################################################################
-    # `LINKEDIN_DUMP_DIR=/some/dir` writes the html of an OPEN page that came
-    # back without the description box, up to LINKEDIN_DUMP_MAX of them. Off
-    # unless set. It exists because docs/sites/linkedin.md refuses to guess a
-    # second selector for those pages, and the only honest way to find one is
-    # to read pages that need it - which this run has already downloaded.
-    # No request is added; walls and closed pages are not kept.
-    def _dump_page_without_description(self, response):
+    # `LINKEDIN_DUMP_DIR=/some/dir` writes the html of two kinds of page, up
+    # to LINKEDIN_DUMP_MAX between them. Off unless set. No request is added:
+    # these are pages the run has already downloaded, and reading them is the
+    # only honest way to find a selector this file does not have yet.
+    #
+    #   <id>-no-description.html   OPEN, but no description box. 15.09.2026:
+    #                              one page of 535 - the lower column had not
+    #                              rendered after the extra 5s. Walls and
+    #                              closed pages are not kept.
+    #   <id>-unknown.html          RENDERED, but no apply control and no
+    #                              closing words. 15.09.2026: one page of 535,
+    #                              id=1042 "Beta Tester - Turkiye", whose
+    #                              description did arrive - so the page was
+    #                              there and offered some way to apply that
+    #                              APPLY_MARKERS does not know. Not kept that
+    #                              run, which is why this kind was added.
+    def _keep_page(self, response, why):
         folder = (os.getenv("LINKEDIN_DUMP_DIR") or "").strip()
         if not folder:
             return
         limit = int(os.getenv("LINKEDIN_DUMP_MAX", "10"))
-        dumped = self.crawler.stats.get_value("linkedin/pages_dumped", 0)
-        if dumped >= limit:
-            return
-        body = response.text.lower()
-        if not any(marker.lower() in body for marker in APPLY_MARKERS):
+        if self.crawler.stats.get_value("linkedin/pages_dumped", 0) >= limit:
             return
         os.makedirs(folder, exist_ok=True)
-        path = os.path.join(folder, f"{response.meta.get('posting_id')}.html")
+        path = os.path.join(folder, f"{response.meta.get('posting_id')}-{why}.html")
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(response.text)
         self.crawler.stats.inc_value("linkedin/pages_dumped")
-        self.logger.info("no description box - page kept at %s (%s)", path, response.url)
+        self.logger.info("%s - page kept at %s (%s)", why, path, response.url)
+
+    def _dump_page_without_description(self, response):
+        body = response.text.lower()
+        if any(marker.lower() in body for marker in APPLY_MARKERS):
+            self._keep_page(response, "no-description")
 
     def verdict(self, response):
         body = response.text.lower()
@@ -367,4 +378,8 @@ class LinkedinCheckSpider(OpeningCheckMixin, LinkedinCardsSpider):
         # detail pane never arriving. openings.py writes nothing for this.
         if not any(marker in body for marker in RENDERED_MARKERS):
             self.crawler.stats.inc_value("linkedin/unreadable_detail")
+        else:
+            # Rendered, and still neither open nor closed: the interesting
+            # kind. See _keep_page.
+            self._keep_page(response, "unknown")
         return UNKNOWN

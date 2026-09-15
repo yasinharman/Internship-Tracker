@@ -180,7 +180,7 @@ class TestWhatTheRunLeavesToLookAt:
 
         assert spider.verdict(response) == OPEN
         assert spider.description(response) is None
-        assert (tmp_path / "7.html").exists()
+        assert (tmp_path / "7-no-description.html").exists()
 
     def test_a_wall_is_not_kept(self, make_checker, monkeypatch, tmp_path):
         monkeypatch.setenv("LINKEDIN_DUMP_DIR", str(tmp_path))
@@ -207,3 +207,32 @@ def test_each_page_is_read_before_the_next_is_fetched():
     so this pins the setting and linkedin_check.py carries the measurement.
     """
     assert LinkedinCheckSpider.custom_settings["SCRAPER_SLOT_MAX_ACTIVE_SIZE"] == 1
+
+
+class TestTheUnknownPageIsKept:
+    """15.09.2026, id=1042: rendered, described, and no apply control we know."""
+
+    def _spider(self, make_checker, monkeypatch, tmp_path):
+        monkeypatch.setenv("LINKEDIN_DUMP_DIR", str(tmp_path))
+        spider = make_checker(LinkedinCheckSpider)
+        spider.crawler.stats.get_value = (
+            lambda key, default=None: spider.crawler.stats.values.get(key, default)
+        )
+        return spider
+
+    def test_a_rendered_page_with_neither_marker_is_kept(self, make_checker, monkeypatch, tmp_path):
+        spider = self._spider(make_checker, monkeypatch, tmp_path)
+        spider.verdict(html(b"<h2>About the job</h2><button>Apply now</button>"))
+        assert (tmp_path / "7-unknown.html").exists()
+
+    def test_an_unrendered_page_is_not_kept(self, make_checker, monkeypatch, tmp_path):
+        spider = self._spider(make_checker, monkeypatch, tmp_path)
+        spider.verdict(html(b"<div>Sign in</div>"))
+        assert list(tmp_path.iterdir()) == []
+
+    def test_the_limit_is_shared_by_both_kinds(self, make_checker, monkeypatch, tmp_path):
+        monkeypatch.setenv("LINKEDIN_DUMP_MAX", "1")
+        spider = self._spider(make_checker, monkeypatch, tmp_path)
+        spider.verdict(html(b"<h2>About the job</h2>", posting_id=1))
+        spider.description(html(b'<button aria-label="Easy Apply to this job"></button>', posting_id=2))
+        assert [p.name for p in tmp_path.iterdir()] == ["1-unknown.html"]

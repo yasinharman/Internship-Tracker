@@ -647,3 +647,26 @@ A page with fewer than `PAGE_SIZE` cards now ends its route
 shells, not rendered cards, so a page that failed to render still counts 25 and
 is not mistaken for an ending. Saves one request and ~15s per route that runs
 out before `MAX_PAGES`.
+
+## The two pages the 15.09 check could not finish - read by hand the same day
+
+Both from the saved run, no request.
+
+**id=1510, "Sales Manager", SolutionMall, MENA (Remote) - open, no
+description.** Kept as `backups/linkedin-pages-20260915/1510-no-description.html`
+(79 kB, where a described page is several hundred). The header had rendered -
+title, "Remote · Part-time", `Easy Apply to this job` - and the lower column
+had not: no "About the job", no `expandable-text-box`, and the only
+`data-testid` near it is `lazy-column`. `actions=5.2s` in the phase log is the
+extra wait running out. So it is a slow render, not a second container, and at
+1 page in 535 not worth a longer wait for every posting. The row is active and
+unclassified, so the next check visits it again.
+
+**id=1042, "Beta Tester - Turkiye", AppTestify, Türkiye (Remote) - the one
+inconclusive verdict.** Its description DID arrive (1666 characters, classified
+`it`), so the page rendered; it carried none of the three apply labels and no
+closing words. That is most likely a fourth way LinkedIn lets you apply. The
+page was not kept - the dump only took open pages then - so no selector is
+written for it. `LINKEDIN_DUMP_DIR` now also keeps a rendered page that comes
+back neither open nor closed, as `<id>-unknown.html`, and the row's
+`checked_at` is still empty, so it is first in line on the next run.
