@@ -684,18 +684,24 @@ class IndeedCardsSpider(BaseApiSpider):
         if not self.session_cookies:
             return                                  # anonymous, on purpose
 
-        missing = [name for name in self.SIGNED_IN_COOKIES
-                   if name not in self.session_cookies]
+        source, names = self._session_the_browser_carries()
+        missing = [name for name in self.SIGNED_IN_COOKIES if name not in names]
         oauth_missing = [name for name in self.OAUTH_SIGNED_IN_COOKIES
-                          if name not in self.session_cookies]
+                          if name not in names]
         if missing and oauth_missing:
+            if source == self.STORAGE_STATE_ENV:
+                fix = (f"Run `python -m tools.save_session indeed` to sign in "
+                       f"again, or unset {self.STORAGE_STATE_ENV} to fall "
+                       f"back to {self.COOKIES_ENV}_B64.")
+            else:
+                fix = (f"A value cut short in a panel's environment box does "
+                       f"exactly this. Re-export the Cookie header and set "
+                       f"{self.COOKIES_ENV}_B64 again; unset it if an "
+                       f"anonymous one-page crawl is what you want.")
             raise ValueError(
-                f"The Indeed session is missing {', '.join(missing)} - it "
-                f"loaded {len(self.session_cookies)} cookie(s) but not the "
-                f"ones that carry the sign-in. A value cut short in a panel's "
-                f"environment box does exactly this. Re-export the Cookie "
-                f"header and set INDEED_COOKIES_B64 again; unset it if an "
-                f"anonymous one-page crawl is what you want."
+                f"The Indeed session in {source} is missing "
+                f"{', '.join(missing)} - it holds {len(names)} Indeed "
+                f"cookie(s) but not the ones that carry the sign-in. {fix}"
             )
         if missing:
             # UNMEASURED as of 03.08.2026: a Google-linked account never
@@ -705,11 +711,18 @@ class IndeedCardsSpider(BaseApiSpider):
             # loudly in the log if page 2 turns out to be a sign-in wall
             # rather than data.
             self.logger.warning(
-                "Session has no %s (native login) but does have %s "
+                "Session in %s has no %s (native login) but does have %s "
                 "(Google/OAuth login) - proceeding as an unmeasured "
                 "experiment. Watch for a sign-in-wall error past page 1.",
+                source,
                 "/".join(self.SIGNED_IN_COOKIES),
                 "/".join(self.OAUTH_SIGNED_IN_COOKIES),
+            )
+        else:
+            self.logger.info(
+                "Session in %s carries %s - %s Indeed cookie(s). Whether "
+                "Indeed still honours it only a page past the first can say.",
+                source, "/".join(self.SIGNED_IN_COOKIES), len(names),
             )
 
         # Which browser the session was actually created in is not something
@@ -729,6 +742,34 @@ class IndeedCardsSpider(BaseApiSpider):
                 "than what created it is the easiest kind of anomaly to spot.",
                 self.impersonate_candidates[0], self.session.profile.user_agent,
             )
+
+    def _session_the_browser_carries(self):
+        """
+        (where it came from, the Indeed cookie names in it).
+
+        MEASURED 15.09.2026: this check used to read INDEED_COOKIES_B64 only,
+        and the browser does not send those. PlaywrightMiddleware._seed_cookies
+        skips them whenever a storage-state file is set, and one has been
+        since 05.08.2026. So every run since then warned "no SOCK/SHOE" about
+        a 10-cookie export nobody was using, while the file the browser
+        actually loaded carried SOCK and SHOE all along (expiring 01.02.2027).
+        The 28.08 section of docs/sites/indeed.md named the session its next
+        suspect on the strength of that warning.
+
+        A path that does not exist falls back to the cookie export here and is
+        left for the middleware to refuse, which it does loudly on the first
+        request.
+        """
+        path = (os.getenv(self.STORAGE_STATE_ENV) or "").strip()
+        if path and os.path.isfile(path):
+            with open(path, encoding="utf-8") as handle:
+                cookies = json.load(handle).get("cookies") or []
+            names = {cookie.get("name") for cookie in cookies
+                     if (cookie.get("domain") or "").endswith("indeed.com")}
+            return self.STORAGE_STATE_ENV, names
+        encoded = os.getenv(f"{self.COOKIES_ENV}_B64", "").strip()
+        source = f"{self.COOKIES_ENV}_B64" if encoded else self.COOKIES_ENV
+        return source, set(self.session_cookies)
 
     def warmup_cookies(self):
         return self.session_cookies
