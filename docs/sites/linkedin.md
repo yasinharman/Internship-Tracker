@@ -633,3 +633,17 @@ postings ("EMEA", "Middle East") belong on an Istanbul board at all - the
 whether one employer posting 145 near-identical remote reviews is noise to
 drop by name. Both piles may shrink on their own under a field filter; the
 trial run will say.
+
+## A short page is the last page - 15.09.2026
+
+`filter-staj` returned 8 pages of exactly 25 cards, then page 9 with 10 - and
+asked for page 10 anyway, which came back empty after `page_actions` had
+waited its full 15s for cards (`linkedin/no_cards_after_wait: 1`,
+`linkedin/no_cards: 1`). Every page with results on it in that run - 8 of one
+route, 15 of the other - had exactly 25.
+
+A page with fewer than `PAGE_SIZE` cards now ends its route
+(`linkedin/short_last_page`). The count is of `li[data-occludable-job-id]`
+shells, not rendered cards, so a page that failed to render still counts 25 and
+is not mistaken for an ending. Saves one request and ~15s per route that runs
+out before `MAX_PAGES`.

@@ -154,3 +154,28 @@ class TestTheTrialReport:
         self._found(spider, _1={"filter-parttime"})
         spider._report_field_filter_trial()
         assert not any(k.startswith("linkedin/trial") for k in spider.crawler.stats.values)
+
+
+class TestTheLastPage:
+    """15.09.2026: page 9 had 10 cards and page 10 was fetched anyway."""
+
+    def test_a_short_page_ends_the_route(self, spider):
+        list(spider.parse_search(search_page(range(1, 11), page=9)))
+        assert spider.next_requests == []
+        assert spider.crawler.stats.values["linkedin/short_last_page"] == 1
+
+    def test_a_full_page_asks_for_the_next(self, spider):
+        list(spider.parse_search(search_page(range(1, 26), page=8)))
+        assert spider.next_requests == [("filter-parttime", 9)]
+        assert "linkedin/short_last_page" not in spider.crawler.stats.values
+
+    def test_unrendered_shells_still_count_as_cards(self, spider):
+        # A page whose cards did not render is not an ending.
+        body = "<ul>" + "".join(
+            f'<li data-occludable-job-id="{i}"></li>' for i in range(1, 26)
+        ) + "</ul>"
+        url = "https://www.linkedin.com/jobs/search/?start=0"
+        response = HtmlResponse(url=url, body=body.encode(), encoding="utf-8",
+                                request=Request(url, meta={"route": "filter-staj", "page": 1}))
+        list(spider.parse_search(response))
+        assert spider.next_requests == [("filter-staj", 2)]

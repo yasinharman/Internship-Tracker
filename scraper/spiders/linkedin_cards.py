@@ -698,6 +698,30 @@ class LinkedinCardsSpider(BaseApiSpider):
         self.crawler.stats.inc_value("jobs/seen", len(cards))
         self.crawler.stats.inc_value("linkedin/cards_already_stored", already)
 
+        ###############################################################
+        # A SHORT PAGE IS THE LAST PAGE                               #
+        ###############################################################
+        # MEASURED 15.09.2026: filter-staj ran 8 pages of exactly 25, then
+        # page 9 with 10 - and still asked for page 10, which came back with
+        # no cards at all after page_actions had waited out its full
+        # CARD_WAIT_MS for them (`linkedin/no_cards_after_wait`). One request
+        # on the burner account and 15 seconds, per route, per run, to learn
+        # what page 9 had already said. Every other page in that run with
+        # results on it - 8 of filter-staj, 15 of filter-parttime - had 25.
+        #
+        # `cards` counts the <li> shells, not the rendered cards, so a page
+        # that failed to render is still 25 here and is not mistaken for an
+        # ending. The stat is there in case LinkedIn ever serves a short page
+        # in the middle: a route that stops early would show it next to a
+        # page count that looks too low.
+        if len(cards) < self.PAGE_SIZE:
+            self.logger.info(
+                "[%s] page %s had %s of %s cards - the last page, so no "
+                "page %s.", route, page, len(cards), self.PAGE_SIZE, page + 1,
+            )
+            self.crawler.stats.inc_value("linkedin/short_last_page")
+            return
+
         if self.next_page_allowed(page, cards, route):
             yield self._search_request(route, page + 1, referer=response.url)
 
