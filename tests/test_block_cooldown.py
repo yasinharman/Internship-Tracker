@@ -162,10 +162,13 @@ def test_main_gives_kariyernet_room_for_its_slowest_legitimate_run():
 
     worst_case = requests * (slowest_delay + per_page) + waiting
 
+    # Against the time it is CLOSED at, not the kill behind it - see
+    # CLOSE_GRACE_S in main.py.
     for name in ("kariyernet_cards", "kariyernet_check"):
-        assert main.SPIDER_TIMEOUTS[name] > worst_case, (
+        closes_at = main.soft_close_after(main.SPIDER_TIMEOUTS[name])
+        assert closes_at > worst_case, (
             f"{name} can legitimately take {worst_case / 3600:.1f}h but is "
-            f"killed at {main.SPIDER_TIMEOUTS[name] / 3600:.1f}h"
+            f"closed at {closes_at / 3600:.1f}h"
         )
 
 

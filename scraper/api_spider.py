@@ -552,12 +552,12 @@ class BaseApiSpider(scrapy.Spider):
 
     def closed(self, reason):
         self._log_discovery_report()
-        self._report_item_count()
+        self._report_item_count(reason)
 
     ###################################################
     # TELL THE RUNNER HOW MUCH WE ACTUALLY FOUND      #
     ###################################################
-    def _report_item_count(self):
+    def _report_item_count(self, reason=None):
         """
         Write this crawl's summary where main.py can read it.
 
@@ -606,6 +606,8 @@ class BaseApiSpider(scrapy.Spider):
             "responses": responses,
             "routes": routes,
             "blocked": bool(stats.get("blocks/detected", 0)),
+            # "closespider_timeout" when main.py's time limit ended the run.
+            "finish_reason": reason,
         }
 
         try:

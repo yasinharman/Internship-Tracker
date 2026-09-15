@@ -222,7 +222,69 @@ SPIDER_TIMEOUT = int(os.getenv("SPIDER_TIMEOUT", "1800"))
 SPIDER_TIMEOUTS = {
     "kariyernet_cards": int(os.getenv("KARIYERNET_TIMEOUT", "7200")),
     "kariyernet_check": int(os.getenv("KARIYERNET_TIMEOUT", "7200")),
+    "indeed_cards": int(os.getenv("INDEED_TIMEOUT", "5400")),
+    "indeed_check": int(os.getenv("INDEED_CHECK_TIMEOUT", "7200")),
 }
+'''
+    INDEED, 15.09.2026. The shared 1800s and 1200s killed both halves of the
+    first run that was allowed to go deep (docs/sites/indeed.md), with the
+    broad searches still on page 2-3 and 189 postings never checked.
+
+    indeed_cards. Measured: 70 requests in the 1800s it had, ~26s each at
+    DOWNLOAD_DELAY 20 (the delay, the navigation, a few 429 retries). Nine
+    searches, each ending at two repeated pages or MAX_PAGES 15. The five
+    field searches come to 38 pages between them under that rule; the four
+    broad ones never reached their end, so they are counted at 15:
+
+                                            expected     worst case
+        ~110 requests x 26s                  ~48 min
+        146 requests x 32s                                 ~78 min
+          (all nine to MAX_PAGES, ten retries,
+           every delay at the 1.5x bound)
+
+    90 minutes, less CLOSE_GRACE_S, clears the worst case.
+    tests/test_run_time_limit.py does this sum from the spider's own settings.
+
+    indeed_check. One request per posting the board can show: 214 on
+    15.09.2026, measured at ~20s each - about 71 minutes, 107 at the 1.5x
+    bound. Two hours covers that. Unlike the crawl this set GROWS, and the
+    ceiling is not meant to follow it: a checker closed at its ceiling writes
+    what it has and the next run starts from the oldest unchecked row
+    (openings.py, load_open_postings), so a cut-short check is slower, not
+    lossy.
+'''
+
+###############################################################
+# CLOSE ON TIME, SO WHAT WAS COLLECTED IS KEPT                #
+###############################################################
+'''
+    subprocess.run(timeout=) KILLS the spider, and a killed spider never runs
+    closed(). Measured 15.09.2026, Indeed: the checker was killed holding 23
+    verdicts and their descriptions (openings.py writes every 25, and 25 had
+    gone), and the crawl wrote no stats file, so the summary reported a run
+    that had stored 280 postings as "Calismadi - crash veya baslamadan hata".
+
+    So each spider is also handed CLOSESPIDER_TIMEOUT, CLOSE_GRACE_S before
+    the kill. Scrapy then stops scheduling, lets the request in hand finish
+    and closes the spider properly: the checker flushes, the stats file is
+    written with finish_reason=closespider_timeout, and the summary can say
+    the run was cut short rather than that it never ran. The kill stays as
+    the backstop for a spider too wedged to close.
+
+    THE GRACE IS ONE REQUEST, NOT ZERO. throttle.py and the Playwright
+    middleware block the reactor while they wait, so Scrapy's close timer
+    fires when the request in hand lets go of it - measured with a spider
+    blocking 3s per request and CLOSESPIDER_TIMEOUT=10: closed at 12.2s. The
+    longest a request can hold it here is the 1.5x delay (30s at 20) plus the
+    Playwright budget (DOWNLOAD_TIMEOUT 60 + 60), then the final write and the
+    browser shutting down. Five minutes covers that with room.
+'''
+CLOSE_GRACE_S = int(os.getenv("CLOSE_GRACE_S", "300"))
+
+
+def soft_close_after(timeout):
+    """The CLOSESPIDER_TIMEOUT a spider with this hard ceiling is given."""
+    return max(timeout - CLOSE_GRACE_S, 1)
 
 # 150 postings at 8 concurrent requests finish in well under a minute; this is
 # a ceiling for a hung provider, not an expected duration.
@@ -242,7 +304,8 @@ NOTIFY_TIMEOUT = int(os.getenv("NOTIFY_TIMEOUT", "300"))
 # seconds. This is the per-SITE ceiling (run_spider applies it to each), so it
 # is generous on purpose - a checker that gets killed halfway leaves the rest
 # unchecked, which is harmless, but it should take a genuinely wedged process
-# to get there.
+# to get there. Indeed outgrew all of that by 15.09.2026 and has its own entry
+# in SPIDER_TIMEOUTS.
 CHECK_TIMEOUT = int(os.getenv("CHECK_TIMEOUT", "1200"))
 
 
@@ -304,7 +367,10 @@ def run_spider(spider_name, timeout=None):
 
     # `python -m scrapy` rather than the `scrapy` binary: works the same
     # whether or not the venv's bin directory is on PATH.
-    command = [sys.executable, "-m", "scrapy", "crawl", spider_name]
+    command = [
+        sys.executable, "-m", "scrapy", "crawl", spider_name,
+        "-s", f"CLOSESPIDER_TIMEOUT={soft_close_after(timeout)}",
+    ]
 
     # Absolute: the subprocess runs with cwd=SCRAPY_PROJECT_FOLDER.
     stats_path = os.path.join(
@@ -323,11 +389,15 @@ def run_spider(spider_name, timeout=None):
 
     except subprocess.TimeoutExpired:
         print(
-            f"=== {spider_name}: KILLED after {timeout}s "
-            f"(raise SPIDER_TIMEOUT / CHECK_TIMEOUT if this is legitimate) ===",
+            f"=== {spider_name}: KILLED after {timeout}s - it did not close "
+            f"on its own {CLOSE_GRACE_S}s earlier, so something is wedged ===",
             flush=True,
         )
-        return False, _read_spider_stats(stats_path)
+        # It touched the site right up to the kill - see the comment below.
+        _CRAWL_FINISHED_AT[spider_name] = time.monotonic()
+        stats = _read_spider_stats(stats_path) or {}
+        stats["killed_after_s"] = timeout
+        return False, stats
 
     except FileNotFoundError as error:
         print(f"=== {spider_name}: could not start - {error} ===", flush=True)
@@ -345,8 +415,14 @@ def run_spider(spider_name, timeout=None):
     found = "?" if items is None else items
 
     if exit_code == 0:
+        cut_short = (
+            " - STOPPED AT ITS TIME LIMIT, not everything was reached"
+            if stats and stats.get("finish_reason") == "closespider_timeout"
+            else ""
+        )
         print(
-            f"=== {spider_name}: finished in {elapsed:.0f}s, {found} posting(s) ===",
+            f"=== {spider_name}: finished in {elapsed:.0f}s, "
+            f"{found} posting(s){cut_short} ===",
             flush=True,
         )
         return True, stats
@@ -382,6 +458,15 @@ def _print_run_summary(results):
             print("  Calismadi - crash veya baslamadan hata. Log'a bak.")
             continue
 
+        # Postings are written one by one as they are found, so a killed
+        # spider has stored whatever it got to - only the count is lost.
+        if stats and "items" not in stats and stats.get("killed_after_s"):
+            print(
+                f"  {stats['killed_after_s']}s sonra zorla durduruldu. Bulunan "
+                f"ilanlar kaydedildi ama sayisi bilinmiyor - log'a bak."
+            )
+            continue
+
         items = stats.get("items", 0) if stats else 0
         requests = stats.get("requests") if stats else None
         total_items += items
@@ -404,6 +489,12 @@ def _print_run_summary(results):
                 "  Not: Site bir noktada engelledi (Cloudflare/PerimeterX vb.) "
                 "- kod kendi guvenlik butcesiyle temiz sekilde durdu, o ana "
                 "kadar bulunanlar korundu."
+            )
+
+        if (stats or {}).get("finish_reason") == "closespider_timeout":
+            print(
+                "  Not: sure siniri doldu ve duzgun kapatildi - bulunanlar "
+                "kaydedildi, kalan aramalar/sayfalar yapilmadi."
             )
 
         if not ok:
@@ -450,7 +541,7 @@ def run_spiders(spiders=None):
     failed = [name for name, (ok, _) in results.items() if not ok]
 
     def _items(stats):
-        return stats["items"] if stats else None
+        return stats.get("items") if stats else None
 
     # Exited cleanly and found nothing. Almost always a block: the spider is
     # refused on every request, logs it, closes tidily and returns 0.
