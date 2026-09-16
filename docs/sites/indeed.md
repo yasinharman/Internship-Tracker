@@ -676,6 +676,69 @@ Also from 16.09: **the dashboard no longer shows a posting that has not been
 classified** (`api/queries.py`, `CLASSIFIED`). For Indeed that means a posting
 appears the night its description arrives, not the night it was found.
 
+## Are the broad searches worth their pages? - measured 16.09.2026
+
+The four broad searches - `stajyer`, `intern`, `part-time`, `yari-zamanli` -
+took 51 of the 89 pages of the 16.09 run. Their results looked mostly
+irrelevant, so this measures them. No request was sent.
+
+**Method.**
+- **Which search found which posting:** the 16.09 log has a `Scraped from
+  <search page>` line with the item under it, 727 of them. They map every one
+  of the 314 postings to the searches that found it, and they reproduce the
+  run's own discovery report exactly.
+- **What each posting is:** classify's verdict where there is one (51 rows),
+  and for a duplicate, the verdict on the row it points at. The 65 rows below
+  that are still waiting were **read by title**, against the classifier's own
+  rules. That is a weaker signal than classify with a description, and it is
+  marked as such.
+- **What counts:** only the postings a search finds **alone**, because those
+  are the ones removing it would lose.
+
+| Search | Pages | Found | Only here | Of those, relevant | Of those, noise |
+|---|---|---|---|---|---|
+| yari-zamanli | 15, ceiling | 65 | 37 | **0** | 37. **33 are enuygunbakıcı** babysitting, cleaning and house-help ads; the rest a physiotherapist, a steward, a host and a warehouse job |
+| part-time | 15, ceiling | 44 | 14 | **2, both software**, both waiting (read by title): *QA Tester - Part Time* (Splash Software), *Part Time Telecommunications Engineer (SW Product)* (P.I. Works) | 12: waiter, barista, vet, social media, front desk, a sales role at Mango that LinkedIn also has |
+| stajyer | 15, ceiling | 192 | 48 | **6**: Baykar *Web Yazılım Geliştirme*; three more Baykar tracks classify called `it` (weapon systems, engine analysis, flight sciences - engineering, arguably); Baykar *Veri ve Analiz* (waiting, read as `it`); Vodafone *Genel Stajyer-Engelli* (`general_program`) | 42: 28 more Baykar tracks in other fields, and 14 others - vet, architect, teacher, make-up, accounting and the like |
+| intern | 6 | 45 | 12 | **3** `general_program` by title: pladis *Intern*, Marriott *University Intern-MEA* and *Intern - JW Marriott* | 9. 5 of them are also on LinkedIn; the rest are HR, allocator, logistics and sales |
+
+A further 30 postings were found by two or more broad searches and by no field
+search. All of them are noise except two whose titles name no field: *stajyer*
+(HOSFINDER) and Apple's *Uzman: Dönemsel, Yarı Zamanlı*. 21 of the 30 were
+found by `part-time` and `yari-zamanli` together and by nothing else. Remove
+`yari-zamanli` and `part-time` still finds them. Remove both and they are
+gone, Apple's included.
+
+**The cost is not only pages.** On Indeed a description arrives only through
+the checker, so every noise posting costs a `/viewjob` request before classify
+can call it `other`.
+- **The backlog:** of the 245 rows waiting after the run, 90 were found only
+  by the broad searches, and 14 only by `yari-zamanli`.
+- **The address:** those requests come out of the same budget that refused
+  the checker at its 51st request.
+
+**What it says, per search:**
+- **yari-zamanli:** nothing relevant, and a third of its results come from
+  one household-help site.
+- **part-time:** mostly noise, but it is the only route to the two
+  part-time software jobs, because every field search asks for an
+  internship.
+- **stajyer:** mostly noise, and mostly Baykar. It is the only route to
+  Baykar's software and data tracks and to Vodafone's general programme.
+- **intern:** cheap, at 6 pages, and brings three company-wide programmes.
+
+**The caveats:** this is one run, and 65 of the verdicts come from reading
+titles. The field searches cannot be compared yet: of their 173 postings, only
+8 are classified.
+
+**Decided the same day (Harman): `yari-zamanli` is dropped.**
+- **The saving:** 15 pages a crawl, and nothing relevant is lost.
+- **Kept:** `part-time`, `stajyer` and `intern`.
+- **To watch on the next run:**
+  - Does `part-time` stay the sole finder of software postings?
+  - Do the 21 postings it shared with `yari-zamanli` still arrive?
+  - Does the crawl end sooner?
+
 ## The description is on the DETAIL page, and the checker already fetches it - 09.09.2026
 
 "The first investigation > Description" turned down fetching `/viewjob?jk=`

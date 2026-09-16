@@ -79,7 +79,7 @@ def test_the_indeed_crawl_ceiling_clears_its_worst_case():
     """The arithmetic next to SPIDER_TIMEOUTS, so it fails if the delay moves."""
     from scraper.spiders.indeed_cards import IndeedCardsSpider as spider
 
-    # warm-up, nine searches to MAX_PAGES, and ten 429 retries.
+    # warm-up, every search to MAX_PAGES, and ten 429 retries.
     requests = 1 + len(spider.SEARCHES) * spider.MAX_PAGES + 10
     slowest = spider.custom_settings["DOWNLOAD_DELAY"] * 1.5 + 2
 

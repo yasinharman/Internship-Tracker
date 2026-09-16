@@ -209,7 +209,12 @@ class IndeedCardsSpider(BaseApiSpider):
         "stajyer": "stajyer",
         "intern": "intern",
         "part-time": "part time",
-        "yari-zamanli": "yarı zamanlı",
+        # "yari-zamanli": "yarı zamanlı" was here until 16.09.2026. It took 15
+        # pages and was the only finder of 37 postings, none of them
+        # relevant; 33 were one household-help site's babysitting and
+        # cleaning ads. docs/sites/indeed.md, "Are the broad searches worth
+        # their pages?". part-time and stajyer stayed: each is the only way
+        # to a few software postings.
     }
 
     #####################################################################
