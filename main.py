@@ -249,8 +249,9 @@ SPIDER_TIMEOUTS = {
     tests/test_run_time_limit.py does this sum from the spider's own settings.
 
     16.09.2026: the first run under this limit took 93 requests in 1846s and
-    ended on its own. Eight searches since yari-zamanli was dropped the same
-    day, so the worst case is now 131 requests, ~70 min. The ceiling stays.
+    ended on its own. Six searches since yari-zamanli, software intern and
+    developer intern were dropped the same day, so the worst case is now 101
+    requests, ~54 min. The ceiling stays.
 
     indeed_check. One request per posting the board can show: 214 on
     15.09.2026, measured at ~20s each - about 71 minutes, 107 at the 1.5x

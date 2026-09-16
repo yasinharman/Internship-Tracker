@@ -756,6 +756,52 @@ classified `other`; 14 were still in the checker's queue.
 - **The queue after the deletion:** 248 active Indeed rows without a
   description.
 
+**`software-intern` and `developer-intern` dropped the same day (Harman).**
+Each search was checked on its own and the two were checked together,
+because together they could lose a posting that each alone would not.
+
+| Run | software-intern: found / only here | developer-intern: found / only here | Lost if both go |
+|---|---|---|---|
+| 15.09, broad searches cut off at page 2-3 | 17 / 1 | 5 / 0 | 1: *Programme Support & Communications Intern*, United Nations |
+| 16.09, full run | 15 / 0 | 9 / 0 | **0** |
+
+- **Who else finds their postings:** on 16.09, `intern` found 13 of
+  software-intern's 15 and all 9 of developer-intern's. `it-intern` found 10
+  and 8.
+- **The saving:** 8 pages a crawl on 16.09's numbers, on top of
+  `yari-zamanli`'s 15.
+- **No rows deleted:** every posting the pair found is also found by a search
+  that stays.
+- **Six searches now:** `yazilim-stajyer`, `bilgisayar-muhendisligi-stajyer`,
+  `it-intern`, `stajyer`, `intern`, `part-time`.
+
+**What it changes:**
+- **Little for `intern`.** Of the 16 postings the pair found on 16.09, the
+  five remaining searches still find 15, mostly through `it-intern`. The one
+  left to `intern` alone is a marketing internship. So the order stays as it
+  is.
+- **Still two runs of evidence.** The 30.07 run found every term to be the
+  sole finder of something. Watch the next discovery report for a software
+  posting that no search finds any more.
+
+**`intern` was checked too, and stays (Harman).** With the six searches it is
+the only finder of more than before. None of its finds is a software posting.
+
+| Run | Only `intern` finds | Of those, company-wide programmes (by title) |
+|---|---|---|
+| 15.09 | 7 | 2: pladis *Intern*, Marriott *University Intern-MEA* |
+| 16.09 | 13 | 3: pladis *Intern*, Marriott *University Intern-MEA* and *Intern - JW Marriott* |
+
+- **The rest on 16.09:** TikTok x3, Roche legal, AstraZeneca corporate
+  affairs, Cummins logistics and sales, PVH, pladis HR, Kenvue marketing.
+- **LinkedIn's deletion:** five of those were duplicates of LinkedIn rows, and
+  LinkedIn's rows are now deleted.
+- **Why keep it:**
+  - A company-wide programme is exactly what `general_program` exists
+    for (pladis *Intern* is the classifier's own UPS example).
+  - Its precision is better than `stajyer`'s: 3 in 13, against 6 in 48.
+  - It costs 6 pages, against 15.
+
 ## The description is on the DETAIL page, and the checker already fetches it - 09.09.2026
 
 "The first investigation > Description" turned down fetching `/viewjob?jk=`

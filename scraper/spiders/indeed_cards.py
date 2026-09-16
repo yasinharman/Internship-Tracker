@@ -202,8 +202,13 @@ class IndeedCardsSpider(BaseApiSpider):
         # field: the job-shape term plus what we actually want it to be about
         "yazilim-stajyer": "yazılım stajyer",
         "bilgisayar-muhendisligi-stajyer": "bilgisayar mühendisliği stajyer",
-        "software-intern": "software intern",
-        "developer-intern": "developer intern",
+        # "software intern" and "developer intern" were here until 16.09.2026.
+        # Neither was the only finder of anything on 16.09 (15 and 9
+        # postings, 8 pages together), and removing both together lost
+        # nothing: `intern` found 13 of the one's and all 9 of the other's,
+        # and it-intern most of the rest. On 15.09, a run cut short, the
+        # pair's only sole find was a UN communications internship.
+        # docs/sites/indeed.md, "Are the broad searches worth their pages?".
         "it-intern": "IT intern",
         # broad: the job-shape terms, high volume, low precision
         "stajyer": "stajyer",
