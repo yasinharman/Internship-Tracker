@@ -739,6 +739,23 @@ titles. The field searches cannot be compared yet: of their 173 postings, only
   - Do the 21 postings it shared with `yari-zamanli` still arrive?
   - Does the crawl end sooner?
 
+**Its rows were deleted the same day (Harman, 16.09.2026 15:34).** The 37
+postings only `yari-zamanli` had found were removed from the database, so the
+checker does not spend a `/viewjob` request on any of them. With the search
+gone, nothing will bring them back. They were 33 enuygunbakıcı ads plus a
+physiotherapist, a steward, a host and a warehouse job. 23 were already
+classified `other`; 14 were still in the checker's queue.
+- **Backup first:** `backups/job_posts-20260916-153408.csv`.
+- **Found:** by mapping the `Scraped from` lines of
+  `backups/indeed-fullrun-20260916.log` to urls. Nothing pointed at the 37 as
+  a duplicate.
+- **Not deleted:** the 28 postings `yari-zamanli` shared with other searches
+  (21 of them with `part-time`). `part-time` and `stajyer` would insert them
+  again as new rows on the next crawl, and the checker would visit them
+  anyway.
+- **The queue after the deletion:** 248 active Indeed rows without a
+  description.
+
 ## The description is on the DETAIL page, and the checker already fetches it - 09.09.2026
 
 "The first investigation > Description" turned down fetching `/viewjob?jk=`
