@@ -93,7 +93,7 @@ MAX_PER_SITE = int(os.getenv("OPENINGS_MAX_PER_SITE", "0"))
 #
 # 25 is small enough that a kill costs at most 25 wasted probes and large
 # enough that a full run is a couple of dozen commits rather than hundreds.
-# load_open_postings() orders by checked_at ASC NULLS FIRST, so the next run
+# probe_query() puts rows that were never checked first, so the next run
 # resumes exactly where this one was cut off.
 WRITE_EVERY = int(os.getenv("OPENINGS_WRITE_EVERY", "25"))
 
@@ -160,13 +160,8 @@ class OpeningCheckMixin:
                 .filter(JobPost.is_active.is_(True))
                 .filter(JobPost.duplicate_of.is_(None))
                 .filter(JobPost.closed_at.is_(None))
-                # Never checked first, then longest ago. Only matters when
-                # MAX_PER_SITE is set, but it makes the cap fair rather than
-                # arbitrary. NULLS FIRST is spelled out because Postgres sorts
-                # them LAST on an ascending order by, which is the opposite of
-                # what "never checked" should mean here.
-                .order_by(JobPost.checked_at.asc().nulls_first())
             )
+            query = self.probe_query(query)
             if MAX_PER_SITE > 0:
                 query = query.limit(MAX_PER_SITE)
 
@@ -185,6 +180,21 @@ class OpeningCheckMixin:
             " (DRY RUN - nothing will be written)" if self.dry_run else "",
         )
         return rows
+
+    def probe_query(self, query):
+        """
+        The order the rows are probed in, and any this site leaves out.
+
+        Never checked first, then longest ago. It matters whenever a run
+        cannot reach every row - a cap, a block, a time limit - because it
+        decides which rows wait. NULLS FIRST is spelled out because Postgres
+        sorts them LAST on an ascending order by, which is the opposite of
+        what "never checked" should mean here.
+
+        Override where a site's own measurements say otherwise; indeed_check
+        does, since 16.09.2026.
+        """
+        return query.order_by(JobPost.checked_at.asc().nulls_first())
 
     def _reopen_seen_again(self, session):
         """
