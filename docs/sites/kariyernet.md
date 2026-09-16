@@ -483,7 +483,9 @@ cards are not postings: the two searches overlap - 6 cards of 47 on
 was most likely about 16 postings. The 12.09 url list did not survive, so
 that figure is inferred from the overlap, not counted.)
 
-Those rows are **visible but unsorted** while they wait:
+Those rows were **visible but unsorted** while they waited. Since 16.09.2026
+the dashboard hides them until they are sorted (`api/queries.py`,
+`CLASSIFIED`). The waiting itself is unchanged:
 `classify_jobs.load_unclassified()` skips a row with no description rather
 than judging it by its title, because `job_category` is written once and a
 title-only guess would outlive the description that arrives the next night.

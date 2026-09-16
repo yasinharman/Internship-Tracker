@@ -167,8 +167,16 @@ def meta(session: Session = Depends(get_session)):
             types=default_types or [option.value for option in types],
             categories=default_categories or [option.value for option in categories],
         ),
-        unclassified_count=q.count_where(session, visible + [JobPost.job_category.is_(None)]),
-        closed_count=q.count_where(session, visible + [JobPost.closed_at.is_not(None)]),
+        # The rows the board hides while they wait for classify - see
+        # queries.CLASSIFIED. Open ones only: classify never sorts a closed
+        # posting, so counting those would report a wait that never ends.
+        unclassified_count=q.count_where(
+            session, visible + list(q.OPEN) + [JobPost.job_category.is_(None)]
+        ),
+        # What the "Kapananlar" toggle would add, so sorted rows only.
+        closed_count=q.count_where(
+            session, visible + list(q.CLASSIFIED) + [JobPost.closed_at.is_not(None)]
+        ),
         last_crawl_at=session.scalar(select(func.max(JobPost.created_at)).where(and_(*visible))),
         total=q.count_where(session, visible),
     )
@@ -282,7 +290,9 @@ def stats(filters: Filters = Depends(filter_params), session: Session = Depends(
             total=total,
             today=today,
             companies=companies,
-            unclassified=q.count_where(session, current + [JobPost.job_category.is_(None)]),
+            # `current` hides these rows, so they are counted with the
+            # opposite question about the same filter.
+            unclassified=q.count_where(session, q.conditions(filters, waiting=True)),
             total_delta=total_delta,
             companies_delta=companies_delta,
         ),

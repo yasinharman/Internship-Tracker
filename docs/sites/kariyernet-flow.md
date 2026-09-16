@@ -213,9 +213,10 @@ question differ.
 `classify_jobs` reads rows with `job_category IS NULL`, skipping duplicates,
 closed postings, **and rows with no description** - those wait rather than
 being judged by their title, because `job_category` is written once and a
-title-only guess would outlive the description arriving the next night. They
-are visible on the dashboard the whole time, just unsorted, and
-`report_waiting()` prints the pile per site every run.
+title-only guess would outlive the description arriving the next night. Since
+16.09.2026 the dashboard hides them until they are sorted (before that they
+were shown, unsorted), and `report_waiting()` prints the pile per site every
+run.
 
 ---
 

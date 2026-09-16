@@ -4,13 +4,13 @@ import type { Meta, Option } from "../lib/types";
 import type { Query } from "../lib/api";
 
 /**
- * The rule this states is enforced in api/queries.py: a row with no category
- * is shown whatever the Alan filter says, because a failed classify step must
- * not empty the board. Exported so the header can place it wherever the
- * layout has room for it.
+ * The rule this states is enforced in api/queries.py (CLASSIFIED): a row with
+ * no category is not shown until classify has sorted it. Until 16.09.2026 it
+ * was shown whatever the Alan filter said. Exported so the header can place it
+ * wherever the layout has room for it.
  */
 export const UNCLASSIFIED_NOTE =
-  "Sınıflandırılmamış ilanlar alan filtresinden bağımsız gösterilir";
+  "Sınıflandırılmayı bekleyen ilanlar gösterilmez";
 
 /**
  * Streamlit put these in the sidebar; the reference uses that space for

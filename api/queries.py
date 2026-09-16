@@ -54,6 +54,30 @@ OPEN = (JobPost.closed_at.is_(None),)
 
 
 #####################################################
+# THE FOURTH HIDE: NOT SORTED YET                   #
+#####################################################
+# job_category IS NULL   pipeline/classify_jobs.py has not judged the posting
+#                        yet - since 12.09.2026 that mostly means its
+#                        description has not arrived.
+#
+# These were shown until 16.09.2026, whatever the field filter said, on the
+# argument that a failed classify step should not blank the board. The owner
+# reversed that on 16.09.2026, when Indeed's first full run left 245 of its 296
+# postings waiting: a board mostly made of unsorted rows is not the board
+# being asked for, and a row with no description has nothing to read anyway.
+#
+# The cost is the old argument, and it is stated rather than rediscovered: if
+# classify stops working, new postings stop appearing. That is not silent -
+# /api/meta and /api/stats still count the waiting rows (see
+# conditions(waiting=True)), and the dashboard shows that count.
+#
+# Not a switch. The "Kapananlar" toggle brings back closed postings and still
+# only those; an unsorted closed posting is never classified (classify skips
+# closed rows), so it stays out either way.
+CLASSIFIED = (JobPost.job_category.is_not(None),)
+
+
+#####################################################
 # JOB TYPE                                          #
 #####################################################
 # The types actually being looked for. Everything the scrapers find is still
@@ -78,18 +102,13 @@ JOB_TYPE_LABELS = {
 #####################################################
 # FIELD, AS DECIDED BY THE CLASSIFIER               #
 #####################################################
-# Two rules here, and the second one is the important one.
-#
 # Default to it + general_program: the whole point of the classifier is that
 # the board should show software work, and general_program stays because
 # "Intern" at UPS could still turn out to be software - the employer has not
 # said yet.
 #
-# Unclassified rows (job_category IS NULL) stay VISIBLE no matter what the
-# filter says - see category_condition() below. If the LLM API is down, or a
-# crawl finished and the classify step failed, the postings are still real and
-# the board must not be empty. A silent blank dashboard is a worse failure
-# than a few unsorted rows.
+# Unclassified rows are not a category here; they are hidden before this
+# filter is reached. See CLASSIFIED above.
 PREFERRED_CATEGORIES = ["it", "general_program"]
 
 CATEGORY_LABELS = {
@@ -196,15 +215,15 @@ def range_bounds(range_key, now=None):
 #####################################################
 def category_condition(categories):
     """
-    The rule that must not be lost.
-
     An empty selection means "no category filter". Otherwise the selected
-    categories OR a NULL one - an unclassified posting is not evidence that
-    the posting is irrelevant, only that nothing has looked at it yet.
+    categories and nothing else.
+
+    Until 16.09.2026 this also let a NULL category through, whatever was
+    selected. That rule is gone on purpose; see CLASSIFIED.
     """
     if not categories:
         return None
-    return or_(JobPost.job_category.in_(categories), JobPost.job_category.is_(None))
+    return JobPost.job_category.in_(categories)
 
 
 def search_condition(term):
@@ -215,17 +234,23 @@ def search_condition(term):
     return or_(JobPost.job_title.ilike(pattern), JobPost.company.ilike(pattern))
 
 
-def conditions(filters, *, apply_range=True):
+def conditions(filters, *, apply_range=True, waiting=False):
     """
     Every WHERE clause for one request, VISIBLE first.
 
     apply_range=False is for the "previous period" half of a delta, which
     supplies its own bounds.
+
+    waiting=True asks the opposite question about the same filter: which rows
+    it would match, were they sorted, that are still waiting for classify.
+    That is the count the dashboard shows for the rows CLASSIFIED hides. The
+    field filter is left out, because a row with no category cannot match one,
+    and so are closed rows, because classify never sorts those.
     """
     clauses = list(VISIBLE)
 
     # Closed postings are out unless they were explicitly asked for.
-    if not filters.closed:
+    if waiting or not filters.closed:
         clauses.extend(OPEN)
 
     if filters.sources:
@@ -233,9 +258,13 @@ def conditions(filters, *, apply_range=True):
     if filters.types:
         clauses.append(JobPost.job_type.in_(filters.types))
 
-    category = category_condition(filters.categories)
-    if category is not None:
-        clauses.append(category)
+    if waiting:
+        clauses.append(JobPost.job_category.is_(None))
+    else:
+        clauses.extend(CLASSIFIED)
+        category = category_condition(filters.categories)
+        if category is not None:
+            clauses.append(category)
 
     search = search_condition(filters.q)
     if search is not None:

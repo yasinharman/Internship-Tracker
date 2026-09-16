@@ -32,7 +32,9 @@ export function Badge({
 }
 
 /** NULL is its own state, not a missing value: the classifier has not looked
- *  at the posting yet, and the board shows it regardless of the filter. */
+ *  at the posting yet. Since 16.09.2026 the API does not return such rows
+ *  (api/queries.py, CLASSIFIED), so the first branch is a fallback, not a
+ *  state the board is expected to show. */
 export function CategoryBadge({
   category,
   label,
@@ -44,7 +46,7 @@ export function CategoryBadge({
 }) {
   if (!category) {
     return (
-      <Badge tone="warn" title="Sınıflandırıcı bu ilana henüz bakmadı - filtreden bağımsız gösteriliyor.">
+      <Badge tone="warn" title="Sınıflandırıcı bu ilana henüz bakmadı.">
         sınıflandırılmadı
       </Badge>
     );

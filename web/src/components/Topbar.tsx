@@ -90,7 +90,7 @@ export function Topbar({
           onClick={onRefresh}
           title={
             unclassified > 0
-              ? `${unclassified} ilan henüz sınıflandırılmadı`
+              ? `${unclassified} ilan sınıflandırılmayı bekliyor - panoda gösterilmiyor`
               : "Verileri yenile"
           }
           aria-label="Verileri yenile"

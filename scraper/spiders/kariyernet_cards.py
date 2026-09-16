@@ -804,11 +804,12 @@ class KariyerNetCardsSpider(BaseApiSpider):
             # the incoming value is real, so the late arrival wins and
             # nothing blanks it in between.
             #
-            # The posting is visible on the dashboard from the first night
-            # either way: an unclassified row is shown, not hidden. What it
-            # waits for is being SORTED - classify_jobs skips a row with no
-            # description rather than judging it by its title, which is the
-            # whole reason the checks were moved ahead of it on 09.09.
+            # What the row waits for is being SORTED - classify_jobs skips a
+            # row with no description rather than judging it by its title,
+            # which is the whole reason the checks were moved ahead of it on
+            # 09.09. Until it is sorted the dashboard does not show it (since
+            # 16.09.2026, api/queries.py CLASSIFIED); the row is stored all
+            # the same, which is what this yield is for.
             yield partial
 
             # The description does not change, so the posting page is worth

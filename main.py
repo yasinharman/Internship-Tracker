@@ -828,9 +828,9 @@ if __name__ == "__main__":
         "--skip-classify",
         action="store_true",
         help="Crawl only - skip dedupe, notify, classify and the "
-             "still-open checks. New postings stay unsorted and remain "
-             "visible on the dashboard until a later run picks them up, and "
-             "no posting is marked closed.",
+             "still-open checks. New postings stay unsorted, and so off "
+             "the dashboard, until a later run picks them up, and no "
+             "posting is marked closed.",
     )
     args = parser.parse_args()
 
@@ -878,9 +878,9 @@ if __name__ == "__main__":
     if not args.skip_classify:
         if not run_post_crawl(selected):
             print(
-                "  (a post-crawl step did not finish - postings are stored and "
-                "visible; they may be unsorted, or a closed one may still be "
-                "listed)",
+                "  (a post-crawl step did not finish - postings are stored, "
+                "but an unsorted one stays off the dashboard until classify "
+                "runs, and a closed one may still be listed)",
                 flush=True,
             )
 

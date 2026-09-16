@@ -83,8 +83,9 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
   // between two different parents with CSS alone.
   //
   // Three of them, in one row. The unclassified count is not among them any
-  // more; the square on the status line still turns amber for it, and every
-  // unclassified posting carries its own badge in the table.
+  // more; the square on the status line still turns amber for it. Those
+  // postings are not in the table since 16.09.2026 - the API hides them until
+  // they are sorted, and the amber square is how their number is shown.
 
   /*
     THE CHART SITS IN THE HEADER ROW, BETWEEN THE FILTERS AND THE RANGE
@@ -154,7 +155,8 @@ export function DashboardPage({ meta, query, update, reset, touched }: PageProps
             status={
               databaseEmpty
                 ? "Veritabanı boş"
-                : `${meta?.sources.length ?? 0} kaynak · ${RANGE_DESCRIPTIONS[query.range]} · son ilan ${fmtRelative(meta?.last_crawl_at ?? null)}`
+                : `${meta?.sources.length ?? 0} kaynak · ${RANGE_DESCRIPTIONS[query.range]} · son ilan ${fmtRelative(meta?.last_crawl_at ?? null)}` +
+                  (unclassified > 0 ? ` · ${unclassified} ilan sınıflandırılmayı bekliyor` : "")
             }
           />
           {meta && !databaseEmpty && (

@@ -12,10 +12,10 @@ On kariyer.net's first night that was roughly 16 of 40 postings, because its
 posting pages are refused past a certain count while the card is stored on
 its own.
 
-The row stays VISIBLE while it waits - an unclassified posting is shown on the
-dashboard, not hidden. It is simply unsorted until there is something to sort
-it by, and `report_waiting` counts them out loud every run so a growing pile
-is noticed.
+The row is unsorted until there is something to sort it by, and
+`report_waiting` counts them out loud every run so a growing pile is noticed.
+Since 16.09.2026 the dashboard hides it while it waits
+(tests/test_board_hides_unclassified.py); until then it was shown.
 
 Nothing here reaches the real database: the query is built against an
 in-memory SQLite one.

@@ -154,7 +154,9 @@ consequences, both intended:
   reversal in `main.py run_post_crawl()`.
 
 A failure there does **not** fail the scheduled task: the postings are already
-stored, and unclassified rows stay visible on the dashboard.
+stored. They stay off the dashboard until a later run sorts them - since
+16.09.2026 unclassified rows are hidden (`api/queries.py`, `CLASSIFIED`) - and
+the dashboard shows how many are waiting.
 
 ### Choosing the model
 

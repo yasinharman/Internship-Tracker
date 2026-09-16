@@ -38,9 +38,13 @@ These came from `app.py` and each one is load-bearing. They live in
    `closed_at IS NULL` unless `closed=1` was asked for. Three separate soft
    deletes with three separate owners (the classifier, dedupe, and the
    `*_check` spiders). None of them removes a row.
-2. **`job_category IS NULL` rows are shown no matter what the field filter
-   says.** If the LLM step fails, the postings are still real. A silently
-   empty board is a worse failure than a few unsorted rows.
+2. **`job_category IS NULL` rows are not shown** (`CLASSIFIED`, since
+   16.09.2026). Until then they were shown whatever the field filter said, so
+   that a failed LLM step would not empty the board. The owner reversed that
+   when Indeed's first full run left 245 of 296 postings waiting for a
+   description. The old risk is kept in view instead of in the table:
+   `/api/meta` and `/api/stats` count the waiting rows
+   (`conditions(waiting=True)`), and the page's status line shows the number.
 3. Default job types are Internship + Part-Time, but every type stays
    selectable — postings vanish from the sites within weeks and cannot be
    re-fetched, so the data is kept and the view is narrowed.
@@ -51,7 +55,7 @@ These came from `app.py` and each one is load-bearing. They live in
    Coolify and the URL format.
 7. A posting the checks found gone is hidden by default and revealed by
    `closed=1` — and **only** those. The classifier's `other` pile stays hidden
-   either way. "Kapandı" and "başka alan" are different things to a reader,
+   either way, and so does a closed posting that was never sorted. "Kapandı" and "başka alan" are different things to a reader,
    and one button that opened both would bury the handful of jobs that closed
    under two hundred that were never relevant.
 

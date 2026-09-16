@@ -74,9 +74,10 @@ def load_unclassified(session, limit=None):
         #
         # The consequence is worth stating rather than discovering: a posting
         # that closed before it was ever classified stays NULL forever, and
-        # shows as "sınıflandırılmadı" when that toggle is on. That is the
-        # price of not spending on a dead posting, and it is recoverable - the
-        # row is still there and one UPDATE puts it back in the queue.
+        # since 16.09.2026 the dashboard does not show it even with that
+        # toggle on (api/queries.py, CLASSIFIED). That is the price of not
+        # spending on a dead posting, and it is recoverable - the row is still
+        # there and one UPDATE puts it back in the queue.
         .filter(JobPost.closed_at.is_(None))
         ###############################################################
         # AND A ROW WITH NOTHING TO READ WAITS - ADDED 12.09.2026     #
@@ -96,16 +97,19 @@ def load_unclassified(session, limit=None):
         # count and the card is stored on its own
         # (kariyernet_cards.parse_listing).
         #
-        # So the row waits. It is VISIBLE while it waits - an unclassified
-        # posting is shown on the dashboard, not hidden - it is simply not
-        # sorted until there is something to sort it by. A day's delay for a
-        # decision made on the real text is the trade, and it was the owner's
-        # call on 12.09.2026.
+        # So the row waits, unsorted, until there is something to sort it by.
+        # A day's delay for a decision made on the real text is the trade, and
+        # it was the owner's call on 12.09.2026.
+        #
+        # WHILE IT WAITS IT IS HIDDEN, since 16.09.2026. It was shown until
+        # then; the owner reversed that when Indeed's first full run left 245
+        # of 296 postings waiting (api/queries.py, CLASSIFIED).
         #
         # THE RISK, stated rather than discovered: a posting whose
-        # description never arrives is never classified. It stays visible and
-        # unsorted, and report_waiting below counts it out loud every run so
-        # that a growing pile is noticed rather than accumulating in silence.
+        # description never arrives is never classified, and so never shown.
+        # report_waiting below counts it out loud every run, and the dashboard
+        # shows the same count, so that a growing pile is noticed rather than
+        # accumulating in silence.
         .filter(JobPost.job_description.isnot(None))
         .filter(JobPost.job_description.notin_(NO_DESCRIPTION))
         .order_by(JobPost.created_at.desc())
@@ -144,7 +148,7 @@ def report_waiting(session):
     total = sum(count for _, count in rows)
     print(
         f"{total} posting(s) waiting for a description before being "
-        f"classified - visible on the dashboard, just unsorted:"
+        f"classified - off the dashboard until they are:"
     )
     for site, count in sorted(rows, key=lambda r: -r[1]):
         print(f"    {count:>4}  {site}")
