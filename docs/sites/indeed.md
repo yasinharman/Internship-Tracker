@@ -536,6 +536,146 @@ the storage-state file when one is set and names which source it checked.
 `ANONYMOUS_MAX_PAGES` - from `INDEED_COOKIES_B64` being non-empty. Unset that
 and the crawl stops at page one with a perfectly good session in the file.
 
+## Refused on the detail pages, 145 requests in - measured 16.09.2026
+
+The same command, `python main.py --spider indeed_cards`, with the 15.09 fixes
+in and an empty Indeed board. The 215 Indeed rows were deleted first: the
+whole table was backed up to `backups/job_posts-20260916-101145.csv`, and in
+the same transaction 17 LinkedIn rows that pointed at Indeed rows as their
+original were unlinked. Started 10:12, about twenty hours after the 15.09 run.
+Log: `backups/indeed-fullrun-20260916.log`.
+
+| Step | Ran | Result |
+|---|---|---|
+| `indeed_cards` | 10:12-10:42, 1846s, `finished` | 93 requests: 90 x 200, 3 x 429 retried and answered. **314 unique postings** (215 on 15.09), 1302 records seen |
+| dedupe | 68s | 22 newly marked. 17 of the new Indeed rows are now the copies behind those unlinked LinkedIn rows, which are older; 1 is behind a kariyer.net row |
+| notify | 24s | 309 rows, no watched company |
+| `indeed_check` | 10:44-11:03, 1174s, `finished` | 296 to check: **51 open with a description**, 0 closed, then eight 403s and the block budget - **245 never asked** |
+| classify | 17s | 51 rows: it 9, general_program 1, other 41 |
+
+The board now holds 314 Indeed rows, 296 of them visible, and **245 of the
+visible ones still have no description and no category**. Because dedupe
+keeps the older row, the 17 jobs Indeed shares with LinkedIn now get their
+description from `linkedin_check`, not from this checker.
+
+### The clock was not what stopped it
+
+Both halves were given their new limits (`CLOSESPIDER_TIMEOUT` 5100 and 6900
+in the log). Neither came near them: the crawl ended on its own at 31 minutes,
+and the checker stopped at 20 minutes because Cloudflare refused it.
+
+### The repeated-page stop, on its first run
+
+New postings per page. The pages with nothing new are the ones the stop
+counts, and they log no count of their own:
+
+| Search | Pages | New per page | Ended by |
+|---|---|---|---|
+| software-intern | 4 | 15 9 **0 0** | two pages with nothing new |
+| developer-intern | 4 | 15 6 **0 0** | two pages with nothing new |
+| it-intern | 5 | 15 15 11 **0 0** | two pages with nothing new |
+| intern | 6 | 15 13 14 10 **0 0** | two pages with nothing new |
+| yazilim-stajyer | 10 | 15 15 10 15 14 15 15 12 **0 0** | two pages with nothing new |
+| bilgisayar-muhendisligi-stajyer | 15 | 15 14 11 15 14 15 15 14 15 15 15 15 8 **0 0** | two pages with nothing new, on page 15 |
+| stajyer | 15 | 12-15 on every page | **MAX_PAGES, page 15 still full** |
+| yari-zamanli | 15 | 14-15 on every page | **MAX_PAGES, page 15 still full** |
+| part-time | 15 | 13-15 on every page | **MAX_PAGES, page 15 still full** |
+
+The stop did what 15.09 said it would: 89 pages instead of the 135 that nine
+searches to MAX_PAGES would cost. This also answers the question 15.09 left
+open about the broad searches. **They do not run dry within 15 pages**, and
+nothing yet says how deep they go. They took 45 of the 89 pages.
+
+Postings found, and found only by that search, of 314:
+
+| Search | Found | Only here |
+|---|---|---|
+| stajyer | 192 | 48 |
+| bilgisayar-muhendisligi-stajyer | 133 | 6 |
+| yazilim-stajyer | 90 | 1 |
+| yari-zamanli | 65 | 37 |
+| intern | 45 | 12 |
+| part-time | 44 | 14 |
+| it-intern | 29 | 1 |
+| software-intern | 15 | 0 |
+| developer-intern | 9 | 0 |
+
+part-time kept 44 postings out of 225 records over 15 pages, and its page 15
+kept none. Whether the broad searches' postings are worth their pages is a
+question for classify. Its 51 verdicts are too few to split by search, but 41
+of them were `other`: the hidden ones are house-help and babysitting ads.
+
+### The refusal
+
+- **What:** from 11:01:33, `/viewjob` pages answered 403 with
+  `cf-mitigated=challenge`. Eight arrived in 2m15s, and nothing in between
+  was answered. `DOMAIN_BLOCK_BUDGET` (8) then stopped the
+  checker cleanly and dropped the other 243 requests.
+- **Not the account:** no sign-in wall on any page, and no redirect to a
+  login or lock page. It was Cloudflare's challenge.
+- **When:** before the first 403, the address had sent 145 requests to
+  tr.indeed.com in 49.5 minutes (142 x 200, 3 x 429). The 15.09 run ended at
+  134 (130 x 200, 4 x 429) in about 50 minutes, killed by the clock. So both
+  days stopped at about the same place, one by the clock and one by
+  Cloudflare. **One run each does not make that a count**, and the two differ
+  in more than one thing: this one had the rest of the night before it and a
+  longer crawl in front of the checker.
+- **Not a refusal:** one detail page (`jk=cb132657b5eece7c`, 10:53) timed out
+  in `page.goto` and was logged as an error.
+
+### What is next
+
+- **The 245 rows:** they wait for the checker, and unchecked rows go first, so
+  the next checker run starts on exactly them.
+- **The question the refusal raises:** is the limit the day's total, or
+  something about detail pages? A checker run on a rested address without
+  the crawl in front of it differs from today's in that one respect.
+  `OPENINGS_MAX_PER_SITE` can cap it if a smaller first step is wanted.
+- **The broad searches:** 45 pages and still full. Raising MAX_PAGES would
+  spend more of the same budget the checker needs.
+
+### Changed the same day: a posting page is opened when there is something to learn
+
+The refused rows were never at risk. A probe that gets no answer does not
+stamp `checked_at`, and unchecked rows go first, so the next run starts on
+them. That is half of what kariyer.net does. The other half is "a posting page
+is worth a request only when there is something to learn from it"
+(`kariyernet_cards`, 10.09.2026), and this checker did not have it. It opened
+every open posting every night. Once the backlog is gone that is about 300
+pages a night, against a wall measured once, at the 51st - so the wall would
+be hit every night, and every night would add eight refusals to the address.
+
+`indeed_check.probe_query` now decides:
+
+| Row | Opened? |
+|---|---|
+| no description yet (`NULL`, `N/A`, `""` - what classify waits on) | yes, **first** |
+| description, and in a search result in the last `SEEN_RECENTLY_H` (12) hours | **no** |
+| description, not seen lately, or never | yes, after the above |
+
+- **The skip:** it rests on the rule `openings.py` is built on. A posting in
+  a search result is open, and `last_seen_at` is that evidence. The checker
+  still opens the posting that has dropped out of the searches, which is the
+  one that may have closed.
+- **The cost:** a posting that closes while Indeed still lists it in search
+  is caught only once it drops out.
+- **The order:** a row without a description goes first even ahead of a row
+  never checked. Among equals, the older row goes first, so rows a refusal
+  left behind go ahead of that night's new cards.
+
+The same query was run read-only against the database on 16.09, after the
+run, with no request sent. The queue is **exactly the 245**. 10 described rows are skipped,
+and 41 more never enter it, because classify marked them `other` and the
+checker only looks at rows the board can show. Tests:
+`tests/test_indeed_check_queue.py`.
+
+Once the backlog is gone, a night should cost the crawl plus the new postings
+plus the ones that dropped out of the searches. That is unmeasured.
+
+Also from 16.09: **the dashboard no longer shows a posting that has not been
+classified** (`api/queries.py`, `CLASSIFIED`). For Indeed that means a posting
+appears the night its description arrives, not the night it was found.
+
 ## The description is on the DETAIL page, and the checker already fetches it - 09.09.2026
 
 "The first investigation > Description" turned down fetching `/viewjob?jk=`
