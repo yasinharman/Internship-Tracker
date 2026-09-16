@@ -830,7 +830,14 @@ and this file. Every measurement here is still true of LinkedIn's pages, and
 the job-alert idea above, if it is ever pursued, would reuse the card and
 description knowledge.
 
-**Not decided yet: the 555 LinkedIn rows already in the database.** 89 of
-them are on the board, and no checker will ever look at them again. They will
-stay listed after they close, and a closed LinkedIn posting is only found
-out by clicking it.
+**The 555 LinkedIn rows already in the database were deleted the same
+day** (Harman's call - no checker would ever look at them again, so the 89 on
+the board would have stayed listed after they closed). Before that, a full
+export: `backups/job_posts-20260916-151233.csv`, 912 rows, the only remaining
+copy of those postings.
+
+One side effect: 17 Indeed rows were marked as duplicates of LinkedIn rows.
+Their `duplicate_of` was cleared in the same transaction, before the delete.
+They are unclassified and have no description, so the board keeps them
+hidden until `indeed_check` reaches them - they joined Indeed's queue (262
+rows). `pipeline.dedupe_jobs --dry-run` afterwards: 0 newly marked, 0 cleared.
