@@ -54,9 +54,12 @@ def waits(monkeypatch):
     return slept
 
 
-def test_a_full_run_checks_every_site(ran, waits):
+def test_a_full_run_checks_every_site_that_is_not_parked(ran, waits):
     main.run_checks()
-    assert ran == list(main.CHECKER_FOR.values())
+    assert ran == [
+        checker for crawl, checker in main.CHECKER_FOR.items()
+        if crawl not in main.PARKED_SPIDERS
+    ]
 
 
 def test_one_spider_checks_only_its_own_site(ran, waits):
@@ -116,3 +119,27 @@ def test_a_refused_crawl_still_starts_the_clock(monkeypatch):
     assert "_CRAWL_FINISHED_AT[spider_name] = time.monotonic()" in (
         open("main.py").read()
     )
+
+
+def test_a_parked_site_is_not_checked_in_a_full_run(ran, waits, monkeypatch):
+    # 16.09.2026: parking a crawl spider alone left its checker in every
+    # full run - LinkedIn's, visiting a restricted account's job pages.
+    monkeypatch.setattr(main, "PARKED_SPIDERS", ["indeed_cards"])
+    main.run_checks()
+    assert "indeed_check" not in ran
+    assert "kariyernet_check" in ran
+
+
+def test_a_parked_site_named_by_hand_is_still_checked(ran, waits, monkeypatch):
+    monkeypatch.setattr(main, "PARKED_SPIDERS", ["indeed_cards"])
+    main.run_checks(["indeed_cards"])
+    assert ran == ["indeed_check"]
+
+
+def test_linkedin_is_out_of_the_flow_entirely():
+    # 16.09.2026: two burner accounts restricted from this address. Not
+    # parked - parked spiders stay runnable with --spider.
+    assert "linkedin_cards" not in main.SPIDERS
+    assert "linkedin_cards" not in main.PARKED_SPIDERS
+    assert "linkedin_cards" not in main.CHECKER_FOR
+    assert "linkedin_check" not in main.CHECK_SPIDERS

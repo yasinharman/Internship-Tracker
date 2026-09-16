@@ -13,7 +13,7 @@ automating. This is an exception bought with an account we can afford to lose,
 not a refutation. If it is ever pointed at a personal profile, the 27.07 entry
 becomes correct again.
 
-**Status:** running - `spiders/linkedin_cards.py`, `spiders/linkedin_check.py`.
+**Status:** OUT OF THE SCRAPING FLOW since 16.09.2026. Two burner accounts were restricted that day, the second before any request, and further requests from this address put the owner's own account at risk (see the last sections). `spiders/linkedin_cards.py` and `spiders/linkedin_check.py` are kept but refuse to start without `LINKEDIN_ENABLED=1`, and `main.py` does not know them.
 
 ## Everything below was measured on 26.08.2026, through the burner session
 
@@ -670,3 +670,167 @@ page was not kept - the dump only took open pages then - so no selector is
 written for it. `LINKEDIN_DUMP_DIR` now also keeps a rendered page that comes
 back neither open nor closed, as `<id>-unknown.html`, and the row's
 `checked_at` is still empty, so it is first in line on the next run.
+
+## 16.09.2026 - the session was refused, and the run did not stop
+
+The verification run for the 15.09 changes was started at 12:40 and got no
+further than its first request: the feed redirected to
+`/uas/login?session_redirect=…/feed/`. Log: `backups/linkedin-run-20260916.log`.
+
+What is known, and nothing more:
+
+  * `linkedin-storage-state.json` (saved 26.08.2026) still dates `li_at` to
+    22.02.2027, so the cookie did not run out - LinkedIn stopped accepting it.
+  * The day before, the same session made ~560 requests without a single
+    refusal: 26 search pages, then **535 job pages in 71 minutes**. That is
+    the largest volume this account has carried, and the first run after it
+    was refused. It is the obvious suspect and it is not proven - an expired
+    session and a restricted account look identical from here, and nobody
+    has looked at the account yet.
+  * Whether the account still signs in is the next thing to find out, by
+    hand, in a browser - not by the crawler.
+
+**The run carried on after the wall**, and that part is a fault of ours. The
+middleware recognised the redirect as a sign-in wall and the spider said so -
+then asked for all three searches, which came back HTTP 200, 29 kB, no cards,
+and were not counted as walls because LinkedIn served them in place. The run
+was stopped by hand after 4 requests. Left alone, `main.py` would have
+started `linkedin_check`, which would have asked the same way for every
+stored posting.
+
+`LinkedinCardsSpider.on_warmup` now closes the spider
+(`linkedin_session_refused`) when the warm-up lands on a sign-in page or the
+middleware has already seen one. LinkedIn has no anonymous mode, so nothing
+after that can succeed. `linkedin_check` inherits it: a dead session now
+costs each spider one request. Checked without the network - a toy crawl
+whose warm-up callback raises `CloseSpider` fetched the warm-up and nothing
+else, `finish_reason` = `linkedin_session_refused`.
+
+**Before the next run, if the account still works:** the check volume is a
+question of its own. 535 detail pages in one sitting was set by the
+15.09 decision that the time limit must not stop the checker while LinkedIn
+answers. If that volume is what got the session refused, a cap
+(`OPENINGS_MAX_PER_SITE`) or a slower `DOWNLOAD_DELAY` for the checker is the
+lever. That is a decision for Harman, and one run is not evidence either way.
+
+### 16.09.2026, later - the account is restricted
+
+Harman opened the burner account by hand. The password was accepted, and
+LinkedIn showed **"Hesabınızın erişimi geçici olarak kısıtlanmıştır"**: access
+restricted for "potential unauthorized access or other activities that do not
+follow our policies", to be restored only after a government-issued ID is
+submitted. So the refusal at 12:40 was not an expired session. It was this.
+
+The timeline, as far as this project can see it:
+
+| Date | LinkedIn traffic on this account | Outcome |
+|---|---|---|
+| 26.08 - 10.09 | crawls of ~30 search pages; checks held to at most ~140 job pages by the 1200s limit (83 on 28.08) | never refused |
+| 15.09 | 26 search pages, then **535 job pages in 71 minutes** | every response 200 |
+| 16.09 12:40 | first request of the next run | sign-in wall; account restricted |
+
+One day, one account and one step change in volume do not prove the cause.
+But they are the only change on record, and they match what the 27.07.2026
+entry at the top of this file warned about. The size of that change was
+decided on 15.09 ("the ceiling must not stop the checker while LinkedIn is
+answering"). That decision was sound for Indeed and kariyer.net, where a
+refusal costs an address a few hours. On LinkedIn a refusal costs the
+account, and it arrived a day later, not as a 429 during the run. The
+checker never saw a refusal it could stop on.
+
+**What that means for any next account:** DOMAIN_BLOCK_BUDGET cannot protect
+it, because the penalty is not delivered during the run. The volume has to be
+capped in advance: `OPENINGS_MAX_PER_SITE` for the checker, and a daily
+number of job pages written down before the first run, not discovered after
+the last one.
+
+### Parked, and what the next account needs first - 16.09.2026
+
+`linkedin_cards` is in `PARKED_SPIDERS`, and `run_checks()` now skips a
+parked site's checker in a full run as well. Parking the crawl alone would
+still have started `linkedin_check` on every full run. Harman is opening a
+new burner account.
+
+**Before its first run, in this order:**
+
+1. `python -m tools.save_session linkedin` with the new account.
+2. **Decide a daily job-page budget**, and set it
+   (`OPENINGS_MAX_PER_SITE`). The old account ran seven active days at up to
+   ~140 job pages without trouble and was restricted after one day of 535.
+   Nothing better than that is known.
+3. First run by name (`python main.py --spider linkedin_cards`), with the
+   15.09 checklist: the f_F trial, `short_last_page`,
+   `SCRAPER_SLOT_MAX_ACTIVE_SIZE=1`, `<id>-unknown.html`.
+4. Un-park only after that run.
+
+**Two ideas raised the same day to cut the job pages themselves.** Neither is
+measured - there was no account left to measure with:
+
+* **The description from the search page.** A search page shows the
+  selected posting's description in its right-hand pane, so at least one is
+  in the DOM. Whether all 25 are there has not been checked - 26.08 recorded
+  the card as title/company/location only. A 25-card page averaged 1.68 MB
+  on 15.09 against 1.39 MB for a page with no cards; that difference fits
+  both answers. First thing to look at with the new account: save one search
+  page and grep it for a description known from the database.
+* **"Still open" without opening the posting.** Checked against the
+  09.09.2026 backup, no request: none of the 33 postings the checker closed
+  was ever seen in a search again, so a closed posting does drop out of
+  search. The converse is unproven: 33 postings checked open on 02.09 were
+  absent from the 09.09 crawl, and a route stopped at MAX_PAGES cannot tell
+  "closed" from "deeper than we looked". If it is used at all, absence may
+  only count on a route that reached its real last page
+  (`short_last_page`), in two consecutive runs, while a small daily sample
+  of job pages keeps measuring the rule against the checker.
+
+### 16.09.2026, afternoon - the second burner was restricted on creation
+
+Harman opened a new burner account the same afternoon. It showed the same
+"Access to your account has been temporarily restricted … submit a
+government-issued ID" page **as soon as it was opened, before this project
+had sent it a single request**. `linkedin-storage-state.json` was still the
+26.08 file, and no crawl or `save_session` was running.
+
+That changes what the first restriction can be blamed on:
+
+* **The 15.09 volume is no longer the only suspect.** The second account
+  did no automated work at all. Whatever flagged it came from the account's
+  creation or from its surroundings: the same home address and the same
+  machine as an account restricted a few hours earlier. That is the obvious
+  connection. LinkedIn does not say, so it stays a suspicion.
+* It does not clear the checker either. The first account could have been
+  flagged for its volume, and the second for its link to the first.
+
+**What this project does about it: nothing more against LinkedIn.** A third
+account made to get past the restriction would be working around LinkedIn's
+enforcement, not around a technical fault. On this address the evidence says
+it would be caught just as fast. The owner's own account may already be
+associated with this address. LinkedIn stays parked, and the 27.07.2026 entry
+at the top of this file is, in effect, back in force.
+
+If LinkedIn postings are wanted on the board later, the candidate that needs
+no burner is LinkedIn's own job-alert email: a saved search on a real
+account, delivered to a real inbox, read from there. Not measured and not
+designed yet - a note, not a plan.
+
+## Out of the flow - 16.09.2026
+
+Harman's decision the same day: LinkedIn leaves the scraping flow, because
+it puts his own account at risk. This is stronger than parking, which keeps a
+spider runnable with `--spider`:
+
+| Where | What changed |
+|---|---|
+| `main.py` | `linkedin_cards` is in none of `SPIDERS`, `PARKED_SPIDERS`, `CHECKER_FOR`, `SITE_LABELS`; `--spider linkedin_cards` is an unknown spider |
+| `LinkedinCardsSpider.__init__` (and so `linkedin_check`) | raises before anything is sent unless `LINKEDIN_ENABLED=1` - the door `scrapy crawl linkedin_check` from an old note would otherwise still open |
+| `run_checks()` | a parked site's checker is skipped in a full run (general, kept from the parking step) |
+
+Kept on purpose: the two spiders, their tests, `SPIDER_TIMEOUTS["linkedin_check"]`
+and this file. Every measurement here is still true of LinkedIn's pages, and
+the job-alert idea above, if it is ever pursued, would reuse the card and
+description knowledge.
+
+**Not decided yet: the 555 LinkedIn rows already in the database.** 89 of
+them are on the board, and no checker will ever look at them again. They will
+stay listed after they close, and a closed LinkedIn posting is only found
+out by clicking it.

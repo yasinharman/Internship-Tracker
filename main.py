@@ -65,13 +65,16 @@ SCRAPY_PROJECT_FOLDER = "scraper"
 # Their DOM-parsing predecessors (kariyerNet, TechCareer, indeed_html) have
 # been deleted - see docs/sites/ for what each site actually turned out to
 # need, and git history for the old code.
-# LinkedIn came back on 26.08.2026 after a month out of scope. What changed is
-# not the risk - its API still answers nobody who is not signed in, and it
-# still closes accounts that automate - but WHOSE account carries it: a burner
-# opened for this and nothing else. Read docs/sites/linkedin.md
-# before touching that spider; the reasoning that kept it out is still there,
-# and still correct, and this is the exception to it rather than a refutation.
-SPIDERS = ["kariyernet_cards", "techcareer_api", "indeed_cards", "linkedin_cards"]
+# LinkedIn came back on 26.08.2026 after a month out of scope, on a burner
+# account - and is OUT OF THE FLOW AGAIN SINCE 16.09.2026. That day the burner
+# was restricted, and a second one was restricted the moment it was opened,
+# before this project had sent it a request. Both came from this machine and
+# this address, which is also where the owner's own account lives, so every
+# further LinkedIn request risks that account too. linkedin_cards and
+# linkedin_check are in neither SPIDERS, PARKED_SPIDERS nor CHECKER_FOR, and
+# the spiders refuse to start without LINKEDIN_ENABLED=1.
+# docs/sites/linkedin.md has the whole of it.
+SPIDERS = ["kariyernet_cards", "techcareer_api", "indeed_cards"]
 
 # indeed_cards was parked from 28.07.2026 to 30.07.2026. Un-parked on the
 # terms the parking comment itself set: a static residential address and the
@@ -128,7 +131,6 @@ CHECKER_FOR = {
     "kariyernet_cards": "kariyernet_check",
     "techcareer_api": "techcareer_check",
     "indeed_cards": "indeed_check",
-    "linkedin_cards": "linkedin_check",
 }
 
 CHECK_SPIDERS = list(CHECKER_FOR.values())
@@ -259,7 +261,9 @@ SPIDER_TIMEOUTS = {
     lossy.
 '''
 '''
-    LINKEDIN, 15.09.2026. linkedin_check ran under the shared CHECK_TIMEOUT,
+    LINKEDIN, 15.09.2026 - unused since 16.09.2026, when LinkedIn left the
+    flow (see SPIDERS); kept with the spider for the day it comes back.
+    linkedin_check ran under the shared CHECK_TIMEOUT,
     1200s, which at 8.2s a posting (measured 28.08.2026) is about 140 of
     them. The board it has to get through was 760 LinkedIn rows on
     09.09.2026. And since 12.09.2026 a row is not classified until its
@@ -343,7 +347,6 @@ SITE_LABELS = {
     "kariyernet_cards": "kariyer.net",
     "techcareer_api": "techcareer.net",
     "indeed_cards": "Indeed",
-    "linkedin_cards": "LinkedIn",
 }
 
 
@@ -704,7 +707,12 @@ def run_checks(crawled=None):
     this existed.
     """
     if crawled is None:
-        pairs = list(CHECKER_FOR.items())
+        # A parked site sends nothing in a full run - its checker included.
+        # Named with --spider it is checked as usual: that is a deliberate
+        # retry, the reason parked spiders stay runnable by name.
+        pairs = [
+            (c, s) for c, s in CHECKER_FOR.items() if c not in PARKED_SPIDERS
+        ]
     else:
         pairs = [(c, CHECKER_FOR[c]) for c in crawled if c in CHECKER_FOR]
 

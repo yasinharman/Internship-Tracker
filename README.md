@@ -62,7 +62,7 @@ Python 3.13+ and Node 22+.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/playwright install chromium      # Indeed and LinkedIn need a browser
+.venv/bin/playwright install chromium      # Indeed needs a browser
 cp .env.example .env                        # then fill in DATABASE_URL at least
 .venv/bin/python -m tools.migrate           # add any columns the schema gained
 ```
@@ -125,9 +125,10 @@ zero postings.
 
 **Sessions are accounts.** `indeed-storage-state.json` and
 `linkedin-storage-state.json` are a signed-in browser, not a config file. They
-are gitignored and they stay that way. LinkedIn is crawled with a throwaway
+are gitignored and they stay that way. LinkedIn was crawled with a throwaway
 account on purpose: automation is against its terms and it closes accounts that
-get noticed.
+get noticed. It did, twice, on 16.09.2026 - so LinkedIn is out of the flow and
+its spiders refuse to start (docs/sites/linkedin.md).
 
 **Measure, then write it down, then write the code.** A number in a spider -
 `GEO_ID = "90010422"`, `f_E=1` - is unmaintainable without a record of where it

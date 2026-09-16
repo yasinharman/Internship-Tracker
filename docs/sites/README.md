@@ -9,7 +9,7 @@ mean and where they came from. That record is these files.
 | [kariyer.net](kariyernet.md) · [flow](kariyernet-flow.md) | running | `kariyernet_cards` | server-rendered cards, read by a windowed browser |
 | [techcareer.net](techcareer.md) | running | `techcareer_api` | belongs to kariyer.net, carries the same ads |
 | [Indeed](indeed.md) | running, un-parked 30.07.2026 | `indeed_cards` | the hard one: TLS fingerprint, sign-in wall, Playwright |
-| [LinkedIn](linkedin.md) | running since 26.08.2026 | `linkedin_cards` | burner-account session, no anonymous mode at all |
+| [LinkedIn](linkedin.md) | **out of the flow since 16.09.2026** - two burner accounts restricted, the second before any request | `linkedin_cards` | burner-account session, no anonymous mode at all |
 | [Jooble](jooble.md) | out of scope | — | an aggregator: its postings arrive as duplicates |
 
 What happens to a posting after it is stored - dedupe, notify, classify and

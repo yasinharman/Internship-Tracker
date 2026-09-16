@@ -179,3 +179,72 @@ class TestTheLastPage:
                                 request=Request(url, meta={"route": "filter-staj", "page": 1}))
         list(spider.parse_search(response))
         assert spider.next_requests == [("filter-staj", 2)]
+
+
+class TestASessionLinkedInNoLongerAccepts:
+    """
+    16.09.2026: the feed redirected to /uas/login and the run went on to
+    three searches that came back as 29 kB pages with no cards. The warm-up is
+    where it has to stop - LinkedIn has no anonymous mode.
+    """
+
+    def warmup(self, url):
+        return HtmlResponse(url=url, body=b"<html></html>", encoding="utf-8")
+
+    def test_landing_on_the_sign_in_page_ends_the_run(self, spider):
+        from scrapy.exceptions import CloseSpider
+
+        spider._warned_sign_in_wall = False
+        with pytest.raises(CloseSpider):
+            spider.on_warmup(self.warmup(
+                "https://www.linkedin.com/uas/login?session_redirect=https%3A%2F%2Fwww.linkedin.com%2Ffeed%2F"
+            ))
+        assert spider.crawler.stats.values["linkedin/session_expired"] is True
+
+    def test_a_wall_the_middleware_already_saw_ends_it_too(self, spider):
+        from scrapy.exceptions import CloseSpider
+
+        spider._warned_sign_in_wall = True
+        with pytest.raises(CloseSpider):
+            spider.on_warmup(self.warmup("https://www.linkedin.com/feed/"))
+
+    def test_the_feed_itself_lets_the_run_go_on(self, spider):
+        spider._warned_sign_in_wall = False
+        assert spider.on_warmup(self.warmup("https://www.linkedin.com/feed/")) is None
+        assert "linkedin/session_expired" not in spider.crawler.stats.values
+
+    def test_no_search_is_asked_for_after_a_walled_warm_up(self, spider):
+        from scrapy.exceptions import CloseSpider
+
+        spider._warned_sign_in_wall = False
+        after = spider._after_warmup(self.warmup("https://www.linkedin.com/uas/login"))
+        with pytest.raises(CloseSpider):
+            next(after)
+        assert spider.next_requests == []
+
+
+class TestOutOfTheFlow:
+    """16.09.2026: the spiders refuse to start unless LinkedIn is switched on."""
+
+    @pytest.mark.parametrize("value", [None, "", "0", "true"])
+    def test_they_refuse_without_the_switch(self, monkeypatch, value):
+        from scraper.spiders.linkedin_check import LinkedinCheckSpider
+
+        if value is None:
+            monkeypatch.delenv("LINKEDIN_ENABLED", raising=False)
+        else:
+            monkeypatch.setenv("LINKEDIN_ENABLED", value)
+        for spider_class in (LinkedinCardsSpider, LinkedinCheckSpider):
+            with pytest.raises(ValueError, match="out of the scraping flow"):
+                spider_class()
+
+    def test_the_switch_gets_past_the_refusal(self, monkeypatch):
+        # Past it, the next guard is the session check - which is the proof
+        # that the switch was the only thing standing in the way.
+        monkeypatch.setenv("LINKEDIN_ENABLED", "1")
+        monkeypatch.setenv("LINKEDIN_STORAGE_STATE", "")
+        monkeypatch.setenv("LINKEDIN_COOKIES", "")
+        monkeypatch.delenv("LINKEDIN_COOKIES_B64", raising=False)
+        with pytest.raises(ValueError) as refused:
+            LinkedinCardsSpider()
+        assert "out of the scraping flow" not in str(refused.value)

@@ -66,6 +66,8 @@ import os
 import time
 from urllib.parse import urlencode
 
+from scrapy.exceptions import CloseSpider
+
 from ..api_spider import BaseApiSpider, logo_url
 from ..job_filters import is_wanted, looks_like_internship, looks_like_parttime
 from ..loaders import JsonJobLoader
@@ -439,7 +441,26 @@ class LinkedinCardsSpider(BaseApiSpider):
     ###################################################################
     SIGNED_IN_COOKIE = "li_at"
 
+    ###################################################################
+    # OUT OF THE FLOW SINCE 16.09.2026 - OFF UNLESS ASKED FOR BY NAME #
+    ###################################################################
+    # Two burner accounts were restricted that day, the second before this
+    # project sent it a single request. Both were opened from the machine and
+    # the address this runs on, which is also where the owner's own LinkedIn
+    # account lives. main.py no longer lists LinkedIn anywhere; this catches
+    # the other door, `scrapy crawl linkedin_cards|linkedin_check` typed by
+    # hand from an old note. docs/sites/linkedin.md, "Out of the flow".
+    ENABLE_ENV = "LINKEDIN_ENABLED"
+
     def __init__(self, *args, **kwargs):
+        if (os.getenv(self.ENABLE_ENV) or "").strip() != "1":
+            raise ValueError(
+                f"LinkedIn is out of the scraping flow since 16.09.2026: two "
+                f"burner accounts were restricted from this address, and every "
+                f"further request risks the owner's own account. Nothing was "
+                f"sent. Read docs/sites/linkedin.md before setting "
+                f"{self.ENABLE_ENV}=1."
+            )
         super().__init__(*args, **kwargs)
         self.session_cookies = load_cookies(self.COOKIES_ENV)
         self._require_a_session()
@@ -508,6 +529,39 @@ class LinkedinCardsSpider(BaseApiSpider):
 
     def warmup_cookies(self):
         return self.session_cookies
+
+    ###################################################################
+    # A WALLED WARM-UP ENDS THE RUN - 16.09.2026                      #
+    ###################################################################
+    # Where the warm-up (the feed) lands when the session is no longer
+    # accepted. /uas/login is what it was on 16.09.2026.
+    SIGNED_OUT_PATHS = ("/uas/login", "/login", "/authwall", "/checkpoint")
+
+    def on_warmup(self, response):
+        """
+        Stop here if the feed sent us to sign in.
+
+        MEASURED 16.09.2026: the session that crawled 26 pages and checked 535
+        postings the day before was refused at the first request - the feed
+        redirected to /uas/login, with li_at still dated February 2027 in the
+        storage state. The warm-up was recognised as a sign-in wall, and the
+        run carried on anyway: all three searches came back HTTP 200, 29 kB,
+        no cards, and none of them was counted as a wall, because LinkedIn
+        served them in place instead of redirecting. It was stopped by hand
+        after four requests. Left alone, main.py would have gone on to
+        linkedin_check and spent a request on every stored posting the same
+        way.
+
+        LinkedIn has no anonymous mode (the module docstring), so nothing
+        after a walled warm-up can succeed. linkedin_check inherits this, so
+        a dead session costs each spider one request.
+        """
+        landed_on = (response.url or "").lower()
+        if self._warned_sign_in_wall or any(
+            path in landed_on for path in self.SIGNED_OUT_PATHS
+        ):
+            self.crawler.stats.set_value("linkedin/session_expired", True)
+            raise CloseSpider("linkedin_session_refused")
 
     ###################################################################
     # TELLING AN EXPIRED SESSION FROM A REFUSED ADDRESS               #
