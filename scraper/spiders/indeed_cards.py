@@ -51,7 +51,7 @@ import json
 import os
 from collections import defaultdict
 
-from ..api_spider import BaseApiSpider, strip_html
+from ..api_spider import BaseApiSpider
 from ..browser_session import BrowserSession, profile_for_impersonate
 from ..job_filters import is_wanted, looks_like_internship, looks_like_parttime
 from ..loaders import JsonJobLoader
@@ -970,19 +970,31 @@ class IndeedCardsSpider(BaseApiSpider):
         loader.add_value("job_type", ", ".join(t for t in job_types if t) or None)
         loader.add_value("job_type", self.DEFAULT_VALUE)
 
-        # `snippet` is an excerpt, not the full text. Enough for the dashboard
-        # to be readable, and it costs no extra request - which matters on the
-        # site most likely to block us, and the only independent source we have
-        # left. Fetch /viewjob?jk=<key> per posting if the full text is ever
-        # needed, at roughly 75 extra requests a day.
+        #####################################################################
+        # NO DESCRIPTION FROM A CARD - ALWAYS "N/A", SINCE 21.09.2026       #
+        #####################################################################
+        # This used to store `snippet`, the card's excerpt, falling back to
+        # "N/A". Two things ended that.
         #
-        # Set in one go rather than with a fallback add_value: this field's
-        # output processor is Join(' '), so a second value is APPENDED rather
-        # than ignored, and the fallback would leave "...18:00 ). N/A".
-        loader.add_value(
-            "job_description",
-            strip_html(record.get("snippet")) or self.DEFAULT_VALUE,
-        )
+        # IT HAD STOPPED ARRIVING. Every card item in every log we kept says
+        # 'job_description': 'N/A' - 26 on 27.08, 173, 470 and 737 on 28.08,
+        # 754 on 15.09, 727 on 16.09 (backups/*.log). The database backups
+        # agree: 7 Indeed rows ever held a snippet, all created 30.07-05.08,
+        # none since.
+        #
+        # AND IT WOULD NOW DO HARM. The description comes from indeed_check,
+        # one budgeted /viewjob per posting, and two things downstream read
+        # "N/A" as "not described yet":
+        #   - pipelines.py writes any incoming description that is not "N/A"
+        #     over the stored one, so a snippet on a re-crawl would replace
+        #     the full text the checker paid a request for;
+        #   - indeed_check.lacks_description() would count a snippet row as
+        #     described, skip it while the searches still list it, and
+        #     classify would sort it on a teaser sentence.
+        #
+        # The crawl requests listing pages and nothing else. The full text is
+        # not on them (docs/sites/indeed.md, 09.09.2026) - only on /viewjob.
+        loader.add_value("job_description", self.DEFAULT_VALUE)
 
         loader.add_value("url", f"{self.origin}/viewjob?jk={jobkey}")
         loader.add_value("source_site", self.site_name)

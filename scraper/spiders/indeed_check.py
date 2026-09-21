@@ -170,9 +170,10 @@ class IndeedCheckSpider(OpeningCheckMixin, IndeedCardsSpider):
 
         Measured 09.09.2026: `sanitizedJobDescription` appears exactly once in
         a 290 kB body and holds the full text. Note the asymmetry with the
-        crawl - the SEARCH record carries only `snippet`, an excerpt, which is
-        why every stored Indeed row reads "N/A" or a fragment. The full text
-        was never on the page the crawl looks at.
+        crawl - the SEARCH record carries only `snippet`, an excerpt. Since
+        21.09.2026 the crawl stores "N/A" rather than that excerpt (see
+        indeed_cards), so this is the only writer of an Indeed description.
+        The full text was never on the page the crawl looks at.
         """
         match = DESCRIPTION.search(response.text)
         if not match:

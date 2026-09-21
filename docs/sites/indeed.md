@@ -443,6 +443,10 @@ despite the SOCK/SHOE warning it prints.
 | `indeed_cards` | 1800s (SPIDER_TIMEOUT) | 69 pages, 215 unique postings | the four broad searches on page 2-3, still finding 13-15 new a page |
 | `indeed_check` | 1200s (CHECK_TIMEOUT) | 61 of 214 postings | 23 verdicts and descriptions in memory, never written |
 
+**Corrected 21.09.2026:** the log holds 87 search pages for `indeed_cards`,
+not 69, and 4 429s: the 75 field-search pages the table below counts, and
+3 for each broad search.
+
 The checker's loss is worse than it looks: the description only arrives
 through it (see the 09.09 section), so **189 postings went unclassified** and
 the database held a real description for 22 of 215 Indeed rows.
@@ -620,6 +624,9 @@ of them were `other`: the hidden ones are house-help and babysitting ads.
   Cloudflare. **One run each does not make that a count**, and the two differ
   in more than one thing: this one had the rest of the night before it and a
   longer crawl in front of the checker.
+- **Corrected 21.09.2026:** the 15.09 log holds 153 responses (149 x 200,
+  4 x 429), not 134. So 15.09 went past 145 without a refusal. See "Checked
+  against the listing-only crawl".
 - **Not a refusal:** one detail page (`jk=cb132657b5eece7c`, 10:53) timed out
   in `page.goto` and was logged as an error.
 
@@ -802,6 +809,109 @@ the only finder of more than before. None of its finds is a software posting.
   - Its precision is better than `stajyer`'s: 3 in 13, against 6 in 48.
   - It costs 6 pages, against 15.
 
+## Checked against the listing-only crawl - 21.09.2026
+
+The owner decided on 21.09.2026 what a crawl does: it requests listing pages,
+yields postings from the cards, and nothing else. The description comes
+later, from `indeed_check`, a separate step with its own budget. The spider
+was checked against that from the code and the two full-run logs. **No
+request was sent.**
+
+**No posting page is requested during the crawl, and none was before.**
+- **In the code:** `start_requests` sends the warm-up, `_after_warmup` sends
+  page one of each search, and `parse_search` yields items plus at most one
+  request, the next page of the same search. Nothing else in
+  `indeed_cards.py` builds a request. The `/viewjob?jk=` url on an item is
+  stored, not requested.
+- **In the logs:** every `Crawled` line of both crawls is the home page or
+  `/jobs`. The first `/viewjob` is the checker's, after its own warm-up.
+
+| Crawl | `/` | `/jobs` | 429, retried | `/viewjob` |
+|---|---|---|---|---|
+| 15.09, `backups/indeed-baseline-20260915.log` | 1 | 87 | 4 | 0 |
+| 16.09, `backups/indeed-fullrun-20260916.log` | 1 | 89 | 3 | 0 |
+
+### Changed: a card's description is always `N/A`
+
+`_item_from_record` stored the card's `snippet` and fell back to `N/A`. It
+now stores `N/A`.
+- **The snippet had stopped arriving.** Every card item in every kept log
+  says `'job_description': 'N/A'`: 26 on 27.08, then 173, 470 and 737 on
+  28.08, 754 on 15.09 and 727 on 16.09. In the database backups, 7 Indeed
+  rows ever held a snippet, all created between 30.07 and 05.08.
+- **It would now do harm.** `pipelines.py` writes any incoming description
+  that is not `N/A` over the stored one, so a snippet on a re-crawl would
+  replace the full text the checker paid a request for. And
+  `indeed_check.lacks_description()` would read a snippet row as described:
+  the checker would skip it while the searches list it, and classify would
+  sort it on one teaser sentence.
+- **So the database was already right.** The 249 rows holding `N/A` on
+  20.09 are what the code now writes on purpose.
+
+Tests: `tests/test_indeed_cards_listing_only.py`.
+
+### What one crawl requests
+
+The searches and limits are unchanged: six searches, `MAX_PAGES` 15,
+`ANONYMOUS_MAX_PAGES` 1, `REPEATED_PAGES_BEFORE_STOP` 2, `DOWNLOAD_DELAY` 20.
+
+    GET https://tr.indeed.com/                                   the warm-up, once
+    GET https://tr.indeed.com/jobs?q=<term>&l=%C4%B0stanbul&start=<(page-1)*10>
+
+| Search, in the order it runs | `q=` | Pages on 16.09 |
+|---|---|---|
+| yazilim-stajyer | `yaz%C4%B1l%C4%B1m+stajyer` | 10 |
+| bilgisayar-muhendisligi-stajyer | `bilgisayar+m%C3%BChendisli%C4%9Fi+stajyer` | 15 |
+| it-intern | `IT+intern` | 5 |
+| stajyer | `stajyer` | 15 |
+| intern | `intern` | 6 |
+| part-time | `part+time` | 15 |
+
+`start` runs 0, 10, ... 140 at most. Page one of a search is referred by the
+home page, and every later page by the page before it.
+
+| Run | Requests |
+|---|---|
+| anonymous | 1 + 6 x 1 = **7** |
+| signed in, expected: 16.09's pages for these six, plus the usual three or four 429s | 1 + 66 + ~3 = **about 70** |
+| signed in, ceiling: every search to `MAX_PAGES`, plus the refusals `DOMAIN_BLOCK_BUDGET` (8) allows before it ends the run, a 429 counting as one | 1 + 6 x 15 + 8 = **99** |
+
+- **Each search stops on its own.** The repeated-page stop keeps a seen-set
+  per search, so dropping three searches did not change how deep the other
+  six go.
+- **Not counted above:** a navigation that times out is retried
+  (`RETRY_TIMES` 3) and does not count against the block budget. Neither
+  crawl had one.
+- **The unit:** each navigation is a real browser page load, so Indeed also
+  sees the page's own sub-resources. They were there on 15.09 and 16.09 too,
+  so the comparison below uses the same unit on both sides.
+
+### Against the refusal of 16.09
+
+- **The crawl alone has never been refused.** It sent 92 requests on 15.09
+  and 93 on 16.09. With six searches it should send about 70, and the
+  ceiling of 99 is only six past what 16.09 sent.
+- **145 is one night, not a wall.** On 16.09 the night's 146th request was
+  refused, on a `/viewjob` page. On 15.09 the address sent **153** (149 x 200, 4 x
+  429) and was never refused; the clock stopped its checker. The
+  "134 (130 x 200, 4 x 429)" in the 16.09 section is a miscount. The 15.09
+  log holds 92 crawl responses (the warm-up, 87 search pages and 4 429s,
+  not "69 pages") and 61 checker responses (a warm-up and 60 `/viewjob`).
+- **"A count, not a rate" no longer stands.** The 28.08 section measured
+  three search pages per session. The fingerprint fix overturned it the same
+  day, and after that fix the cadence did matter: delay 10 brought back 8
+  challenges in 32 responses.
+- **The margin:** about 70 is under half of 145. The ceiling of 99 leaves 46.
+
+**The searches do not need to change for the crawl to fit.**
+
+**The rest is outside this spider.** `main.py` still runs `indeed_check`
+right after `indeed_cards`: it is in `CHECKER_FOR`, `run_post_crawl` runs it
+unless `--skip-classify` is given, and Indeed has no `SITE_COOLDOWN_S`
+entry. So a crawl night is still about 70 listing requests followed by the
+checker's queue. That is the order that was refused on 16.09. Moving the
+check off the crawl night is a change to `main.py`, and it was not made here.
+
 ## The description is on the DETAIL page, and the checker already fetches it - 09.09.2026
 
 "The first investigation > Description" turned down fetching `/viewjob?jk=`
@@ -974,6 +1084,9 @@ above Full-Time. After the fix: 71 Internship + 1 Part-Time, all visible.
 `snippet` is an excerpt, not the full text, and it is used as-is. Fetching
 `/viewjob?jk=<key>` per posting would cost ~75 extra requests a day against
 the site most likely to block us and the only independent source we have.
+
+**Superseded 21.09.2026:** the card stores `N/A` and the description comes
+from `indeed_check`. See "Checked against the listing-only crawl".
 
 **Careful with the fallback pattern here:** `JsonJobLoader.job_description_out`
 is `Join(' ')`, so a second `add_value` is APPENDED, not ignored. Using the
