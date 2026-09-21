@@ -53,9 +53,11 @@ CATEGORY_ORDER = ["it", "general_program", "other"]
 # READ                                              #
 #####################################################
 # What "no description" looks like in the column. The spiders write the
-# literal "N/A" when they have nothing (BaseApiSpider.DEFAULT_VALUE), and a
-# row stored from a listing card alone has NULL - see
-# kariyernet_cards.parse_listing.
+# literal "N/A" when they have nothing (BaseApiSpider.DEFAULT_VALUE) - and
+# since 21.09.2026 every cards spider sends it for every card, because no
+# crawl opens a posting page any more; the *_check spiders are the only
+# writers of a description. NULL and "" are older rows, and NULL is filtered
+# on its own below.
 NO_DESCRIPTION = ("N/A", "")
 
 

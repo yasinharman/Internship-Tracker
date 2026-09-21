@@ -523,6 +523,16 @@ open". For half the sites it is the only thing that ever reads the posting.
 | Indeed | the `snippet` only - a teaser sentence. `docs/sites/indeed.md` turned down a `/viewjob` per posting at ~75 requests a day | **the full text**, out of the `/viewjob` it fetches anyway |
 | LinkedIn | **nothing.** `linkedin_cards` writes the literal `"N/A"` - there is no snippet on a card to take | **the only source there is** |
 
+**UPDATED 21.09.2026 - the "From the crawl" column is history.** No cards
+spider opens a posting page any more: kariyer.net's crawl dropped its detail
+request and techcareer's builds the item from the list record, so both now
+store `"N/A"` like Indeed and LinkedIn (`docs/sites/kariyernet.md`,
+`docs/sites/techcareer.md`). The checker is the only source of a description
+on every site. The paragraph below about kariyer.net is therefore no longer
+true: a cap there now delays descriptions too, not just the freshness of
+open/closed. `docs/activity-checks-plan.md` is where the cap is designed
+with that in mind.
+
 So a cap does completely different damage per site:
 
 * on **kariyer.net** it is nearly free where descriptions are concerned - the
