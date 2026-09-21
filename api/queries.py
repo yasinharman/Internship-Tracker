@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import Select, and_, distinct, func, or_, select
 
-from scraper.models import JobPost
+from scraper.models import UNLISTED_AFTER_DAYS, JobPost
 
 #####################################################
 # THE TWO HIDES THAT ARE NOT DELETES                #
@@ -186,6 +186,35 @@ def utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+#####################################################
+# THE FIFTH HIDE: NOT IN THE LISTINGS ANY MORE      #
+#####################################################
+# last_seen_at   scraper/pipelines.py stamps it every time a posting turns up
+#                in a search. A row the crawl has not seen for
+#                UNLISTED_AFTER_DAYS drops off the board, and the checker
+#                stops spending a request on it (scraper/openings.py).
+#
+# Not a verdict and not a write: absence from a search proves nothing on its
+# own (21.08.2026, only 14 of 36 kariyer.net postings showed up in that day's
+# searches). This is the board declining to vouch for a posting nobody has
+# seen in a week, and it reverses itself - the next crawl that finds the
+# posting stamps a fresh last_seen_at and the row is back, same id, same
+# history.
+#
+# Applied with OPEN rather than with VISIBLE, so the "Kapananlar" toggle still
+# shows closed postings however old they are. A posting that is neither closed
+# nor still listed is in neither view; that is the crude part of the rule, and
+# docs/activity-checks-plan.md is where it gets fixed.
+def listed(now=None):
+    """The one condition, built at call time because it moves with the clock."""
+    cutoff = (now or utcnow()) - timedelta(days=UNLISTED_AFTER_DAYS)
+    # NULL is not evidence that a posting has gone quiet - it is a row written
+    # before the column existed - so it stays on the board.
+    return (
+        or_(JobPost.last_seen_at.is_(None), JobPost.last_seen_at > cutoff),
+    )
+
+
 def local_day_start(moment=None):
     """Naive-UTC instant of the most recent local midnight."""
     tz = display_tz()
@@ -249,9 +278,11 @@ def conditions(filters, *, apply_range=True, waiting=False):
     """
     clauses = list(VISIBLE)
 
-    # Closed postings are out unless they were explicitly asked for.
+    # Closed postings are out unless they were explicitly asked for, and so
+    # are postings the crawl has stopped seeing - see listed().
     if waiting or not filters.closed:
         clauses.extend(OPEN)
+        clauses.extend(listed())
 
     if filters.sources:
         clauses.append(JobPost.source_site.in_(filters.sources))

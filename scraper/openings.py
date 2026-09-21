@@ -53,11 +53,12 @@ verdict().
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
+from sqlalchemy import or_
 from sqlalchemy.orm import sessionmaker
 
-from .models import JobPost, db_connect
+from .models import UNLISTED_AFTER_DAYS, JobPost, db_connect
 
 # Compared with == rather than `is` below. They are module constants, so
 # identity works today - but a checker written later that returns a bare
@@ -154,12 +155,32 @@ class OpeningCheckMixin:
         try:
             reopened = self._reopen_seen_again(session)
 
+            # Postings the crawl has not seen for UNLISTED_AFTER_DAYS are left
+            # out - see the note on the constant. The board drops them at the
+            # same moment, so this does not hide a row a reader can still see.
+            # It is not a verdict: nothing is written and nothing is closed,
+            # because absence from a search proves nothing (measured
+            # 21.08.2026, only 14 of 36 kariyer.net postings appeared in that
+            # day's searches). It only stops us paying to re-confirm rows the
+            # site has stopped showing us.
+            # A NULL last_seen_at is not evidence of anything - it is a row
+            # written before the column existed - so it stays in the queue.
+            # Hiding on missing evidence is the direction this file refuses to
+            # fail in.
+            still_listed = datetime.utcnow() - timedelta(days=UNLISTED_AFTER_DAYS)
+
             query = (
                 session.query(JobPost)
                 .filter(JobPost.source_site == self.site_name)
                 .filter(JobPost.is_active.is_(True))
                 .filter(JobPost.duplicate_of.is_(None))
                 .filter(JobPost.closed_at.is_(None))
+                .filter(
+                    or_(
+                        JobPost.last_seen_at.is_(None),
+                        JobPost.last_seen_at > still_listed,
+                    )
+                )
             )
             query = self.probe_query(query)
             if MAX_PER_SITE > 0:

@@ -6,6 +6,30 @@ import os
 # WE ARE USING 'Base' INSIDE OF OUR CLASSES TO INDICATE THAT WE ARE CREATING A SQL TABLE INSIDE THE CLASS
 Base = declarative_base()
 
+
+###################################################################
+# HOW LONG A POSTING LIVES WITHOUT BEING SEEN AGAIN               #
+###################################################################
+# A posting whose last_seen_at is older than this is left out of two places:
+# the checker's queue (scraper/openings.py) and the board (api/queries.py).
+# It lives here because those are the only two readers and they must not
+# drift apart.
+#
+# DECIDED 20.09.2026, and deliberately the crudest thing that works: the
+# per-posting check request is what the sites refuse (Indeed stopped answering
+# after 145 of them on 16.09.2026), so the queue has to shrink before anything
+# clever is built. docs/activity-checks-plan.md holds the design this is
+# standing in for.
+#
+# Nothing is written, no column, no flag. A posting the crawl finds again gets
+# a fresh last_seen_at from pipelines.py and comes back on its own - same row,
+# same history, no second payment for the description or the classification.
+# Undoing the rule is deleting two filters.
+#
+# Seven days against a crawl that runs every three days means a posting has to
+# be missed by two consecutive crawls before it drops out.
+UNLISTED_AFTER_DAYS = 7
+
 ###################################################################
 # CREATED OUR TABLE'S STRUCTURE ON THE DATABASE USING SQL ALCHEMY #
 ###################################################################

@@ -9,6 +9,7 @@ deciding where to write something down.
 | [pipeline.md](pipeline.md) | What happens to a posting after it is stored: dedupe, notify, classify, and the still-open check. Each section carries the evidence its rule was written from. |
 | [dashboard.md](dashboard.md) | The board itself - the API, the front end, and the rules about which rows a reader is shown. |
 | [design/](design/) | Where the dashboard's look came from: the reference mockup and two marked-up screenshots. Referenced from `dashboard.md` and from the header comment in `web/src/pages/DashboardPage.tsx`. |
+| [activity-checks-plan.md](activity-checks-plan.md) | **A plan, not a record.** What the still-open check should become once the per-posting request budget has to be rationed, and which measurement settles each part. Nothing in it is built yet. |
 
 ## The rule these files exist to serve
 
