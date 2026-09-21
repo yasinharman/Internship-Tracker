@@ -212,13 +212,21 @@ class JobScraperPipeline:
                 # paid for, on every single re-crawl, and the classifier would
                 # be back to reading titles without anything saying so.
                 #
-                # kariyer.net and techcareer are unaffected: their cards
-                # spiders produce a real description, which is truthy, so a
-                # fresher one still wins.
+                # Since 21.09.2026 that is every site: no cards spider opens a
+                # posting page any more, so all of them send "N/A" and the
+                # checks are the only writer of a real description.
                 incoming = item.get('job_description')
                 if incoming and incoming != NO_DESCRIPTION:
                     existing_job.job_description = incoming
-                existing_job.job_type = normalized_job_type
+
+                # The same guard, for the same reason. techcareer's list
+                # record has no working-type field (docs/sites/techcareer.md,
+                # 21.09.2026), so a posting whose title names no type arrives
+                # as "N/A" and normalises to "Other". Writing that back would
+                # turn a stored "Part-Time" into "Other" on every re-crawl and
+                # drop it from the board's default view without a word.
+                if item.get('job_type') and item.get('job_type') != NO_DESCRIPTION:
+                    existing_job.job_type = normalized_job_type
 
                 # ONLY WHEN THERE IS ONE, unlike the five fields above.
                 #
