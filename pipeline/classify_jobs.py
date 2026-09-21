@@ -342,6 +342,29 @@ def main():
         rows = [snapshot(posting) for posting in postings]
         print(f"{len(rows)} unclassified posting(s).", flush=True)
 
+        ###############################################################
+        # LET GO OF THE DATABASE WHILE THE MODEL WORKS - 21.09.2026   #
+        ###############################################################
+        # The first full run on the local model sorted 314 postings in
+        # about 400 s, then lost every verdict: the write found its
+        # connection gone ("server closed the connection unexpectedly").
+        # That connection had sat idle, holding the read transaction, for
+        # the whole run. Postgres itself times out nothing (its idle
+        # timeouts are all 0), so the drop is somewhere on the way to the
+        # server. Measured the same day, one connection per case, side by
+        # side: idle 200 s survived, idle 330 s and 420 s were dropped with
+        # the very same error, and 420 s with a TCP keepalive every 60 s
+        # survived. With the API a batch took under a minute, so this never
+        # showed.
+        #
+        # The rows are already plain dicts (snapshot), so nothing needs the
+        # session until the write. Closing it ends the read transaction;
+        # dispose() drops the pooled connection, so the write opens a fresh
+        # one - the same thing scraper/openings.py does for every batch of
+        # verdicts, which is why the 87-minute Indeed check never hit it.
+        session.close()
+        engine.dispose()
+
         ###############################
         # COMPARE SEVERAL MODELS      #
         ###############################

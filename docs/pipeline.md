@@ -401,6 +401,71 @@ stays unclassified and off the board, and the next run picks it up again,
 the same way a failed API call used to. A scheduled run therefore needs
 `ollama.service` up; the install enables it at boot.
 
+#### The first full run on the local model - 21.09.2026
+
+The table was emptied first (`backups/job_posts-20260921-120942.csv`) and
+`python main.py` was run with no check cap. The log is
+`backups/fullrun-20260921.log`. What the crawl and the checks did is in
+`docs/sites/indeed.md` and `docs/sites/kariyernet.md` under the same date.
+Here, only the classifier.
+
+**First attempt: every verdict lost.** gemma4 sorted all 314 postings in
+404 s. Then the write failed with `server closed the connection
+unexpectedly`, and nothing was stored. `main.py` reports that as a degraded
+step, so the run itself still exited 0.
+
+**The cause, measured.** `classify_jobs.main()` read the rows and then held
+the same connection, inside the read transaction, while the model worked.
+Postgres times out nothing: `idle_in_transaction_session_timeout`,
+`idle_session_timeout` and `statement_timeout` are all 0 on the server. So
+the connection is being dropped somewhere between this machine and the
+server. One connection was held idle per case, side by side, the same
+afternoon:
+
+| Idle for | Result |
+|---|---|
+| 200 s | survived |
+| 330 s | dropped, `server closed the connection unexpectedly` |
+| 420 s | dropped, same error |
+| 420 s, TCP keepalive every 60 s | survived |
+
+With the API a batch took under a minute, so this never showed. The checks
+never hit it either, because `scraper/openings.py` opens a fresh connection
+for every batch it writes, including through the 87-minute Indeed check.
+
+**The fix.** `classify_jobs.main()` now closes the session and disposes of
+the engine once the rows are snapshotted, so the write opens a fresh
+connection. `tests/test_classify_lets_go_of_db.py` holds it to that; it
+fails on the old code. Keepalive would also have worked, but it would have
+meant changing `db_connect()` for every caller in order to fix one.
+
+**Second attempt: 314 of 314 written in 419 s,** with 0 failures:
+
+| Category | Count |
+|---|---|
+| `it` | 101 |
+| `general_program` | 25 |
+| `other` | 188, hidden |
+
+126 postings are on the board. The six rows left unclassified are all
+unclassified by design:
+
+- 2 Indeed postings the check found closed;
+- 2 kariyer.net postings without a description, because the check was
+  refused before it reached them;
+- 2 techcareer duplicates of another site's posting.
+
+**Nothing wrongly hidden, on a title scan.** Of the 188 hidden postings, 4
+have a software-ish word in the title. Each was read:
+
+- **Three Baykar mechanical "Test" internships:** the same class as the
+  reference's three mistakes above.
+- **Vodafone "FDS IT - Intern":** a finance role (OPEX and CAPEX budgets)
+  that sits in the IT division.
+
+All four are `other` by the prompt's own rule. This is a scan of titles, not
+a reading of all 188.
+
 ### When a decision looks wrong
 
 Every `other` verdict is logged at INFO with title and reason, so a bad call is
