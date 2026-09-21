@@ -89,9 +89,15 @@ class KariyerNetCheckSpider(OpeningCheckMixin, KariyerNetCardsSpider):
         apply button left. A closed posting still deserves a right verdict
         from the classifier - it is shown behind the "Kapananlar" toggle.
 
-        Selectors and the join are copied from kariyernet_cards.py:449-461
-        rather than re-derived, so the two paths cannot drift into disagreeing
-        about what this site's description is.
+        Selectors and the join were copied from kariyernet_cards.parse_detail
+        rather than re-derived, so the two paths could not drift into
+        disagreeing about what this site's description is.
+
+        SINCE 21.09.2026 THERE IS ONE PATH. The crawl opens no posting page
+        any more and parse_detail is gone, so this is the only place a
+        kariyer.net description is read - a selector that stops matching here
+        leaves every new posting unclassified, and `check/description_missing`
+        is the counter that will say so.
         """
         parts = response.css(
             'div[data-test="qualifications-and-job-description"] *::text'

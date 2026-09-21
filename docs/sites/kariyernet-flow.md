@@ -6,7 +6,11 @@ that way", and it is the one to read when something breaks - every number
 here came from a measurement written up there.
 
 Written 12.09.2026, against `spiders/kariyernet_cards.py` and
-`spiders/kariyernet_check.py`.
+`spiders/kariyernet_check.py`. **Updated 21.09.2026:** the crawl no longer
+opens posting pages - it reads the listing pages and nothing else, and the
+description comes from the checker. Why, and what was removed, is in
+kariyernet.md, "The crawl stops opening posting pages". Not run yet in this
+shape; the counts below that carry a date are from before it.
 
 ---
 
@@ -15,16 +19,16 @@ Written 12.09.2026, against `spiders/kariyernet_cards.py` and
 ```
 main.py
   │
-  ├─ kariyernet_cards ──────────────── ~25 min, 4 + 46 requests
-  │    2 listing pages  → cards → items
-  │    46 posting pages → descriptions
+  ├─ kariyernet_cards ──────────────── ~2 min, 4 requests (estimated)
+  │    4 listing pages  → cards → items, description "N/A"
+  │    (until 21.09.2026 also 46 posting pages → descriptions, ~25 min)
   │
   ├─ dedupe · notify                   (seconds)
   │
   ├─ 30 min site cool-off              SITE_COOLDOWN_S
   │
   ├─ kariyernet_check ──────────────── ~23 min, 1 request per open posting
-  │    still open?  +  description
+  │    still open?  +  description - the only source of it since 21.09.2026
   │
   └─ classify                          rows that have a description
 ```
@@ -93,7 +97,7 @@ and the second is only reached by spiders that ask for it.
 | Page | What happens | Why |
 |---|---|---|
 | listing (`search_key` in meta) | scroll to the bottom in 900px steps, then back to the top | the logos are lazily loaded; without this 25 of 40 cards carry a 1x1 transparent SVG instead of a logo |
-| posting | wait 4 seconds | see kariyernet.md - this was added for a reason that turned out to be wrong and is kept because every passing measurement used it |
+| posting | wait 4 seconds | see kariyernet.md - this was added for a reason that turned out to be wrong and is kept because every passing measurement used it. Since 21.09.2026 only `kariyernet_check` opens posting pages; the crawl never takes this row |
 
 The scroll stops when the page has been at the bottom twice, or at
 `SCROLL_BUDGET_S` (20s), which it says out loud.
@@ -132,8 +136,21 @@ finder**: how many postings would have been lost without that route.
 | `location` | `[data-test="location"]` text | **not** the `cityname` attribute, which reports "Adana" for a nationwide posting |
 | `job_type` | `worktypetext` | overridden to `Staj` for anything the internship search found, whatever the employer coded |
 | `url` | `a[data-test="ad-card-item"]` href | the upsert key |
+| `job_description` | nothing - `"N/A"`, set once | since 21.09.2026. `pipelines.py` never writes `"N/A"` over a stored description; set once because the loader's `Join(' ')` would make a second value `"N/A N/A"` |
 
-## 6. The description, at most once
+## 6. The description - not the crawl's since 21.09.2026
+
+```
+every kept card  → yielded here, with job_description "N/A"
+                   and no posting-page request, ever
+```
+
+The description is read by `kariyernet_check` (section 10), out of the posting
+page it opens for the verdict anyway. `pipelines.py` only overwrites the column
+with a real value, so the checker's text wins whenever it arrives and a
+re-crawled card's `"N/A"` never blanks it.
+
+**What was here, 12.09 - 21.09.2026.** "The description, at most once":
 
 ```
 every card                        → yielded here, always
@@ -141,16 +158,11 @@ every card                        → yielded here, always
   ... description NULL or "N/A"   → and the posting page is fetched
 ```
 
-`described_urls()` reads, once per run, which of this site's urls already hold
-a real description. A database it cannot read returns an empty set, so every
-posting looks new and every page is fetched - the old behaviour, and the safe
-direction to fail in.
-
-The card is stored **whatever happens to the posting page**. When the page is
-refused, the posting is still on the board with its title, company, city, work
-type, logo and link; only the description is late. `parse_detail()` adds it
-and yields the item again, and `pipelines.py` only overwrites the column with
-a real value, so the late arrival wins and nothing blanks it in between.
+`described_urls()` read, once per run, which of this site's urls already held
+a real description, and `parse_detail()` added the description to a copy of
+the item and yielded it again. All three are gone. What survives from it is
+the rule that the card is stored **whatever happens to any posting page** -
+there is no posting page in the crawl left to happen to it.
 
 ## 7. Pagination
 
@@ -183,6 +195,10 @@ because the crawl drains its own queue over a few nights:
 | 1 - 12.09.2026 | 4 listing + 46 detail | 36 got through, 24 with a description, then the wall |
 | 2 - 14.09.2026 | 4 listing + 17 detail = 21 | all 21 answered, 17 new postings, every one described |
 | 3+ | 4 listing + that day's new postings | expected ~8 requests |
+| since 21.09.2026 | 4 listing | every night, the first included - not measured yet |
+
+The first three rows are the crawl as it was. The queue they describe - postings
+waiting for a description - is `kariyernet_check`'s now, never-checked first.
 
 ## 9. Closing
 
@@ -203,7 +219,7 @@ question differ.
 | `load_open_postings()` | this site's rows that are active, not duplicates, not already closed - ordered `checked_at ASC NULLS FIRST` |
 | `probe_request()` | one navigation per posting, `fresh_context: True` |
 | `verdict()` | an apply button means OPEN; a description container with no apply button means CLOSED; anything else is UNKNOWN and writes nothing - not even `checked_at`, so a site that has started refusing us cannot hide behind a fresh timestamp |
-| `description()` | read from the same container the verdict already selected, so it costs no extra request |
+| `description()` | read from the same container the verdict already selected, so it costs no extra request. Since 21.09.2026 the only place a kariyer.net description is read - the crawl no longer opens posting pages. Never-checked rows go first, so tonight's new postings are among the first probed |
 | writes | every 25 verdicts (`WRITE_EVERY`), because a checker killed by its timeout would otherwise lose everything it had paid for |
 
 `--spider kariyernet_cards` runs **only** this checker, not all four.
@@ -225,7 +241,7 @@ run.
 | Line | Means |
 |---|---|
 | `Starting Playwright (headless=False, ...)` | the window is there. `headless=True` here for this spider is a bug, not a setting |
-| `N posting(s) already have a description and will not be re-opened tonight` | `described_urls()` loaded; N should grow over the first few nights |
+| ~~`N posting(s) already have a description and will not be re-opened tonight`~~ | gone 21.09.2026 with `described_urls()`. If it appears, an old spider is running |
 | `[staj] page 1: 35 card(s), 35 part-time/internship` | cards seen / cards kept |
 | `throttle: waiting Ns more` | the 20s delay, saying so |
 | `Served a press-and-hold block page` | the wall. Check the window first if this is on request one |
@@ -238,8 +254,10 @@ run.
 | Stat | Healthy |
 |---|---|
 | `cards/seen`, `cards/wanted` | ~46 kept of ~46 on both searches |
-| `detail/fetched` vs `detail/already_described` | the first shrinks over the first few nights, the second grows |
+| `downloader/request_count` | 4 on a board the size of 12.09's - two searches, a page of cards and an empty page 2 each. Since 21.09.2026 |
+| ~~`detail/fetched` vs `detail/already_described`~~ | gone 21.09.2026 - the crawl opens no posting page |
 | `logo/found` vs `logo/missing` | 41 of 46 on 12.09.2026, up from 14 of 40 before the scroll |
-| `detail/no_description` | 0. Anything else is a selector question, not a block |
+| ~~`detail/no_description`~~ | gone 21.09.2026. Its job is `check/description_missing` on `kariyernet_check` now, which also counts every UNKNOWN page (no container, no button). More missing descriptions than UNKNOWN verdicts is a selector question, not a block |
+| `check/description_found` (checker) | one per posting page served. Tonight's new postings are probed first, so all of them should be in it unless the checker met the wall early |
 | `blocks/detected` | 0 on a short night; 3 means the run stopped at the wall and kept what it had |
 | `playwright/fresh_contexts` | one per request. If this is far below the request count, the flag has been dropped somewhere |

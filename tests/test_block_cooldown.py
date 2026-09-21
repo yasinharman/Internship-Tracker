@@ -152,6 +152,8 @@ def test_main_gives_kariyernet_room_for_its_slowest_legitimate_run():
 
     spider = KariyerNetCardsSpider
     # The whole result set is 46 postings plus a handful of listing pages.
+    # Since 21.09.2026 the crawl is the listing pages alone (~4), so this is
+    # the checker's worst case - one probe per posting - and it covers both.
     requests = 55
     # RANDOMIZE_DOWNLOAD_DELAY spreads uniformly over 0.5x - 1.5x, so every
     # request landing on the upper bound is the honest worst case.
@@ -187,7 +189,9 @@ def test_kariyernet_stops_at_the_wall_instead_of_waiting():
     more refused requests finding that out. The run stops at the wall and
     keeps what it collected; the postings it did not reach are fetched
     tomorrow, because a posting stored without a description is fetched
-    again (see KariyerNetCardsSpider, "THE POSTING PAGE IS FETCHED ONCE").
+    again. (That queue was the crawl's until 21.09.2026 and is
+    kariyernet_check's since - never-checked rows first. See
+    KariyerNetCardsSpider, "THE POSTING PAGE IS NOT THE CRAWL'S TO OPEN".)
 
     If this ever goes back above zero it should be because someone measured
     a pause working, not because six looked tidier than none.

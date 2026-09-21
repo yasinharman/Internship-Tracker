@@ -18,13 +18,18 @@ posting part-time or an internship - without opening the posting.
 
 That drives the shape of this spider:
 
-    1. page through the filtered search (Istanbul + IT), reading cards
-    2. keep only worktypeid in {P, S}
-    3. request the detail page ONLY for those, purely to get the description
+    1. page through the filtered searches (Istanbul + department), reading cards
+    2. keep the part-time and internship cards
+    3. yield each kept card as the item - and that is the whole crawl
+
+Step 3 used to request the posting page for each kept card, purely for its
+description. SINCE 21.09.2026 THE CRAWL OPENS NO POSTING PAGE AT ALL: it
+requests listing pages and nothing else, and the description is read by
+kariyernet_check, which opens every posting page anyway for its verdict. See
+"THE POSTING PAGE IS NOT THE CRAWL'S TO OPEN" below.
 
 The site's own filter panel has no combined "part-time or internship" option,
-so the split happens here instead. It still costs almost nothing: roughly one
-in ten cards survives, so nine out of ten detail pages are never fetched.
+so the split happens here instead.
 
 Attribute names are matched in lowercase - HTML parsers normalise
 `workTypeId` to `worktypeid`, and the CamelCase form silently matches nothing.
@@ -249,7 +254,11 @@ class KariyerNetCardsSpider(BaseApiSpider):
 
         Hence `fresh_context` on the detail request. The listing requests do
         not set it: they share the run's context happily, three of them in a
-        row on the first live run, all 200.
+        row on the first live run, all 200. (Both halves of that sentence are
+        history. Listing requests got the flag the same afternoon - see
+        default_meta() - and since 21.09.2026 this spider makes no posting
+        request at all. The one that does is kariyernet_check, which inherits
+        this finding and sets the flag in probe_request.)
 
         WHAT THIS IS NOT. Nothing is forged, no challenge is answered, no
         automation is concealed. Each posting is opened by a browser that has
@@ -295,7 +304,9 @@ class KariyerNetCardsSpider(BaseApiSpider):
         free. Two searches, one page each, and a detail page for the roughly
         one card in ten worth opening - about 30 navigations. At 8 seconds
         that is some seven minutes including render time, on a job that runs
-        overnight and has nowhere to be.
+        overnight and has nowhere to be. (Since 21.09.2026 the detail pages
+        are gone from the crawl: two searches, a page of cards and an empty
+        page 2 each - 4 navigations.)
 
         Concurrency stays at 1 for a reason that survived the transport
         change: PlaywrightMiddleware drives ONE browser page at a time from a
@@ -350,6 +361,13 @@ class KariyerNetCardsSpider(BaseApiSpider):
         # OPENINGS_MAX_PER_SITE would halve the checker's 46 without touching
         # LinkedIn, which is where the descriptions come from (see
         # docs/pipeline.md).
+        #
+        # 21.09.2026: the crawl is now ~4 listing requests, about two minutes,
+        # and the check is unchanged. The delay stays at 20 - it was never
+        # what the wall answers to (see "THE LIMIT IS A COUNT" below) and
+        # nothing has been measured since. Note what the cap above would now
+        # cost: kariyernet_check is where THIS site's descriptions come from
+        # too, so capping it delays them as well as the verdicts.
         "DOWNLOAD_DELAY": 20,
         "RANDOMIZE_DOWNLOAD_DELAY": True,
 
@@ -411,8 +429,9 @@ class KariyerNetCardsSpider(BaseApiSpider):
 
         WHAT ACTUALLY WORKS IS FEWER REQUESTS, and the crawl already gets
         there by itself over a few nights, because a posting stored without a
-        description is fetched again next time (see "THE POSTING PAGE IS
-        FETCHED ONCE"):
+        description is fetched again next time (the "fetched once" rule of
+        12.09.2026, gone since 21.09 - see "THE POSTING PAGE IS NOT THE
+        CRAWL'S TO OPEN"):
 
             night 1   12.09  4 listing + 46 detail   36 through, 24 stored
                                                       with a description,
@@ -429,6 +448,17 @@ class KariyerNetCardsSpider(BaseApiSpider):
         comfortably inside whatever the limit is. The first night is the only
         one that hits the wall, and hitting it costs nothing except the
         postings that wait until tomorrow.
+
+        21.09.2026 - THE CRAWL TAKES FEWER STILL. It opens no posting page any
+        more, so it is the listing pages alone - 4 requests on a board the
+        size of 14.09's, the first night included - and the crawl on its own
+        no longer comes near the wall. The queue in the table above did not
+        vanish, it moved with the description: kariyernet_check reads it now,
+        probing never-checked rows first, so a posting new tonight is among
+        the first pages it opens. That also makes the check the half of this
+        site's night that is still one request per open posting - this site
+        had 41 rows on 14.09, more than the 34-36 the wall allows if all of
+        them are still open - and it is where the IF below applies now.
 
         IF THE WALL EVER MOVES DOWN far enough that night 2 cannot finish
         either, the next lever is still request count, not time: a per-site
@@ -449,6 +479,11 @@ class KariyerNetCardsSpider(BaseApiSpider):
         `search_key`, which is on every listing request and on no posting
         request. _read_the_listing and _read_the_posting below carry the
         measurement behind each.
+
+        Since 21.09.2026 every request THIS spider makes carries `search_key`,
+        so the crawl only ever takes the listing branch. The posting branch
+        is kept for kariyernet_check, which inherits this hook and whose
+        probes carry no `search_key`.
     '''
     # A wall clock over the scrolling rather than a step count, for the reason
     # linkedin_cards gives at length: page.evaluate() runs javascript in the
@@ -491,6 +526,10 @@ class KariyerNetCardsSpider(BaseApiSpider):
 
         Treat it as unmeasured rather than as load bearing. If it ever needs
         to go, take it out on its own and watch the item count.
+
+        Since 21.09.2026 only kariyernet_check opens posting pages, so this is
+        the checker's dwell now. It lives here because that is where the
+        measurement is and the checker inherits it unchanged.
     '''
     POSTING_DWELL_S = 4
 
@@ -565,14 +604,6 @@ class KariyerNetCardsSpider(BaseApiSpider):
         """
         page.wait_for_timeout(int(self.POSTING_DWELL_S * 1000))
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Populated on first use by described_urls(). None rather than an
-        # empty set, so "not loaded yet" and "loaded, nothing stored" stay
-        # tellable apart - the second is the normal state of a fresh database
-        # and must not be retried on every card.
-        self._described_urls = None
-
     def default_meta(self):
         """
         Meta that belongs on EVERY request, warm-up included - see the base
@@ -592,103 +623,59 @@ class KariyerNetCardsSpider(BaseApiSpider):
         rule instead of two - which also means there is no second rule to
         forget when a new kind of request is added.
 
+        Since 21.09.2026 the crawl sends listing requests only; the posting
+        pages are kariyernet_check's, and it gets this rule by inheriting it.
+
         The impersonation token this used to carry is gone with curl_cffi.
         """
         return {"fresh_context": True}
 
     ###############################################################
-    # THE POSTING PAGE IS FETCHED ONCE, NOT EVERY NIGHT           #
+    # THE POSTING PAGE IS NOT THE CRAWL'S TO OPEN - 21.09.2026    #
     ###############################################################
     '''
-        MEASURED 10.09.2026: this site refuses the crawl somewhere around the
-        35th request, and the crawl was spending ~46 of them re-reading
-        descriptions it already had.
+        DECIDED BY THE OWNER 21.09.2026, as the shape of every crawl spider:
+        request the site's listing pages with the filters above, yield the
+        postings on their cards, open nothing else. The description is read
+        later by kariyernet_check, a separate step with its own budget.
 
-        A description does not change. The posting page was being opened every
-        single night for every single posting, to extract text identical to
-        what was stored the night before - and then kariyernet_check opened
-        the SAME pages again an hour later for the open/closed verdict. Two
-        visits per posting per night, one of which was pure repetition.
-
-        So the detail page is now requested only when there is something to
-        learn from it:
+        WHAT WAS HERE. The crawl used to open the posting page of every kept
+        card, purely for the description. From 12.09.2026 it did so once per
+        posting rather than every night: `described_urls()` read which urls
+        already held a real description, and only the others were opened -
 
             not in the database yet          -> fetch it
             stored, description is real      -> skip, spend nothing
             stored, description is "N/A"     -> fetch it again
 
-        THE THIRD CASE IS THE ONE THAT MATTERS and a url-only check would
-        have missed it. On 10.09 twelve of the forty-six postings were refused
-        and stored with "N/A"; under "skip anything already stored" they would
-        never be opened again and would sit there without a description
-        forever. This way a refused posting simply rejoins the queue tomorrow,
-        and the queue shrinks as the descriptions land - which also means the
-        load on the site falls as it succeeds rather than staying flat.
+        - because, MEASURED 10.09.2026, the site refused the crawl around its
+        35th request and the crawl was spending ~46 re-reading text it
+        already had. That worked: on 14.09.2026, 21 requests, all answered, 17
+        new postings all described. The method and its tests are in git
+        history; the numbers are in docs/sites/kariyernet.md.
 
-        WHAT THIS DOES NOT TOUCH is whether a posting is still open. Nothing
-        in parse_detail ever answered that: `last_seen_at` is stamped by
-        pipelines.py for any item the crawl yields, and its evidence is the
-        card appearing in a search result, not the posting page opening.
-        kariyernet_check still visits every posting for the verdict - that is
-        its whole job and none of it changes here. The one real trap was that
-        parse_detail used to be the ONLY place this spider yielded an item, so
-        skipping it would have stopped `last_seen_at` from being stamped and
-        made every known posting look like it had left the board; parse_listing
-        yields the item itself now.
+        WHY IT IS GONE ANYWAY. kariyernet_check opens every open posting's
+        page every night for the verdict, and reads the description out of
+        the same container while it is there. So each posting page the crawl
+        opened was opened a SECOND time the same night by the checker - which
+        runs after the crawl, loads tonight's new rows with the rest, and
+        probes never-checked rows first. Nothing the crawl read from that page
+        is lost; one of the two visits is.
 
-        A SKIPPED ITEM CARRIES NO job_description AT ALL, deliberately - not
-        "N/A". pipelines.py only overwrites the stored description when the
-        incoming one is truthy and not "N/A", so either would be safe, but an
-        absent field says "I have nothing to say about this column" while
-        "N/A" says "it is unknown", and only one of those is true here.
+        WHAT THIS DOES NOT TOUCH is whether a posting is still open.
+        `last_seen_at` is stamped by pipelines.py for any item the crawl
+        yields, and its evidence is the card appearing in a search result -
+        parse_listing yields every kept card, so that is unchanged.
+
+        EVERY ITEM NOW CARRIES job_description = "N/A". That reverses a
+        12.09.2026 choice to leave the field ABSENT on a skipped card ("I have
+        nothing to say about this column" rather than "unknown"). With no
+        posting page opened, "unknown" is the true statement for every card,
+        and it is what linkedin_cards and indeed_cards send. pipelines.py
+        never overwrites a stored description with "N/A", so nothing already
+        stored is blanked; a NEW row is stored with "N/A" where it used to
+        get NULL, and classify_jobs and openings.py treat the two alike.
     '''
-    def described_urls(self):
-        """
-        Urls this site already has a real description for, read once per run.
-
-        One query rather than one per card. Loaded lazily so that a hand-run
-        `scrapy crawl` against a machine with no database still works: a
-        failure here returns an EMPTY set, which means every posting looks new
-        and every detail page is fetched - the old behaviour, and the safe
-        direction to fail in. Skipping fetches on a failed query would quietly
-        collect nothing.
-        """
-        if self._described_urls is not None:
-            return self._described_urls
-
-        from sqlalchemy.orm import sessionmaker
-
-        from ..models import JobPost, db_connect
-        from ..pipelines import NO_DESCRIPTION
-
-        try:
-            session = sessionmaker(bind=db_connect())()
-            try:
-                rows = (
-                    session.query(JobPost.url)
-                    .filter(JobPost.source_site == self.site_name)
-                    .filter(JobPost.job_description.isnot(None))
-                    .filter(JobPost.job_description != NO_DESCRIPTION)
-                    .filter(JobPost.job_description != "")
-                    .all()
-                )
-                self._described_urls = {row[0] for row in rows}
-            finally:
-                session.close()
-        except Exception as error:
-            self.logger.warning(
-                "Could not read which postings already have a description "
-                "(%s: %s) - fetching every posting page, which is what this "
-                "spider did before the optimisation.",
-                type(error).__name__, error,
-            )
-            self._described_urls = set()
-
-        self.logger.info(
-            "%s posting(s) already have a description and will not be "
-            "re-opened tonight.", len(self._described_urls),
-        )
-        return self._described_urls
 
     ###############################################################
     # PAGINATION IDENTITY - THE POSTING LINK, NOT THE ELEMENT     #
@@ -774,35 +761,26 @@ class KariyerNetCardsSpider(BaseApiSpider):
             self.note_discovery(href, response.meta["search_key"])
 
             kept += 1
-            # Internships are labelled Internship whatever the employer coded
-            # them as. Otherwise the label would follow an arbitrary employer
-            # choice: "Uzun Dönem Staj Programı" arrives as P, "Grafik Tasarım
-            # Stajyeri" as F and "Bilgisayar Mühendisliği Stajyeri" as D.
-            partial = self._item_from_card(
-                card, response, href, force_internship=is_internship,
-            )
-
-            url = response.urljoin(href)
 
             ###########################################################
-            # THE CARD IS STORED NOW. THE DESCRIPTION CAN BE LATE.    #
+            # THE CARD IS THE ITEM. THE DESCRIPTION ARRIVES LATER.    #
             ###########################################################
             # MEASURED 12.09.2026: 46 cards were kept and 24 rows were
             # written. The rest produced NO ROW AT ALL - roughly 16 postings,
             # not 22, since the two searches return some of the same ones -
-            # because
-            # parse_detail was the only place an item was yielded and their
-            # posting pages were refused - so a title, a company, a city, a
-            # work type, a logo and a link, all of it already collected from
-            # the card, were thrown away because ONE field was missing.
+            # because parse_detail was the only place an item was yielded and
+            # their posting pages were refused - so a title, a company, a
+            # city, a work type, a logo and a link, all of it already
+            # collected from the card, were thrown away because ONE field was
+            # missing. From then on the card was yielded here, first.
             #
-            # That is the opposite of this project's rule about never losing
-            # a posting, so the card goes in immediately and the description
-            # catches up when the posting page answers - tonight if it
-            # answers, tomorrow if it does not. `job_description` is nullable
-            # (models.py) and pipelines.py only overwrites the column when
-            # the incoming value is real, so the late arrival wins and
-            # nothing blanks it in between.
+            # Since 21.09.2026 it is the only thing this spider yields: there
+            # is no posting-page request behind it any more (see "THE POSTING
+            # PAGE IS NOT THE CRAWL'S TO OPEN" above). The description comes
+            # from kariyernet_check, which main.py runs after the crawl (not
+            # under --skip-classify, which skips the checks), and pipelines.py
+            # only overwrites the column when the incoming value is real, so
+            # the "N/A" this item carries never blanks one already stored.
             #
             # What the row waits for is being SORTED - classify_jobs skips a
             # row with no description rather than judging it by its title,
@@ -810,31 +788,13 @@ class KariyerNetCardsSpider(BaseApiSpider):
             # 09.09. Until it is sorted the dashboard does not show it (since
             # 16.09.2026, api/queries.py CLASSIFIED); the row is stored all
             # the same, which is what this yield is for.
-            yield partial
-
-            # The description does not change, so the posting page is worth
-            # a request exactly once - see "THE POSTING PAGE IS FETCHED
-            # ONCE, NOT EVERY NIGHT" above.
-            if url in self.described_urls():
-                self.crawler.stats.inc_value("detail/already_described")
-                continue
-
-            # fresh_context is what makes the posting page answerable at all -
-            # see "A POSTING PAGE IS OPENED BY SOMEBODY WHO HAS JUST ARRIVED"
-            # above. The referer stays, because it is true and it is what a
-            # person's browser would send; it is simply not the thing that
-            # mattered.
             #
-            # A COPY, because the item above has already gone to the
-            # pipeline. parse_detail adds the description to what it is given
-            # and yields it again; handing it the same object would be
-            # mutating a row mid-flight for no reason.
-            self.crawler.stats.inc_value("detail/fetched")
-            yield self.document_request(
-                url,
-                callback=self.parse_detail,
-                referer=response.url,
-                meta={"partial_item": partial.copy(), "fresh_context": True},
+            # Internships are labelled Internship whatever the employer coded
+            # them as. Otherwise the label would follow an arbitrary employer
+            # choice: "Uzun Dönem Staj Programı" arrives as P, "Grafik Tasarım
+            # Stajyeri" as F and "Bilgisayar Mühendisliği Stajyeri" as D.
+            yield self._item_from_card(
+                card, response, href, force_internship=is_internship,
             )
 
         search_key = response.meta["search_key"]
@@ -910,30 +870,25 @@ class KariyerNetCardsSpider(BaseApiSpider):
         loader.add_value("job_type", card.attrib.get("worktypetext"))
         loader.add_value("job_type", self.DEFAULT_VALUE)
 
+        # Set once, not as a fallback after a real value: job_description_out
+        # is Join(' '), so a second value would be appended rather than
+        # ignored - the trap linkedin_cards and indeed_cards name. There is
+        # no first value to fall back from any more: since 21.09.2026 the
+        # crawl opens no posting page, and the description is
+        # kariyernet_check's to read. pipelines.py never writes "N/A" over a
+        # stored description.
+        loader.add_value("job_description", self.DEFAULT_VALUE)
+
         loader.add_value("url", response.urljoin(href))
         loader.add_value("source_site", self.site_name)
 
         return loader.load_item()
 
-    ###################################################
-    # DETAIL PAGE - ONLY REACHED FOR WANTED POSTINGS  #
-    ###################################################
-    def parse_detail(self, response):
-        item = response.meta["partial_item"]
-
-        description = response.css(
-            'div[data-test="qualifications-and-job-description"] *::text'
-        ).getall()
-        if not description:
-            description = response.css(
-                '[data-test="job-description"] *::text'
-            ).getall()
-
-        text = " ".join(part.strip() for part in description if part.strip())
-        item["job_description"] = text or self.DEFAULT_VALUE
-
-        if not text:
-            self.logger.warning("No description found at %s", response.url)
-            self.crawler.stats.inc_value("detail/no_description")
-
-        yield item
+    ###################################################################
+    # THE DETAIL PAGE PARSER IS GONE - 21.09.2026                     #
+    ###################################################################
+    # parse_detail read `div[data-test="qualifications-and-job-description"]`,
+    # falling back to `[data-test="job-description"]`, and joined the text
+    # nodes. kariyernet_check.description() reads the same selectors with the
+    # same join - it was copied from here - and is now the only place this
+    # site's description is read. parse_detail is in git history.

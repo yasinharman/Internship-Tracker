@@ -1,11 +1,17 @@
 # kariyer.net
 
-`spiders/kariyernet_cards.py` finds postings, `spiders/kariyernet_check.py`
-asks whether they are still open. Both drive **a real Chromium with a real
-window, and open every single page from a browser context that has never been
-to the site.** The first half of this file is what a run does, request by
-request. The second half is why, and it is the half to read when the crawl
-comes back empty.
+`spiders/kariyernet_cards.py` finds postings from the listing pages,
+`spiders/kariyernet_check.py` asks whether they are still open and reads their
+description. Both drive **a real Chromium with a real window, and open every
+single page from a browser context that has never been to the site.** The
+first half of this file is what a run does, request by request. The second
+half is why, and it is the half to read when the crawl comes back empty.
+
+**Changed 21.09.2026, not yet run:** the crawl no longer opens posting pages -
+it reads the listing pages and nothing else, and the description comes from
+`kariyernet_check`. See "The crawl stops opening posting pages" below. The
+request walk-through underneath describes the new shape; its per-page timings
+and card counts are the 12.09.2026 measurements.
 
 **Last verified 14.09.2026**, the second night: 21 requests, all answered, no
 refusal. The 24 postings described on the first night were not re-opened, and
@@ -54,29 +60,30 @@ from the settings named beside them.
    │  wait 10-30 s
    ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ REQUEST 3 onward  one POSTING page per kept card with no description     │
-│ GET https://www.kariyer.net/is-ilani/<company>-<title>-<id>              │
-│     e.g. /is-ilani/odeal-teknoloji-a-s-qa-test-stajyeri-4544898          │
+│ REQUESTS 3 and 4  listing · PAGE 2 of each search                        │
+│ GET .../is-ilanlari/istanbul-part+time?...&tpst=4&cp=2                   │
+│ GET .../is-ilanlari/stajyer?...&cp=2                                     │
 ├──────────────────────────────────────────────────────────────────────────┤
-│  new browser context, no cookies                             ~4 ms       │
-│  page loads to DOMContentLoaded                              ~1 s        │
-│  page left open                                              4 s         │
-│  description read  →  stored onto the same row      (see TABLE B)        │
-│  context closed                                                          │
+│  exactly as request 1, 10-30 s apart                                     │
+│  0 cards  →  "search exhausted"  →  no page 3                            │
 └──────────────────────────────────────────────────────────────────────────┘
-   │  wait 10-30 s between each - 46 of these on 12.09.2026's first night
-   │
-   │  mixed in among these, the two PAGE 2 requests:
-   │    /is-ilanlari/istanbul-part+time?...&cp=2   → 0 cards → search done
-   │    /is-ilanlari/stajyer?...&cp=2              → 0 cards → search done
+   │  a search with more than one page of cards gets page 3, 4 ... in the
+   │  same way, until a page comes back empty. The order of the four is
+   │  Scrapy's scheduler's; the count is what is fixed
    ▼
  END ─ closing report: which search found what, requests, statuses, blocks
 ```
 
-**On a later night** the same two listing pages are read and every card is
-stored again - that is what keeps a live posting marked as seen - but a card
-whose description is already stored gets **no** posting-page request. From the
-third night on, a run is about 4 listing pages plus that day's new postings.
+**That is the whole crawl since 21.09.2026: 4 navigations**, every night, the
+first night included - no posting page is opened. Until then a box sat here
+for REQUEST 3 onward: one posting page per kept card with no description
+(`/is-ilani/<company>-<title>-<id>`, new context, 4 s left open, description
+read onto the row), 46 of them on 12.09.2026's first night, with the two page 2
+requests mixed in among them. The description is now read by
+`kariyernet_check` - see "After the crawl" below.
+
+**Every night** the same listing pages are read and every kept card is
+stored again - that is what keeps a live posting marked as seen.
 
 **The run stops early** if the site starts refusing:
 
@@ -88,8 +95,11 @@ third night on, a run is about 4 listing pages plus that day's new postings.
  403 ─ third refusal this run (DOMAIN_BLOCK_BUDGET 3)
    ▼
  STOP ─ everything already stored is kept; no waiting, no more knocking
-        the postings not reached are fetched on the next run
+        the pages not reached are requested on the next run
 ```
+
+Since 21.09.2026 the crawl is 4 requests a night, so on its own it stays far
+under the wall (34-36 consecutive requests, measured 10.09 and 12.09.2026).
 
 On 12.09.2026 that wall came after the 36th request. The postings it cut off
 were requested again on the next run, 14.09.2026, and all of them were
@@ -112,13 +122,14 @@ Every posting is one `<div data-test="ad-card">`. Attribute names are matched
 | `[data-test="location"]` text | `location` | NOT `cityname`, which says "Adana" for a nationwide ad |
 | `worktypetext` attribute | `job_type` | forced to `Staj` for anything the internship search found |
 | `a[data-test="ad-card-item"]` → `href` | `url` | the row's unique key |
+| nothing - the crawl opens no posting page | `job_description` = `"N/A"` | since 21.09.2026. `pipelines.py` never writes `"N/A"` over a stored description |
 
 A card is **kept** if its work type is P or S, **or** its title reads as an
 internship, **or** it came from the internship search. A kept card is written
 to `job_posts` straight away - a new row, or the existing one updated and
 marked as seen tonight.
 
-### TABLE B - what is read from a posting page
+### TABLE B - what is read from a posting page, by `kariyernet_check`
 
 | Read from the page | Becomes |
 |---|---|
@@ -127,6 +138,10 @@ marked as seen tonight.
 
 Only written when it is real. A posting whose page was refused keeps its row
 with no description, and gets its page requested again on the next run.
+
+Until 21.09.2026 the crawl read this table too (`parse_detail`); since then
+`kariyernet_check.description()` is the only reader, with the same selectors
+and the same join.
 
 ---
 
@@ -149,7 +164,7 @@ this.
 │  apply button present                          → OPEN                    │
 │  no apply button, description block present   → CLOSED (closed_at set)   │
 │  neither                                      → UNKNOWN, nothing written │
-│  description block text                       → job_description refresh  │
+│  description block text                       → job_description          │
 │  written in batches of 25                                                │
 └──────────────────────────────────────────────────────────────────────────┘
    │
@@ -157,7 +172,21 @@ this.
  classify  - rows with no description yet are skipped until one arrives
 ```
 
-Order of the queue: never-checked postings first, then the longest ago.
+Order of the queue: never-checked postings first, then the longest ago - so
+a posting the crawl stored for the first time tonight is among the first pages
+the checker opens.
+
+**Since 21.09.2026 this is where every kariyer.net description comes from**
+(TABLE B). Before that the crawl had usually read it already and the checker's
+copy was a refresh. Two consequences: a run with `--skip-classify` stores new
+postings with no description, and they wait for the next run that does the
+checks; and anything that caps this checker (`OPENINGS_MAX_PER_SITE`) now
+delays descriptions as well as verdicts.
+
+`SITE_COOLDOWN_S` was set on 12.09.2026 against a crawl ~50 requests deep, the
+posting pages included, immediately before this checker. Since 21.09.2026 the
+crawl is 4 listing pages. Whether the 30 minutes still buys anything was never
+measured either way; it lives in `main.py` and was left as it is.
 
 ---
 
@@ -166,9 +195,9 @@ Order of the queue: never-checked postings first, then the longest ago.
 | Setting | Value | Where | What it does |
 |---|---|---|---|
 | `DOWNLOAD_DELAY` | 20 s, randomised to 10-30 | `kariyernet_cards` | gap between the start of one request and the next |
-| `fresh_context` | on every request | `default_meta()` | a new cookie jar per page - without it the second posting page is refused |
+| `fresh_context` | on every request | `default_meta()` | a new cookie jar per page - without it the second posting page is refused (posting pages are `kariyernet_check`'s since 21.09.2026; listing pages carry it too) |
 | `NEEDS_A_WINDOW` | True | `kariyernet_cards` | refuses to start headless |
-| `POSTING_DWELL_S` | 4 s | `kariyernet_cards` | how long a posting page stays open |
+| `POSTING_DWELL_S` | 4 s | `kariyernet_cards`, inherited | how long a posting page stays open - `kariyernet_check`'s pages only, since 21.09.2026 |
 | `SCROLL_BUDGET_S` | 20 s | `kariyernet_cards` | ceiling on scrolling a listing page |
 | `RETRY_TIMES` | 1 | `kariyernet_cards` | retries per refused page |
 | `DOMAIN_BLOCK_BUDGET` | 3 | `kariyernet_cards` | refusals before the run stops |
@@ -203,6 +232,118 @@ them looked right at the time, and two of them cost a day each.
 | Structured data | `application/ld+json` is only a BreadcrumbList - useless. Job data lives in `window.__NUXT__` as `positionName` / `positionId` |
 
 
+
+## The crawl stops opening posting pages - 21.09.2026
+
+**Decided by the owner 21.09.2026**, for every crawl spider in the project:
+the crawl requests the site's listing pages - the searches and filters it
+already uses, with their pagination - and yields postings from the cards on
+them. **No posting page is requested during the crawl.** The description
+arrives later from the site's checker, a separate per-posting step with its
+own budget.
+
+**Not measured yet** - there has been no run since. This section is what the
+code does now and why it was safe to change without a probe.
+
+### What the crawl requests now
+
+```
+https://www.kariyer.net/is-ilanlari/istanbul-part+time?ct=34%2C82&wa=2%2C5%2C22%2C54%2C55%2C60%2C63%2C78%2C87&tpst=4&cp=N
+https://www.kariyer.net/is-ilanlari/stajyer?ct=34%2C82&wa=2%2C5%2C22%2C54%2C55%2C60%2C63%2C78%2C87&cp=N
+```
+
+`N` counts up from 1 until a page comes back empty (or repeats itself, or
+reaches `MAX_PAGES` 200). There is no warm-up request (`warmup_url = None`).
+On a board the size of 12.09 and 14.09 - 11 and 35 cards, 50 to a page - that
+is `cp=1` and `cp=2` of each search: **4 navigations, every night**, against a
+wall measured at 34-36.
+
+| | crawl before | crawl since 21.09.2026 |
+|---|---|---|
+| night 1 - 12.09.2026 | 4 listing + 46 posting pages, wall at the 36th | 4 listing |
+| night 2 - 14.09.2026 | 4 listing + 17 posting = 21 | 4 listing |
+| night 3 on | 4 listing + that day's new postings, ~8 expected | 4 listing |
+| `kariyernet_check` | one per open posting | one per open posting - unchanged |
+
+`DOWNLOAD_DELAY` stays at 20, so the crawl takes about two minutes - an
+estimate (three waits of 10-30 s, a few seconds of page each), not a
+measurement.
+
+### Why nothing is lost
+
+`kariyernet_check` already opened every open posting's page every night for
+its verdict, and since 09.09.2026 it has read the description out of the same
+container while there ("The check spider reads the description too", below).
+It runs after the crawl, loads tonight's new rows along with the rest, and
+probes never-checked rows first. So every posting page the crawl opened for a
+new posting was opened a second time, the same night, by the checker.
+Dropping the crawl's visit drops the duplicate.
+
+Every other field on the row was already coming from the card - title,
+company, location, job type, url and logo (TABLE A). The posting page supplied
+the description and nothing else; the logo fallback it offered was never
+built ("Ad card structure", below).
+
+### What was removed
+
+- the posting-page request in `parse_listing`, with the `fresh_context` flag
+  and the `partial_item` copy it carried
+- `parse_detail`, which read TABLE B. `kariyernet_check.description()` was
+  copied from it and is now the only reader
+- `described_urls()` - the once-per-posting rule of 12.09.2026 below, and with
+  it the only database read the crawl made
+- the counters `detail/fetched`, `detail/already_described` and
+  `detail/no_description`, and the log line "N posting(s) already have a
+  description and will not be re-opened tonight"
+- `tests/test_detail_once.py`, replaced by `tests/test_kariyernet_cards.py`
+
+What stayed: both searches and their filters, pagination, every delay and
+block budget (`DOWNLOAD_DELAY` 20, `RETRY_TIMES` 1, `DOMAIN_BLOCK_BUDGET` 3,
+`BLOCK_COOLDOWNS_ALLOWED` 0), `fresh_context` on every request, the window.
+`POSTING_DWELL_S` and the posting branch of `page_actions` stay in
+`kariyernet_cards.py` because `kariyernet_check` inherits them; the crawl no
+longer reaches either.
+
+### One reversal: the description is "N/A", not absent
+
+On 12.09.2026 a card whose description was already stored was yielded with
+**no** `job_description` field, because an absent field says "nothing to say
+about this column" while `"N/A"` says "unknown", and only the first was true of
+a posting whose description was on file. Every card now carries `"N/A"`: with
+no posting page opened, "unknown" is the true statement for every card, and it
+is what `linkedin_cards` and `indeed_cards` send.
+
+`pipelines.py` never overwrites a stored description with `"N/A"`, so nothing
+already stored is blanked. A **new** row is stored with `"N/A"` where it used
+to get NULL; `classify_jobs` (`NO_DESCRIPTION`) and `openings.py` (which writes
+any real description it reads) treat the two alike, and nothing on the
+dashboard reads the column.
+
+Exactly one `"N/A"`, and there is a test for it: `job_description_out` is
+`Join(' ')`, so a second value would be appended, and `"N/A N/A"` is neither
+empty nor `NO_DESCRIPTION` - it would overwrite a description the checker had
+paid for.
+
+### What moved to the checker
+
+- **The queue that drains.** "Why hitting the wall is survivable" below
+  describes the crawl working through undescribed postings over a few
+  nights. That queue is the checker's now, in the checker's order.
+- **The wall.** The checker is now the part of this site's night that costs
+  one request per posting - 41 rows on 14.09.2026, more than 34-36 if all of
+  them are still open. If it starts meeting the wall, the lever is still
+  request count ("If the wall ever moves down", below), and capping this
+  checker now delays descriptions as well as verdicts.
+- **The selectors.** A TABLE B selector that stops matching now leaves every
+  new posting unclassified. `check/description_missing` is the counter that
+  says so.
+
+### What the first run should show
+
+- `kariyernet_cards` making 4 requests on a board this size, and no
+  `/is-ilani/` url anywhere in its log
+- new rows stored with `"N/A"`, then described by `kariyernet_check` -
+  `check/description_found` against the number of new postings
 
 ## The second night - MEASURED 14.09.2026
 
@@ -257,6 +398,11 @@ reason: it counts cards, and six of them were the same posting twice.
 That a third night stays down near 8 requests. That depends on how many
 postings the board gains in a day, which one run cannot say. Watch
 `detail/fetched` over the next few runs.
+
+(Never answered, and moot since 21.09.2026: the crawl is 4 listing requests
+every night and `detail/fetched` no longer exists. The postings a day adds
+are now a cost on `kariyernet_check` instead - see "The crawl stops opening
+posting pages" above.)
 
 ## Two gates, not one - and the second one is the cookie
 
@@ -457,7 +603,12 @@ Listing pages need no separate dwell: the scroll that loads the logos already
 takes 1.7-2.6s, and neither listing page has ever been refused.
 
 
-## The posting page is opened once, not every night - 12.09.2026
+## ~~The posting page is opened once, not every night~~ - 12.09.2026, SUPERSEDED 21.09.2026, see "The crawl stops opening posting pages"
+
+The crawl opens no posting page at all now, so everything below about which
+ones it opens is history. Two parts of it still hold: the card is stored
+whatever happens to any posting page, and `last_seen_at` is stamped from the
+card.
 
 The site refuses this crawl somewhere around its 35th request, and ~46 of
 them were being spent re-reading descriptions already stored. A description
@@ -534,7 +685,9 @@ Skipping the fetch without yielding from `parse_listing` would have stopped
 `last_seen_at` being stamped, and every known posting would have looked like
 it had left the board - `_reopen_seen_again` would have had nothing to work
 with and the checker's closes would have stood unchallenged. Covered by
-`tests/test_detail_once.py`.
+`tests/test_detail_once.py` - since 21.09.2026 by
+`tests/test_kariyernet_cards.py`, where `parse_listing` is the only yield there
+is.
 
 A database that cannot be read returns an empty set, so every posting looks
 new and every detail page is fetched: the old behaviour, and the safe
@@ -585,6 +738,10 @@ it now.
 Because the crawl drains its own queue over a few nights. A posting stored
 without a description is fetched again next time ("The posting page is opened
 once", above), so:
+
+(Since 21.09.2026 the queue is `kariyernet_check`'s, not the crawl's: the
+crawl is 4 listing requests, and a posting without a description is read by
+the checker, never-checked first. The table is the crawl as it was.)
 
 | night | requests | outcome |
 |---|---|---|
@@ -727,6 +884,11 @@ fetches it for the postings it keeps - so a fallback there is available if the
 detail page has dozens of images (header art, award badges, recommended
 employers) and picking the right one needs its own measurement.
 
+(Since 21.09.2026 the crawl fetches no detail page, so this fallback is not
+available to it any more. `kariyernet_check` still has the page in hand; a
+fallback would have to live there, and would still need that measurement.
+The card gave 41 of 46 logos on 10.09.2026 once the page was scrolled.)
+
 **The check spider reads the description too - 09.09.2026.**
 `kariyernet_check.verdict()` already selects
 `[data-test="qualifications-and-job-description"], [data-test="job-description"]`
@@ -735,6 +897,10 @@ same container with the selectors copied verbatim from
 `kariyernet_cards.py:449-461`. Note the consequence: on a CLOSED posting that
 container is exactly the branch that fired, so a closed posting still yields a
 description - which is what a reader wants behind the "Kapananlar" toggle.
+
+Since 21.09.2026 this is the only place a kariyer.net description is read:
+the crawl's `parse_detail`, which those selectors were copied from, is gone.
+See "The crawl stops opening posting pages".
 
 **Multi-city trap:** a nationwide posting has
 `locations="[object Object],[object Object],..."` and `cityname` holds only the
@@ -814,6 +980,10 @@ of our way to keep.
 `spiders/kariyernet_cards.py`. Pages the filtered search, applies the filter
 above, and requests the detail page only for the survivors - so only the few
 percent of postings we want cost a second request.
+
+Since 21.09.2026 there is no second request: the survivors are yielded from
+their cards and the detail page is `kariyernet_check`'s. See "The crawl stops
+opening posting pages".
 
 ## Actual yield - the whole result set, crawled
 
