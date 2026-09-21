@@ -1,0 +1,197 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Internship-Tracker - yerel LLM'li akış",
+    "output": "mimari-yerel-llm.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "siteler",
+      "type": "external",
+      "label": "İş ilanı siteleri",
+      "sublabel": "kariyer.net · techcareer · Indeed",
+      "pos": [
+        40,
+        300
+      ],
+      "size": [
+        240,
+        68
+      ]
+    },
+    {
+      "id": "tarama",
+      "type": "backend",
+      "label": "Kart taraması",
+      "sublabel": "3 günde bir",
+      "tag": "liste sayfaları",
+      "pos": [
+        400,
+        120
+      ],
+      "size": [
+        180,
+        68
+      ]
+    },
+    {
+      "id": "kontrol",
+      "type": "backend",
+      "label": "İlan kontrolü",
+      "sublabel": "7 gün ufku · günlük bütçe",
+      "tag": "ilan başına 1 istek",
+      "pos": [
+        400,
+        480
+      ],
+      "size": [
+        190,
+        68
+      ]
+    },
+    {
+      "id": "veritabani",
+      "type": "database",
+      "label": "job_posts",
+      "sublabel": "PostgreSQL",
+      "pos": [
+        780,
+        300
+      ],
+      "size": [
+        180,
+        68
+      ]
+    },
+    {
+      "id": "yerel_llm",
+      "type": "backend",
+      "label": "Yerel LLM",
+      "sublabel": "24 saatte bir",
+      "tag": "kendi GPU'muzda",
+      "pos": [
+        780,
+        560
+      ],
+      "size": [
+        180,
+        68
+      ]
+    },
+    {
+      "id": "pano",
+      "type": "frontend",
+      "label": "Pano",
+      "sublabel": "React",
+      "pos": [
+        1150,
+        300
+      ],
+      "size": [
+        180,
+        68
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "site-kart",
+      "from": "siteler",
+      "to": "tarama",
+      "label": "kartlar",
+      "variant": "emphasis"
+    },
+    {
+      "id": "kart-db",
+      "from": "tarama",
+      "to": "veritabani",
+      "label": "başlık, şirket, url, last_seen_at",
+      "variant": "emphasis"
+    },
+    {
+      "id": "db-kuyruk",
+      "from": "veritabani",
+      "to": "kontrol",
+      "label": "kuyruk: açık ilanlar",
+      "fromSide": "bottom",
+      "toSide": "right",
+      "labelDx": -40
+    },
+    {
+      "id": "kontrol-site",
+      "from": "kontrol",
+      "to": "siteler",
+      "label": "ilan başına 1 istek"
+    },
+    {
+      "id": "kontrol-db",
+      "from": "kontrol",
+      "to": "veritabani",
+      "label": "aktiflik + açıklama",
+      "fromSide": "top",
+      "toSide": "left",
+      "labelDx": 48
+    },
+    {
+      "id": "db-llm",
+      "from": "veritabani",
+      "to": "yerel_llm",
+      "label": "açıklama",
+      "labelDx": -70,
+      "labelDy": 26
+    },
+    {
+      "id": "llm-db",
+      "from": "yerel_llm",
+      "to": "veritabani",
+      "label": "kategori + gerekçe",
+      "labelDx": 70,
+      "labelDy": -6
+    },
+    {
+      "id": "llm-sira",
+      "from": "yerel_llm",
+      "to": "kontrol",
+      "label": "kart verisiyle kuyruk sırası",
+      "variant": "dashed"
+    },
+    {
+      "id": "db-pano",
+      "from": "veritabani",
+      "to": "pano",
+      "label": "açık ve sınıflandırılmış ilanlar",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Bedava olan",
+      "items": [
+        "Liste sayfaları: bir taramada 90 istekle 727 kart",
+        "Yerel LLM kendi GPU'muzda koşar, çağrı başına ücret yok",
+        "Taramada görülen ilan, istek harcamadan açık sayılır"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Kıt olan",
+      "items": [
+        "İlan başına atılan tekil istek",
+        "Indeed 16.09.2026'da 145 istekten sonra reddetti",
+        "kariyer.net'in duvarı 34-36 istekte"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Kurallar",
+      "items": [
+        "7 gündür aramada görünmeyen ilan kuyruktan ve panodan düşer",
+        "Hiçbir satır silinmez; ilan tekrar listelenirse aynı satır geri döner",
+        "Blok yemiş koşu hiçbir şey yazmaz"
+      ]
+    }
+  ]
+}
