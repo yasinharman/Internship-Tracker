@@ -79,13 +79,14 @@ class TechCareerCheckSpider(OpeningCheckMixin, TechCareerApiSpider):
         """
         The same payload the verdict just read, for a different question.
 
-        techcareer_api.py:266-269 pulls the description out of this exact
-        endpoint during the crawl, and the crawl already fetches it - but only
-        for the handful of postings that survive the filters, and only once.
-        Reading it here as well is what keeps a posting's description current
-        without a request that was not already being made.
+        THE ONLY SOURCE OF A techcareer DESCRIPTION since 21.09.2026. The
+        crawl used to fetch this exact endpoint for every posting it kept
+        and read the description there; now it builds each item from the
+        list record and sends "N/A", which pipelines.py will not write over a
+        stored description. So the text arrives here, on a request this
+        checker was making anyway for head.isCompleted.
 
-        HTML inside JSON, so strip_html - the same call the cards spider makes.
+        HTML inside JSON, so strip_html - the same call the crawl made.
         """
         payload = self.parse_json(response)
         content = dig(payload, "pageProps.jobDetail.content") or {}

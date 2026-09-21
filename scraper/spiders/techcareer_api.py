@@ -25,14 +25,22 @@ in Istanbul that the site does not tag as one. Exactly the pattern kariyer.net
 showed, where 22 of 26 internships were mis-coded by the employer. So both
 signals are used and the results merged.
 
-Working type is NOT guessed here, unlike the kariyer.net spider: the detail
-endpoint reports `typeOfWorks: ["Stajyer"]` accurately, and detail is fetched
-for the handful of survivors anyway.
+THE CRAWL READS THE LIST AND NOTHING ELSE (since 21.09.2026). Each kept list
+record becomes an item on the spot - title, company, logo, location and url
+are all on the record - and the description is left as "N/A" for
+techcareer_check, which downloads the detail JSON anyway to read
+`head.isCompleted` and takes the description from the same payload. A run is
+the warm-up plus the list pages, nothing per posting.
+
+The one field that did not survive the move is the site's working type: the
+list record has none (docs/sites/techcareer.md, "Record fields"), so the job
+type now comes from the title alone - which already outranked the detail's
+`typeOfWorks` - and a posting whose title says neither is stored as N/A.
 """
 
 import json
 
-from ..api_spider import BaseApiSpider, dig, logo_url, strip_html
+from ..api_spider import BaseApiSpider, dig, logo_url
 from ..job_filters import is_wanted, looks_like_internship, looks_like_parttime
 from ..loaders import JsonJobLoader
 
@@ -71,6 +79,8 @@ class TechCareerApiSpider(BaseApiSpider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.build_id = None
+        # Slugs already yielded this run - see parse_list.
+        self._yielded = set()
 
     ##########################################################
     # WARM-UP: READ buildId OUT OF THE SERVER-RENDERED PAGE  #
@@ -136,9 +146,9 @@ class TechCareerApiSpider(BaseApiSpider):
             dont_filter=True,
         )
 
-    ###########################
-    # PICK THE CANDIDATES     #
-    ###########################
+    ###########################################
+    # PICK THE CANDIDATES, YIELD THE ITEMS    #
+    ###########################################
     def parse_list(self, response):
         payload = self.parse_json(response)
         if payload is None:
@@ -171,15 +181,17 @@ class TechCareerApiSpider(BaseApiSpider):
             # "scan" ever becomes the sole finder of postings, the site's own
             # typeOfWork filter is leaking.
             self.note_discovery(slug, search_key)
-
             kept += 1
-            yield self.api_request(
-                self._data_url(f"jobs/detail/{slug}"),
-                callback=self.parse_detail,
-                referer=f"{self.origin}/jobs",
-                headers={"x-nextjs-data": "1"},
-                meta={"slug": slug},
-            )
+
+            # Both passes can return the same posting - 9664 was in both on
+            # 14.09.2026 - and an item built from the record alone would be the
+            # same upsert twice. The detail request this replaced was dropped
+            # the same way, by Scrapy's dupefilter; here it has to be explicit.
+            if slug in self._yielded:
+                continue
+            self._yielded.add(slug)
+
+            yield self._item_from_record(record, slug)
 
         self.logger.info(
             "[%s] page %s: %s posting(s), %s candidate(s)",
@@ -197,80 +209,82 @@ class TechCareerApiSpider(BaseApiSpider):
             yield self._list_request(search_key, page + 1)
 
     #########################################################
-    # DETAIL - THE ONLY PLACE WITH A DESCRIPTION            #
+    # THE ITEM, FROM THE LIST RECORD ALONE                  #
     #########################################################
-    def parse_detail(self, response):
-        payload = self.parse_json(response)
-        if payload is None:
-            return
+    def _item_from_record(self, record, slug):
+        """
+        One list record -> one item, with no request of its own.
 
-        head = dig(payload, "pageProps.jobDetail.head") or {}
-        content = dig(payload, "pageProps.jobDetail.content") or {}
-        if not head:
-            self.logger.warning("No jobDetail.head at %s", response.url)
-            return
-
-        loader = JsonJobLoader(response=response)
-        loader.add_value("job_title", head.get("title"))
-        loader.add_value("job_title", head.get("jobTitle"))
+        Until 21.09.2026 this was parse_detail, fed by one
+        /_next/data/.../jobs/detail/<slug>.json request per kept record. Every
+        field it read except the description and the working type is on the
+        list record as well - the inventory in docs/sites/techcareer.md
+        (27.07.2026) lists `title`, `jobTitle`, `location`, `slug`,
+        `owner.name`, `owner.logo` - so the request bought exactly one thing
+        the crawl still needs, and the checker already fetches that payload.
+        """
+        loader = JsonJobLoader()
+        loader.add_value("job_title", record.get("title"))
+        loader.add_value("job_title", record.get("jobTitle"))
         loader.add_value("job_title", self.DEFAULT_VALUE)
 
-        loader.add_value("company", dig(head, "company.name"))
-        loader.add_value("company", head.get("hiddenCompanyInfo"))
+        # `owner.name` rather than the detail's head.company.name. There is no
+        # list-side counterpart to the detail's hiddenCompanyInfo in the
+        # inventory, so a posting with a hidden employer falls straight to
+        # N/A - which is what the one such posting stored anyway (9830 on
+        # 14.09.2026: company.name and hiddenCompanyInfo both empty).
+        loader.add_value("company", dig(record, "owner.name"))
         loader.add_value("company", self.DEFAULT_VALUE)
 
-        # From the detail payload rather than the list record, even though
-        # `owner.logo` is right there in the list and would have to be carried
-        # through meta. Dumped 09.09.2026: head.company.logo holds the same
-        # url, so the detail is enough and parse_list keeps forwarding only
-        # the slug.
-        #
-        # It is empty exactly when head.company.name is - a posting whose
-        # employer is hidden, which is why the company falls back to
-        # hiddenCompanyInfo two lines up. A hidden employer has no logo to
-        # show either, so there is nothing to recover from the list side.
+        # `owner.logo` - dumped 09.09.2026, the same url the detail carries as
+        # head.company.logo. Empty exactly when the employer is hidden, and a
+        # hidden employer has no logo to show anyway.
         #
         # The url is absolute and on cdn1.kariyer.net over plain http; that
         # host has no working certificate, so logo_url() leaves the scheme
         # alone rather than upgrading it into a dead link.
-        logo = logo_url(dig(head, "company.logo"), base=self.origin)
+        logo = logo_url(dig(record, "owner.logo"), base=self.origin)
         loader.add_value("company_logo_url", logo)
         self.crawler.stats.inc_value("logo/found" if logo else "logo/missing")
 
-        loader.add_value("location", head.get("location"))
+        loader.add_value("location", record.get("location"))
         loader.add_value("location", self.DEFAULT_VALUE)
 
-        # The detail endpoint reports whatever the employer selected, which is
-        # not always what the posting is. "Bilgisayar Mühendisliği Stajyeri"
-        # came back typed as Contract on a live run - an internship that would
-        # then be hidden by the dashboard's Internship + Part-Time default.
+        # THE TITLE IS ALL THERE IS. The list record carries no working-type
+        # field, so the detail's `typeOfWorks` went with the detail request.
         #
-        # All three sites turned out to do this, so all three now let the title
-        # decide: normalize_job_type ranks Internship and Part-Time above the
-        # rest, so putting the title's verdict first is enough.
-        type_of_works = [t for t in (head.get("typeOfWorks") or []) if t]
-        title = head.get("title") or head.get("jobTitle") or ""
-        if looks_like_internship(title):
-            type_of_works = ["Stajyer"] + [t for t in type_of_works if t != "Stajyer"]
-        elif looks_like_parttime(title):
-            type_of_works = ["Yarı Zamanlı"] + [
-                t for t in type_of_works if t != "Yarı Zamanlı"
-            ]
-
-        loader.add_value("job_type", ", ".join(type_of_works) or None)
+        # Less of a loss than it sounds: the title already outranked it,
+        # because employers select the wrong type - "Bilgisayar Mühendisliği
+        # Stajyeri" came back from the detail typed as Contract. jobTitle is
+        # read too, for the same reason the scan's is_wanted() reads it: a
+        # posting kept on its jobTitle must not then be typed as nothing.
+        #
+        # What IS lost is a posting whose title says neither. The typed pass
+        # knows it is 2 or 4 - part-time OR internship - but not which, and
+        # picking one would call a part-time job an internship or the other
+        # way round. So it goes in as N/A and pipelines.py stores "Other".
+        # 9830 *Assistant Product Manager* was exactly this on 14.09.2026. The
+        # payload that says which is the one techcareer_check downloads.
+        title = record.get("title") or ""
+        job_title = record.get("jobTitle") or ""
+        if looks_like_internship(title, job_title):
+            job_type = "Stajyer"
+        elif looks_like_parttime(title, job_title):
+            job_type = "Yarı Zamanlı"
+        else:
+            job_type = None
+            self.crawler.stats.inc_value("job_type/untyped")
+        loader.add_value("job_type", job_type)
         loader.add_value("job_type", self.DEFAULT_VALUE)
 
-        # One value, not a fallback pair: this field's output processor is
-        # Join(' '), so a second add_value is APPENDED rather than ignored and
-        # every description would end in a stray "N/A".
-        loader.add_value(
-            "job_description",
-            strip_html(content.get("description")) or self.DEFAULT_VALUE,
-        )
+        # "N/A" on purpose: pipelines.py only overwrites a stored description
+        # with one that is truthy and not "N/A", so this cannot erase what
+        # techcareer_check wrote.
+        loader.add_value("job_description", self.DEFAULT_VALUE)
 
-        loader.add_value(
-            "url", f"{self.origin}/jobs/detail/{response.meta['slug']}"
-        )
+        # The same url parse_detail built, so every stored row still matches
+        # on the upsert key.
+        loader.add_value("url", f"{self.origin}/jobs/detail/{slug}")
         loader.add_value("source_site", self.site_name)
 
-        yield loader.load_item()
+        return loader.load_item()
