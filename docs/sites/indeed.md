@@ -912,6 +912,29 @@ entry. So a crawl night is still about 70 listing requests followed by the
 checker's queue. That is the order that was refused on 16.09. Moving the
 check off the crawl night is a change to `main.py`, and it was not made here.
 
+## A full run on an empty table: 343 requests, one refusal - measured 21.09.2026
+
+The table had been emptied first (`backups/job_posts-20260921-120942.csv`),
+so the checker's queue was every posting the crawl found. The run had no
+check cap (`OPENINGS_MAX_PER_SITE=0`, the owner's call) and no proxy
+(`PROXY_MODE=off`). The address had rested since the 16.09 refusal. The full
+log is `backups/fullrun-20260921.log`.
+
+| Step | When | Requests | Result |
+|---|---|---|---|
+| `indeed_cards` | 12:17-12:39 | 68: 67 x 200, 1 x 429 | 645 cards over six searches, 274 postings. The 429 at 12:30 was Cloudflare's challenge (`cf-mitigated=challenge`) on `stajyer` page 5; its retry passed. |
+| (kariyer.net's check ran in between) | 12:47-13:00 | - | - |
+| `indeed_check` | 13:00-14:28 | 275, all 200 | 274 descriptions, 268 verdicts, 2 closed. About 19 s per posting. |
+
+- **343 requests to Indeed in about two hours, and one refusal.** On 16.09,
+  the order refused at 145 was the same: listing requests, then the checker.
+  So 145 is not a fixed wall. That matches what "Refused on the detail
+  pages" already says about 15.09.
+- **This is one run, on a rested address.** It does not say what a second
+  night in a row looks like.
+- **The checker had a 21-minute gap after the crawl**, because kariyer.net's
+  check ran in between. Indeed has no `SITE_COOLDOWN_S` of its own.
+
 ## The description is on the DETAIL page, and the checker already fetches it - 09.09.2026
 
 "The first investigation > Description" turned down fetching `/viewjob?jk=`

@@ -345,6 +345,27 @@ paid for.
 - new rows stored with `"N/A"`, then described by `kariyernet_check` -
   `check/description_found` against the number of new postings
 
+### What it showed - MEASURED 21.09.2026, a full run on an empty table
+
+The table had been emptied first (`backups/job_posts-20260921-120942.csv`),
+so every posting was new and every one went into the check queue. The full
+log is `backups/fullrun-20260921.log`.
+
+| Step | When | What happened |
+|---|---|---|
+| `kariyernet_cards` | 12:16-12:17 | 4 listing requests, all 200. 48 cards, 42 postings stored with `"N/A"`. |
+| wait | 12:17-12:47 | `SITE_COOLDOWN_S`: the check started exactly 30 minutes after the crawl. |
+| `kariyernet_check` | 12:47-13:00 | 40 posting pages, all 200, 40 descriptions. Then 3 x 403: PerimeterX's press-and-hold page, which never clears itself. `DOMAIN_BLOCK_BUDGET` 3 was spent and the spider stopped. |
+
+- **Both expectations above held.** The crawl made 4 requests and opened no
+  posting page. The checker is now the only source of a description.
+- **The wall came after the 40th posting page, on the checker alone.** It
+  followed a 30-minute rest after the 4 listing requests. The measured wall
+  was 34-36 on 10.09 and 12.09. One run does not move that estimate; it says
+  the 30 minutes may be worth more than they were given credit for.
+- **2 of 42 postings were left without a description.** They wait,
+  unclassified and off the board, for the next run.
+
 ## The second night - MEASURED 14.09.2026
 
 The run that tested whether the queue actually drains. Two days after the
