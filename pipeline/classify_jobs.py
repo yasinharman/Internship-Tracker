@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 from sqlalchemy import func, or_
 from sqlalchemy.orm import sessionmaker
 
-from scraper.classifier import DEFAULT_MODELS, classify
+from scraper.classifier import classify
 from scraper.models import JobPost, db_connect
 
 load_dotenv()
@@ -42,9 +42,11 @@ load_dotenv()
 for stream in (sys.stdout, sys.stderr):
     stream.reconfigure(encoding="utf-8", errors="replace")
 
-# Each request is independent, and the wait is entirely network - so threads
-# are the right tool and the number can be generous. 8 keeps 150 postings to
-# well under a minute without tripping per-minute rate limits.
+# Each request is independent. Ollama answers one at a time and queues the
+# rest, so this number changes how long a request waits, not how long the run
+# takes: 8 and 1 both sorted 70 postings in 91 s (docs/pipeline.md,
+# 21.09.2026). Kept at 8 because it costs nothing and the longest wait,
+# 12 s, is far inside the SDK's own 600 s timeout.
 CONCURRENCY = int(os.getenv("CLASSIFY_CONCURRENCY", "8"))
 
 CATEGORY_ORDER = ["it", "general_program", "other"]
@@ -176,7 +178,7 @@ def snapshot(posting):
 #####################################################
 # CLASSIFY IN PARALLEL                              #
 #####################################################
-def classify_all(rows, provider, model):
+def classify_all(rows, model):
     """
     Returns {row_id: JobCategory}. A posting whose call fails is left out
     rather than guessed at, and reported - it stays NULL and the next run
@@ -187,7 +189,7 @@ def classify_all(rows, provider, model):
 
     def work(row):
         try:
-            return row["id"], classify(row, provider=provider, model=model)
+            return row["id"], classify(row, model=model)
         except Exception as error:
             return row["id"], error
 
@@ -315,10 +317,6 @@ def main():
         help="Run these models over the same postings and print only the "
              "postings they disagree on. Implies --dry-run.",
     )
-    parser.add_argument(
-        "--provider", choices=sorted(DEFAULT_MODELS),
-        help="Override LLM_PROVIDER.",
-    )
     parser.add_argument("--model", help="Override CLASSIFIER_MODEL.")
     parser.add_argument(
         "--limit", type=int,
@@ -350,18 +348,19 @@ def main():
         if args.compare:
             per_model = {}
             for model in args.compare:
-                # A model name alone does not say who serves it. The provider
-                # flag applies to all of them; mixing providers in one compare
-                # run means two invocations.
+                # Every model is served by the same local server, and each
+                # must have been pulled. Only one fits in VRAM at a time, so
+                # Ollama swaps them - the first posting of each model waits
+                # for the load.
                 print(f"\n-> {model}", flush=True)
-                per_model[model] = classify_all(rows, args.provider, model)
+                per_model[model] = classify_all(rows, model)
             print_disagreements(rows, per_model)
             return
 
         ###############################
         # ONE MODEL                   #
         ###############################
-        results = classify_all(rows, args.provider, args.model)
+        results = classify_all(rows, args.model)
         if not results:
             print("Nothing classified.")
             return

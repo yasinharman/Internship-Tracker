@@ -21,16 +21,22 @@ internship for the whole company and allocate people afterwards. Throwing that
 away loses real matches, so it gets its own category and stays visible. Only
 postings that NAME a different field are dropped.
 
-TWO PROVIDERS, ONE PROMPT
--------------------------
-The schema, the prompt, and the parsing are shared; only the API call differs
-(~40 lines each). That seam exists because the provider is chosen by
-measurement - pipeline/classify_jobs.py --compare runs the same postings through
-several models and prints only the disagreements. It is not an abstraction
-kept "in case we switch" later.
+ONE LOCAL MODEL
+---------------
+The model runs on this machine, behind Ollama: no API bill, and no posting
+leaves the computer. gemma4:12b was chosen by measurement on 21.09.2026 -
+docs/pipeline.md, "A local model on the 70 labelled rows".
 
-    LLM_PROVIDER       openai | anthropic
-    CLASSIFIER_MODEL   e.g. gpt-5.4-nano, claude-haiku-4-5
+Ollama speaks OpenAI's chat API, so the openai SDK is the client. The OpenAI
+and Anthropic paths that used to sit beside it were removed the same day.
+They existed so that the provider could be chosen by measurement, and it has
+been; git history has them if an API model is ever to be compared again.
+Comparing local models needs neither: tools/eval_classifier.py measures one
+against the stored verdicts, and pipeline/classify_jobs.py --compare runs
+several over the same postings.
+
+    CLASSIFIER_MODEL   default gemma4:12b - `ollama pull` it first
+    CLASSIFIER_URL     default Ollama on this machine
 """
 
 import logging
@@ -41,16 +47,22 @@ from typing import Literal
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODELS = {
-    "openai": "gpt-5.4-nano",
-    "anthropic": "claude-haiku-4-5",
-}
+DEFAULT_MODEL = "gemma4:12b"
 
 # How much of the description is worth sending. The title decides most cases;
 # the description is there to break ties ("Stajyer" at a software house). Full
 # descriptions run to several thousand characters of boilerplate about company
 # culture, which costs tokens and adds nothing.
 DESCRIPTION_CHARS = 1500
+
+# The local server, and what every request to it carries besides the prompt.
+# Left to itself, the server uses each model's own defaults: Gemma 4 and
+# Qwen3.5 reason before answering unless told not to, and each ships its own
+# temperature. LOCAL_REQUEST is the request the model was measured with -
+# tools/eval_classifier.py imports this dict rather than keeping a copy, so
+# what was measured is what runs.
+LOCAL_BASE_URL = "http://127.0.0.1:11434/v1"
+LOCAL_REQUEST = {"temperature": 0, "reasoning_effort": "none"}
 
 
 #####################################################
@@ -65,7 +77,9 @@ class JobCategory(BaseModel):
 # THE PROMPT                                        #
 #####################################################
 # Examples are real rows from our own database, including the ones the regex
-# missed. Kept stable so it can be cached by both providers.
+# missed. Kept stable so the server can reuse the prefix it has already read.
+# Any edit to it is a new experiment: tools/eval_classifier.py records its
+# hash, and the model choice was measured on this exact text.
 SYSTEM_PROMPT = """\
 Sen bir iş ilanı sınıflandırıcısısın. Sana bir staj veya part-time ilanı \
 verilecek; bunun bir YAZILIM/BİLİŞİM öğrencisine uygun olup olmadığına karar \
@@ -124,12 +138,27 @@ def build_user_text(posting):
 
 
 #####################################################
-# OPENAI                                            #
+# ONE POSTING -> ONE CATEGORY                       #
 #####################################################
-def _classify_openai(user_text, model):
+def classify(posting, model=None):
+    """
+    Returns a JobCategory. Raises whatever the openai SDK raises - a
+    connection error when Ollama is not running, a 404 when the model has not
+    been pulled - and the caller decides whether one failed posting should
+    stop the run.
+    """
     from openai import OpenAI
 
-    client = OpenAI()
+    model = model or os.getenv("CLASSIFIER_MODEL") or DEFAULT_MODEL
+
+    # Its own client with a throwaway key, not the SDK's defaults: those read
+    # OPENAI_API_KEY and OPENAI_BASE_URL from the environment, and an older
+    # .env still holds a real key. The local server ignores the key, and a
+    # wrong URL is refused rather than billed.
+    client = OpenAI(
+        base_url=os.getenv("CLASSIFIER_URL") or LOCAL_BASE_URL,
+        api_key="local",
+    )
 
     # The SDK moved this off the `beta` namespace; both spellings are still in
     # the wild, so take whichever this installation has.
@@ -141,61 +170,9 @@ def _classify_openai(user_text, model):
         model=model,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_text},
+            {"role": "user", "content": build_user_text(posting)},
         ],
         response_format=JobCategory,
+        **LOCAL_REQUEST,
     )
     return completion.choices[0].message.parsed
-
-
-#####################################################
-# ANTHROPIC                                         #
-#####################################################
-def _classify_anthropic(user_text, model):
-    import anthropic
-
-    client = anthropic.Anthropic()
-
-    response = client.messages.parse(
-        model=model,
-        max_tokens=512,
-        # The cache_control marker is free to leave in: below the model's
-        # minimum cacheable prefix it simply does nothing, and if the prompt
-        # grows past it later this starts paying off without a code change.
-        # Verify with response.usage.cache_read_input_tokens.
-        system=[{
-            "type": "text",
-            "text": SYSTEM_PROMPT,
-            "cache_control": {"type": "ephemeral"},
-        }],
-        messages=[{"role": "user", "content": user_text}],
-        output_format=JobCategory,
-    )
-    return response.parsed_output
-
-
-#####################################################
-# ONE POSTING -> ONE CATEGORY                       #
-#####################################################
-def classify(posting, provider=None, model=None):
-    """
-    Returns a JobCategory. Raises whatever the provider SDK raises - the
-    caller decides whether one failed posting should stop the run.
-    """
-    provider = (provider or os.getenv("LLM_PROVIDER") or "openai").lower()
-    model = model or os.getenv("CLASSIFIER_MODEL") or DEFAULT_MODELS.get(provider)
-
-    if model is None:
-        raise ValueError(
-            f"Unknown provider {provider!r}. Set LLM_PROVIDER to 'openai' or "
-            f"'anthropic', or pass --provider."
-        )
-
-    user_text = build_user_text(posting)
-
-    if provider == "openai":
-        return _classify_openai(user_text, model)
-    if provider == "anthropic":
-        return _classify_anthropic(user_text, model)
-
-    raise ValueError(f"Unknown provider {provider!r}. Use 'openai' or 'anthropic'.")

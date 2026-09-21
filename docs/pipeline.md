@@ -128,7 +128,8 @@ model's reason beside it, visible in the dashboard's "Neden" column.
 
 | File | Role |
 |---|---|
-| `scraper/classifier.py` | Schema, prompt, one call per provider |
+| `scraper/classifier.py` | Schema, prompt, the call to the local model |
+| `tools/eval_classifier.py` | Measures a model against frozen labels, writes nothing |
 | `pipeline/classify_jobs.py` | Reads `job_category IS NULL`, writes results |
 | `tools/migrate.py` | Adds the three columns (idempotent) |
 
@@ -248,6 +249,157 @@ sees only rows nobody has classified - and by then every row with a
 description will have been. It needs a read-only mode that runs over
 already-classified rows, writes nothing and touches no label. Clearing
 `job_category` to make rows comparable would throw away the stored verdicts.
+Built 21.09.2026 as `tools/eval_classifier.py`, below.
+
+#### A local model on the 70 labelled rows - 21.09.2026
+
+Classification is moving to a model on this machine (the drawing is
+`docs/mimari-yerel-llm.html`). The switch is small: the local server speaks
+OpenAI's API, so the same SDK call works, and the request also has to carry
+the two settings below. So the open question is which model, and this is
+where it is measured.
+
+`tools/eval_classifier.py` freezes the labelled rows into
+`backups/eval-labelled.json` once, runs one model over them and compares with
+the stored `job_category`. It writes nothing to the database, and it only
+talks to a server on this machine: `.env` holds the real OpenAI key, and a
+measurement must not be able to become a bill.
+
+**Held the same for every model:**
+
+- **Server and card:** Ollama 0.34.2 on the RTX 4070 Ti (12 GB). The model is
+  100% on the GPU, context is 4096, and requests go one at a time.
+- **Prompt and cut:** the prompt and `DESCRIPTION_CHARS = 1500` are imported
+  from `scraper/classifier.py`, not copied. Every result file records the
+  prompt's hash (`c6960530ee25c081`).
+- **`temperature=0` and `reasoning_effort="none"`, sent to every model.** Left
+  unset, each model uses its own defaults, and Qwen3.5 and Gemma 4 reason
+  before answering. That would be two variables hidden behind the model name.
+  Reasoning was measured off: 0 characters of it came back.
+- **The model's other shipped defaults are left alone.** qwen3.5 ships
+  `presence_penalty 1.5`, Qwen's own setting for non-reasoning use. gemma4
+  ships none. Their `top_k` and `top_p` do nothing at temperature 0.
+- **Both models are at the same quantization,** Q4_K_M.
+- **The reference** is `gpt-5.4-mini`'s stored verdicts from 12.09-16.09. The
+  70 rows split 41 kariyer.net, 28 Indeed and 1 techcareer, and 25 `it`, 5
+  `general_program`, 40 `other`. Every row has its description.
+
+| Model | Download / in VRAM | it | general_program | other | Agreed | Wrongly hidden | Newly shown | it <-> program | Per posting | 70 rows |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `qwen3.5:9b` | 6.6 / 5.5 GB | 19 | 14 | 37 | 57/70 | 3, **0 on reading** | 6 | 4 | 1.0 s median, 1.3 s p95 | 71 s |
+| **`gemma4:12b`** | 7.6 / 8.1 GB | 26 | 7 | 37 | **61/70** | 3, **0 on reading** | 6 | **0** | 1.2 s median, 1.6-1.7 s p95 | 88-92 s |
+
+**The category is nearly stable; the wording of the reason is not.** Each
+model was run twice for the table, and 0 of 70 categories changed.
+
+gemma4 then ran five more times over the same rows: the concurrency test
+twice, and the production path three times. In the last two, borderline
+postings moved:
+
+| Posting | Categories seen | On the board |
+|---|---|---|
+| Data & Adops Intern | `it`, `general_program` | shown either way |
+| Metot Stajyeri | `other` in five runs, `general_program` in two | hidden or shown |
+
+So temperature 0 does not make the local model fully repeatable. It keeps
+the moves to one or two postings in 70, where `gpt-5.4-mini` moved several.
+No run hid a posting that another run called `it`.
+
+The reason sentence moves more: across the two table runs, 37 of 70 were
+word-for-word identical for gemma4, and 65 of 70 for qwen3.5. The likely cause
+is tiny numerical differences in how the server reuses a cached prompt; that
+is not verified. Only the stored verdict counts, as before, and a posting is
+classified once.
+
+**The three "wrongly hidden" are the reference's mistakes, read one by one.**
+Both models hid the same three, each on its own. All three are Baykar's 2027
+spring internships, and each names another engineering field outright:
+
+| Posting | What the text the model saw says |
+|---|---|
+| Silah Sistemleri - Tasarım, Test, Malzeme | mechanical, structural and hydraulic design teams |
+| Motor Teknolojileri - Analiz | CFD, FEA, thermal and fatigue analysis of gas-turbine engines |
+| Uçuş Bilimleri | asks for Uçak, Uzay, Makine, Kontrol ve Otomasyon or Mekatronik students |
+
+`gpt-5.4-mini` called them `it` on "simulation and modelling". The prompt says
+`other` is for a posting that names another line of work, and these do.
+
+So neither model wrongly hides anything, and both pass the decision rule.
+What separates them is the noise and the `it` / `general_program` line.
+
+**The two models split on 11 postings** (`--diff`). Read one by one:
+
+- **gemma4 is right on five:**
+  - **HR Wıntern (L'Oréal):** qwen's reason says it is an HR role, but it
+    chose `general_program`. The prompt gives "İnsan Kaynakları Stajyeri" as
+    an `other` example, so that is an instruction-following miss.
+  - **İş Geliştirme and Teknik Müşteri Hizmetleri:** both name another field.
+    qwen shows them, gemma4 does not.
+  - **Stajyer (FarklıFikir Bilişim):** the description asks for knowledge of
+    "Yazılım ve web uygulamaları". gemma4 says `it`, qwen `general_program`.
+  - **CED Commercial Excellence:** it accepts Computer Engineering and MIS
+    students. gemma4 says `it`, qwen `general_program`.
+- **qwen is right on one:** the "Stajyer Mühendis" at COLIN'S asks for
+  Endüstri Mühendisliği students. qwen hides it; gemma4 shows it as
+  `general_program`.
+- **Five are either way:**
+  - the two Assistant Product Manager postings: `it` or `general_program`,
+    shown both ways;
+  - Data & Adops Intern;
+  - UI/UX Tasarım, which asks for frontend coding;
+  - "Müzik Öğretmeni - Bilişim Öğretmeni" (part-time), which gemma4 shows.
+
+Both lean towards showing. That is the direction the prompt asks for when in
+doubt, and it costs a row of noise, not a lost posting. qwen's leaning is the
+cruder of the two. It moves four `it` postings to `general_program`, two of
+which ask for software knowledge or Computer Engineering students outright.
+It also shows postings that name HR, business development or customer
+service.
+
+**DECIDED 21.09.2026: `gemma4:12b`, the owner's call.** It is 0.2 s slower
+per posting and takes 2.6 GB more VRAM, and neither matters for a nightly
+batch. The difference is four or five postings in 70, so it is a lean, not a
+verdict. If the local board shows a class of postings being misjudged, the
+same tool measures qwen3.5:9b again on the same frozen rows.
+
+**Nightly load:** 1.0-1.2 s per posting, so 300 postings take about 5-6
+minutes, inside `CLASSIFY_TIMEOUT = 900`.
+
+**`CLASSIFY_CONCURRENCY` stays at 8.** Ollama runs one request at a time
+(`OLLAMA_NUM_PARALLEL = 1`) and queues the rest, so sending 8 at once changes
+nothing but the wait. Measured on gemma4:12b, 70 rows:
+
+| Concurrency | Wall time | Per-request wait, median / max | Categories changed |
+|---|---|---|---|
+| 8 | 91 s | 10.4 s / 12.4 s | 0 |
+| 1 | 91 s | 1.3 s / 2.2 s | 0 |
+
+The longest wait is far inside the SDK's own 600 s timeout.
+
+**How it runs.** `scraper/classifier.py` builds its own client for the local
+server, `CLASSIFIER_URL` (Ollama's address by default), with a throwaway key.
+It does not use `OPENAI_BASE_URL`, which would have sent the real key from an
+older `.env` along with every posting. It sends `LOCAL_REQUEST`, the same dict
+the measuring tool imports. The model is `CLASSIFIER_MODEL`, and gemma4:12b
+when that is unset.
+
+**The OpenAI and Anthropic paths were removed on 21.09.2026, at the owner's
+call.** They existed so the provider could be chosen by measurement, and it has
+been. The file's own rule is that no seam is kept "in case we switch", so the
+code has no `LLM_PROVIDER` any more and needs no API key. git history has both
+paths if an API model is to be compared again. Local models are compared with
+`tools/eval_classifier.py` against the frozen labels, or with `--compare`.
+
+Checked end to end on 21.09.2026: `classify_all()` from
+`pipeline/classify_jobs.py`, with 8 threads and nothing written, sorted all 70
+frozen rows in 91-97 s. Three runs, the last two with `.env` pointing at
+gemma4:12b: 0, 2 and 1 categories differed from the measured run, all of them
+the two borderline postings above.
+
+**If Ollama is not running,** every posting fails with a connection error. It
+stays unclassified and off the board, and the next run picks it up again,
+the same way a failed API call used to. A scheduled run therefore needs
+`ollama.service` up; the install enables it at boot.
 
 ### When a decision looks wrong
 
