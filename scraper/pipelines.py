@@ -1,4 +1,3 @@
-from itemadapter import ItemAdapter
 from sqlalchemy.orm import sessionmaker
 from .models import JobPost, db_connect, create_table
 from datetime import datetime

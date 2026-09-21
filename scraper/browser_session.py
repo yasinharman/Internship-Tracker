@@ -18,7 +18,7 @@ anti-bot vendors alert on.
 """
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 ###################

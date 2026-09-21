@@ -16,7 +16,7 @@ served by ./dev.sh on a laptop, and the Coolify application was deleted on
 """
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv

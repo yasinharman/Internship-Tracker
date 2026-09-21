@@ -41,7 +41,6 @@ SPIDER IS: A BROWSER WINDOW, OPENED ON PURPOSE" below for the measurement
 that says so and the two days of wrong answers it replaced.
 """
 
-import os
 import time
 from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
 

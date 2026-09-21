@@ -106,10 +106,6 @@ SPIDERS = ["kariyernet_cards", "techcareer_api", "indeed_cards"]
 # every wrong turn in those three days came from guessing one of them.
 PARKED_SPIDERS = []
 
-# spider -> spiders that must run straight after it. Empty: the only user was
-# jooble, which handed urls to detail_worker through a file. Both are gone.
-FOLLOW_UP_SPIDERS = {}
-
 ###################################################################
 # IS EACH STORED POSTING STILL ON OFFER?                          #
 ###################################################################
@@ -234,7 +230,10 @@ SPIDER_TIMEOUTS = {
     broad searches still on page 2-3 and 189 postings never checked.
 
     indeed_cards. Measured: 70 requests in the 1800s it had, ~26s each at
-    DOWNLOAD_DELAY 20 (the delay, the navigation, a few 429 retries). Nine
+    DOWNLOAD_DELAY 20 (the delay, the navigation, a few 429 retries).
+    CORRECTED 21.09.2026: the 15.09 log holds 92 crawl requests (1 warm-up,
+    87 pages, 4 x 429), not 70 - see docs/sites/indeed.md. So ~20s each,
+    and the budget below errs long, which is the safe direction. Nine
     searches, each ending at two repeated pages or MAX_PAGES 15. The five
     field searches come to 38 pages between them under that rule; the four
     broad ones never reached their end, so they are counted at 15:
@@ -550,18 +549,6 @@ def run_spiders(spiders=None):
     for spider in spiders:
         results[spider] = run_spider(spider)
 
-        # Only chase a follow-up if the spider that feeds it succeeded - a
-        # follow-up reading stale hand-off data is worse than not running.
-        if results[spider][0]:
-            for follow_up in FOLLOW_UP_SPIDERS.get(spider, []):
-                results[follow_up] = run_spider(follow_up)
-        elif spider in FOLLOW_UP_SPIDERS:
-            for follow_up in FOLLOW_UP_SPIDERS[spider]:
-                print(
-                    f"=== {follow_up}: skipped, {spider} failed ===", flush=True
-                )
-                results[follow_up] = (False, None)
-
     ###########
     # SUMMARY #
     ###########
@@ -849,9 +836,7 @@ if __name__ == "__main__":
 
     if args.list:
         for name in SPIDERS:
-            follow_ups = FOLLOW_UP_SPIDERS.get(name)
-            suffix = f"  (then: {', '.join(follow_ups)})" if follow_ups else ""
-            print(f"{name}{suffix}")
+            print(name)
         # Shown so a parked spider is not silently forgotten - it stays
         # runnable with --spider, it just does not run on a schedule.
         for name in PARKED_SPIDERS:
@@ -871,11 +856,7 @@ if __name__ == "__main__":
     if selected:
         # Parked spiders are runnable by name on purpose: retrying one by hand
         # is how you find out whether it is worth un-parking.
-        runnable = (
-            set(SPIDERS)
-            | set(PARKED_SPIDERS)
-            | {f for group in FOLLOW_UP_SPIDERS.values() for f in group}
-        )
+        runnable = set(SPIDERS) | set(PARKED_SPIDERS)
         unknown = [name for name in selected if name not in runnable]
         if unknown:
             parser.error(
