@@ -912,6 +912,48 @@ entry. So a crawl night is still about 70 listing requests followed by the
 checker's queue. That is the order that was refused on 16.09. Moving the
 check off the crawl night is a change to `main.py`, and it was not made here.
 
+## All of Istanbul's internships in three searches - measured 22.09.2026
+
+The board is for every student from 22.09.2026, and the crawl's only filters
+are "internship" and "Istanbul". This measurement asks what that costs on
+Indeed. Page ONE of each search, anonymous, through one pool address (line
+4, DE; docs/proxies.md), 20 s apart. Seven requests in all, because one was
+repeated after a parsing slip. All returned 200 and none was refused.
+
+The page carries the size of the whole result set as `"totalJobCount":N`, in
+its config rather than in the jobcards blob:
+
+| Search (l=İstanbul) | totalJobCount | Cards on page 1 | Titles that read as internship |
+|---|---|---|---|
+| stajyer | **339** | 15 | 15 |
+| staj | **283** | 15 | 15 |
+| intern | **76** | 15 | 14 |
+| stajyer, `sort=date` | 339 | 15 | 11 - newest first, the first five "Az önce yayınlandı" |
+| stajyer, `sort=date&fromage=1` | **5** | 5 | 4 |
+| stajyer, `sort=date&fromage=3` | **9** | 9 | 7 |
+
+- **"staj" is not "stajyer" to Indeed.** Their first pages shared 7 of 15
+  postings. Only "staj" found Baykar's "2027 Bahar Dönemi Staj | ..." family.
+- **The software terms were never more than a depth workaround.** "stajyer"
+  was cut at `MAX_PAGES = 15`, 225 cards of its 339. That is why "bilgisayar
+  mühendisliği stajyer" had 21 sole finds on 21.09.
+- **Depth.** `start` steps by 10 while a page shows about 15 cards, so a
+  search needs 1 + ceil((total - 15) / 10) pages: stajyer 34, staj 28,
+  intern 8. That is about 70 listing pages to see every Istanbul internship.
+  The software-leaning crawl of 21.09 spent 68 on a partial view.
+- **New postings are few.** "stajyer" gains about 3-5 a day in Istanbul
+  (fromage=1: 5, fromage=3: 9). A "last 3 days" query sorted by date fits on
+  one page. That is the cheap way to keep up once the table is full; it is
+  not built yet.
+
+**Changed the same day (`indeed_cards`):**
+- The searches are "stajyer", "staj" and "intern". The three software terms
+  and "part time" are gone.
+- The title filter reads internship only.
+- Each search reads `totalJobCount` from page 1 and stops at the page that
+  reaches it (`_last_page`). `MAX_PAGES` went from 15 to 40, a circuit
+  breaker now.
+
 ## A full run on an empty table: 343 requests, one refusal - measured 21.09.2026
 
 The table had been emptied first (`backups/job_posts-20260921-120942.csv`),

@@ -48,17 +48,23 @@ job_filters for the evidence.
 """
 
 import json
+import math
 import os
+import re
 from collections import defaultdict
 
 from ..api_spider import BaseApiSpider
 from ..browser_session import BrowserSession, profile_for_impersonate
-from ..job_filters import is_wanted, looks_like_internship, looks_like_parttime
+from ..job_filters import looks_like_internship, looks_like_parttime
 from ..loaders import JsonJobLoader
 from ..session_cookies import describe as describe_cookies
 from ..session_cookies import load_cookies
 
 PROVIDER_KEY = "mosaic-provider-jobcards"
+
+# The size of the whole result set, in the page's own config rather than in
+# the jobcards blob. Found 22.09.2026: "totalJobCount":339 for "stajyer".
+TOTAL_JOB_COUNT = re.compile(r'"totalJobCount":(\d+)')
 
 
 def extract_provider_json(text, key=PROVIDER_KEY):
@@ -198,28 +204,33 @@ class IndeedCardsSpider(BaseApiSpider):
     #
     # _search_priority() below makes the written order the actual order. Same
     # fix as linkedin_cards, and found there first.
+    #####################################################################
+    # EVERY INTERNSHIP IN ISTANBUL, NOT THE SOFTWARE ONES - 22.09.2026  #
+    #####################################################################
+    # The board is for every student now, and the crawl's only filters are
+    # "internship" and "Istanbul" (docs/sites/indeed.md, "All of Istanbul's
+    # internships in three searches"). Everything above about field terms was
+    # written for a software-only board and is history.
+    #
+    # Measured the same day on page ONE of each search (Indeed prints the
+    # size of the whole result set as `totalJobCount`):
+    #
+    #     stajyer   339      staj   283      intern   76
+    #
+    # "staj" is not a spelling of "stajyer" to Indeed: their first pages
+    # shared 7 of 15 postings, and what only "staj" found was Baykar's
+    # "2027 Bahar Dönemi Staj | ..." family. "intern" is the English titles.
+    # The software terms ("yazılım stajyer", "bilgisayar mühendisliği
+    # stajyer", "IT intern") only ever had sole finds because "stajyer" was
+    # cut at 15 pages of its 339; they went, and so did "part time" - 39
+    # postings on 21.09, 3 of them on the board.
+    #
+    # Each search now pages to its own totalJobCount (see _last_page), so
+    # the three are the whole of Istanbul rather than its first 225.
     SEARCHES = {
-        # field: the job-shape term plus what we actually want it to be about
-        "yazilim-stajyer": "yazılım stajyer",
-        "bilgisayar-muhendisligi-stajyer": "bilgisayar mühendisliği stajyer",
-        # "software intern" and "developer intern" were here until 16.09.2026.
-        # Neither was the only finder of anything on 16.09 (15 and 9
-        # postings, 8 pages together), and removing both together lost
-        # nothing: `intern` found 13 of the one's and all 9 of the other's,
-        # and it-intern most of the rest. On 15.09, a run cut short, the
-        # pair's only sole find was a UN communications internship.
-        # docs/sites/indeed.md, "Are the broad searches worth their pages?".
-        "it-intern": "IT intern",
-        # broad: the job-shape terms, high volume, low precision
         "stajyer": "stajyer",
+        "staj": "staj",
         "intern": "intern",
-        "part-time": "part time",
-        # "yari-zamanli": "yarı zamanlı" was here until 16.09.2026. It took 15
-        # pages and was the only finder of 37 postings, none of them
-        # relevant; 33 were one household-help site's babysitting and
-        # cleaning ads. docs/sites/indeed.md, "Are the broad searches worth
-        # their pages?". part-time and stajyer stayed: each is the only way
-        # to a few software postings.
     }
 
     #####################################################################
@@ -270,7 +281,11 @@ class IndeedCardsSpider(BaseApiSpider):
         two wall. Still unmeasured beyond three hours; a scheduled 03:00 run
         is the next data point.
     '''
-    MAX_PAGES = 15
+    # A circuit breaker now, not the depth. Since 22.09.2026 each search stops
+    # at its own totalJobCount (_last_page): "stajyer" had 339 results, which
+    # at a start step of 10 is 34 pages. 40 leaves room for the count to grow
+    # without letting a page that lost its count run on forever.
+    MAX_PAGES = 40
     ANONYMOUS_MAX_PAGES = 1
 
     '''
@@ -327,7 +342,32 @@ class IndeedCardsSpider(BaseApiSpider):
         else:
             self._repeated_pages[search_key] = 0
 
-        return super().next_page_allowed(page, records, search_key)
+        if not super().next_page_allowed(page, records, search_key):
+            return False
+
+        last = self._last_page(search_key)
+        if last is not None and page >= last:
+            self.logger.info(
+                "[%s] page %s is the last its %s result(s) need - stopping",
+                search_key, page, self._total_jobs[search_key],
+            )
+            self.crawler.stats.inc_value("pagination/reached_total")
+            return False
+        return True
+
+    def _last_page(self, search_key):
+        """
+        The page that reaches the search's last result, or None if page one
+        did not say how many there are.
+
+        `start` steps by PAGE_SIZE (10) while a page shows about 15 cards, so
+        page p covers results (p-1)*10 to (p-1)*10+14. Measured 22.09.2026:
+        "stajyer" 339 -> 34 pages, "staj" 283 -> 28, "intern" 76 -> 8.
+        """
+        total = self._total_jobs.get(search_key)
+        if total is None:
+            return None
+        return 1 + max(0, math.ceil((total - 15) / self.PAGE_SIZE))
 
     ###################################################################
     # TLS FINGERPRINT - AND THE HANDLER THAT WAS NEVER INSTALLED      #
@@ -573,6 +613,8 @@ class IndeedCardsSpider(BaseApiSpider):
         # search -> consecutive pages with no posting new to that search.
         # See REPEATED_PAGES_BEFORE_STOP.
         self._repeated_pages = defaultdict(int)
+        # search -> totalJobCount from its first page. See _last_page.
+        self._total_jobs = {}
 
         # The handshake and the User-Agent have to describe the same browser,
         # so the identity follows the token rather than being drawn at random.
@@ -902,12 +944,24 @@ class IndeedCardsSpider(BaseApiSpider):
         search_key = response.meta["search_key"]
         kept = 0
 
+        # The size of the whole result set, printed on every page outside the
+        # jobcards blob. Read from page one so the search knows where it ends.
+        if page == 1:
+            found = TOTAL_JOB_COUNT.search(response.text)
+            if found:
+                self._total_jobs[search_key] = int(found.group(1))
+                self.logger.info(
+                    "[%s] %s result(s) in all - %s page(s)", search_key,
+                    self._total_jobs[search_key], self._last_page(search_key),
+                )
+
         for record in records:
             title = record.get("displayTitle") or record.get("title") or ""
 
             # The keyword search matches the description too, so postings that
-            # are neither an internship nor part-time come back as well.
-            if not is_wanted(title):
+            # are not internships come back as well. Internships only since
+            # 22.09.2026 - part-time put 3 of 39 on the board the day before.
+            if not looks_like_internship(title):
                 continue
 
             jobkey = record.get("jobkey")

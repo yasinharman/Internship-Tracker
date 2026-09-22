@@ -198,17 +198,15 @@ def test_the_description_is_unknown_not_absent():
     assert [i["job_description"] for i in items] == ["N/A", "N/A"]
 
 
-def test_a_card_that_is_neither_part_time_nor_an_internship_is_dropped():
-    spider = _with_session(KariyerNetCardsSpider)
-    items, requests = _split(spider, _listing(
-        2, search_key="parttime", code="F", text="Tam zamanlı",
-        title="Satış Danışmanı",
-    ))
-
-    assert items == []
-    assert spider.crawler.stats.values.get("cards/wanted") == 0
-    # The page still counts for pagination: it had cards, so ask for the next.
-    assert [r.meta["search_key"] for r in requests] == ["parttime"]
+def test_the_only_search_is_every_istanbul_internship():
+    # 22.09.2026: the board is for every student; the crawl filters on
+    # internship and Istanbul only. The part-time search and the department
+    # filter (`wa=`) that picked software roles are both gone.
+    searches = KariyerNetCardsSpider.SEARCHES
+    assert set(searches) == {"staj"} == KariyerNetCardsSpider.INTERNSHIP_SEARCHES
+    assert searches["staj"].endswith("/is-ilanlari/stajyer?ct=34,82")
+    assert "wa=" not in searches["staj"]
+    assert "P" not in KariyerNetCardsSpider.WANTED_WORK_TYPES
 
 
 ###############################################################

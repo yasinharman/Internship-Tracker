@@ -86,7 +86,7 @@ def test_the_crawl_makes_no_detail_request():
     spider = _spider()
     items, requests = _split(spider, _page([
         _record(1, "Yazılım Stajyeri"),
-        _record(2, "Yarı Zamanlı Destek Uzmanı"),
+        _record(2, "Pazarlama Stajyeri"),
     ]))
 
     assert len(items) == 2
@@ -120,14 +120,29 @@ def test_the_description_is_left_to_the_checker():
 
 def test_the_title_types_the_posting():
     spider = _spider()
-    items, _ = _split(spider, _page([
-        _record(1, "Bilgisayar Mühendisliği Stajyeri"),
-        _record(2, "Yarı Zamanlı Satış Danışmanı"),
-    ]))
+    items, _ = _split(spider, _page([_record(1, "Bilgisayar Mühendisliği Stajyeri")]))
 
-    assert [normalize_job_type(i["job_type"]) for i in items] == [
-        "Internship", "Part-Time",
-    ]
+    assert [normalize_job_type(i["job_type"]) for i in items] == ["Internship"]
+
+
+def test_part_time_is_dropped_on_both_passes():
+    """
+    Internships only since 22.09.2026. The scan wants an internship title;
+    the typed pass (2,4 - the site will not take 4 alone) drops a title that
+    says part-time and does not say internship.
+    """
+    spider = _spider()
+    scan, _ = _split(spider, _page([
+        _record(1, "Yarı Zamanlı Satış Danışmanı"),
+        _record(2, "Stajyer"),
+    ], search_key="scan"))
+    typed, _ = _split(spider, _page([
+        _record(3, "Yarı Zamanlı Destek Uzmanı"),
+        _record(4, "Part Time Stajyer"),        # says both - an internship
+    ], search_key="typed"))
+
+    assert [i["job_title"] for i in scan] == ["Stajyer"]
+    assert [i["job_title"] for i in typed] == ["Part Time Stajyer"]
 
 
 def test_a_typed_posting_whose_title_says_neither_is_not_guessed():
@@ -152,7 +167,7 @@ def test_a_typed_posting_whose_title_says_neither_is_not_guessed():
 def test_a_hidden_employer_falls_back_to_na_with_no_logo():
     spider = _spider()
     items, _ = _split(spider, _page([
-        _record(9830, "Yarı Zamanlı Asistan", owner={"name": "", "logo": ""}),
+        _record(9830, "Stajyer Asistan", owner={"name": "", "logo": ""}),
     ]))
 
     assert items[0]["company"] == "N/A"

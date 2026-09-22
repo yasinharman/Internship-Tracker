@@ -41,7 +41,7 @@ type now comes from the title alone - which already outranked the detail's
 import json
 
 from ..api_spider import BaseApiSpider, dig, logo_url
-from ..job_filters import is_wanted, looks_like_internship, looks_like_parttime
+from ..job_filters import looks_like_internship, looks_like_parttime
 from ..loaders import JsonJobLoader
 
 
@@ -164,12 +164,24 @@ class TechCareerApiSpider(BaseApiSpider):
             if not any(city in location for city in self.WANTED_LOCATIONS):
                 continue
 
-            # Everything the site's own filter returns is wanted by definition.
-            # On the full scan we have to read the title, because the list
-            # records carry no working-type field at all.
-            if search_key != "typed":
-                if not is_wanted(record.get("title"), record.get("jobTitle")):
+            # INTERNSHIPS ONLY SINCE 22.09.2026 - the owner dropped part-time on
+            # every site. The list records carry no working-type field, so the
+            # title is all there is to go by.
+            #
+            # "typed" cannot ask the site for internships alone: typeOfWork=4
+            # on its own is HTTP 500 (docs/sites/techcareer.md, re-checked
+            # 14.09), so it sends 2,4 and part-time comes back too. There a
+            # title that says part-time and not internship goes, and one that
+            # says neither stays - the site filed it under one of the two, and
+            # employers mis-code internships (22 of 26 on 10.09).
+            #
+            # "scan" walks the whole index, so its title has to say internship.
+            title, job_title = record.get("title"), record.get("jobTitle")
+            if search_key == "typed":
+                if looks_like_parttime(title, job_title) and not looks_like_internship(title, job_title):
                     continue
+            elif not looks_like_internship(title, job_title):
+                continue
 
             slug = record.get("slug")
             if not slug:

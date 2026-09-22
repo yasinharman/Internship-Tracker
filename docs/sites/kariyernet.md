@@ -345,6 +345,29 @@ paid for.
 - new rows stored with `"N/A"`, then described by `kariyernet_check` -
   `check/description_found` against the number of new postings
 
+### Every internship in Istanbul, no department filter - MEASURED 22.09.2026
+
+The board is for every student from 22.09.2026, so the crawl's only filters
+are internship and Istanbul. One listing request through a pool address
+(line 7, GB), in a windowed Chromium launched as the middleware does:
+
+    https://www.kariyer.net/is-ilanlari/stajyer?ct=34,82
+    -> 200, 1.27 MB, 52 cards on page one, pager links cp=1..4, no block page
+
+That is roughly 200 postings, where the department-filtered search had
+38-49. The page gives no total count, so the pager is the estimate.
+
+**Changed the same day (`kariyernet_cards`):**
+- The "parttime" search is gone.
+- The "staj" search lost its `wa=` department filter; it is `ct=34,82`
+  alone.
+- `WANTED_WORK_TYPES` lost `P`.
+
+**What it means for the checker.** The first run on an empty table has about
+200 posting pages to open. At a wall of about 40 per address, and with the
+pool allowing 4 addresses per site per run, that spans two nights. After
+that, only new postings are opened.
+
 ### What it showed - MEASURED 21.09.2026, a full run on an empty table
 
 The table had been emptied first (`backups/job_posts-20260921-120942.csv`),

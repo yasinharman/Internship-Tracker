@@ -111,6 +111,18 @@ came back typed as Contract. Since 21.09.2026 the crawl no longer fetches the
 detail at all, so `typeOfWorks` is gone from the crawl and the title is the
 only signal. See the section below.
 
+## Internships only - 22.09.2026
+
+The owner dropped part-time on every site. techcareer cannot be asked for
+internships alone: `typeOfWork=4` by itself is HTTP 500 (above), so the
+"typed" pass still sends `2,4`. The spider now drops part-time itself:
+
+- **"typed":** a title that says part-time and not internship is dropped.
+  One that says neither is kept, because the site filed it under one of the
+  two and employers mis-code internships.
+- **"scan":** the title has to read as internship (`looks_like_internship`,
+  was `is_wanted`).
+
 ## Record fields
 
 List: `id`, `title`, `slug`, `jobTitle`, `jobTitleEn`, `location`,

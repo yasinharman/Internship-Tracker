@@ -116,16 +116,23 @@ class KariyerNetCardsSpider(BaseApiSpider):
         `wa=...` is the department list chosen in the UI. To change either,
         redo the search on the site and paste the new address here.
     '''
-    DEPARTMENTS = "ct=34,82&wa=2,5,22,54,55,60,63,78,87"
+    '''
+        EVERY INTERNSHIP IN ISTANBUL - 22.09.2026. Everything above chose
+        departments for a software-only board. The board is for every student
+        now, and the crawl's only filters are "internship" and "Istanbul"; the
+        field is sorted in the app. So:
+
+          * "parttime" is gone - part-time put 1 of 3 postings on the board on
+            21.09, and the owner dropped part-time on every site.
+          * "staj" lost its department filter. Measured the same day, one page
+            through a pool address: `stajyer?ct=34,82` alone is 200, 52 cards
+            on page one, pages 1-4 in the pager - roughly 200 postings, where
+            the department-filtered search had 38-49.
+    '''
+    CITY = "ct=34,82"
 
     SEARCHES = {
-        "parttime": (
-            "https://www.kariyer.net/is-ilanlari/istanbul-part+time"
-            f"?{DEPARTMENTS}&tpst=4"
-        ),
-        "staj": (
-            f"https://www.kariyer.net/is-ilanlari/stajyer?{DEPARTMENTS}"
-        ),
+        "staj": f"https://www.kariyer.net/is-ilanlari/stajyer?{CITY}",
     }
 
     # Searches whose every result is an internship by definition, because the
@@ -142,7 +149,11 @@ class KariyerNetCardsSpider(BaseApiSpider):
     # `S` is dead in practice - zero occurrences across 316 sampled postings -
     # and internships turn up as D (19 of 26 on the internship search), P or F.
     # So this set is a safety net, not the mechanism.
-    WANTED_WORK_TYPES = {"P", "S"}
+    #
+    # `P` left on 22.09.2026 with part-time. The only search left is the
+    # internship one, which keeps everything it returns, so this matters only
+    # if a search outside INTERNSHIP_SEARCHES is ever added again.
+    WANTED_WORK_TYPES = {"S"}
 
     ###############################################################
     # WHAT THIS SPIDER IS: A BROWSER WINDOW, OPENED ON PURPOSE    #

@@ -28,7 +28,7 @@ import scraper.settings as project_settings
 from scraper.spiders.indeed_cards import PROVIDER_KEY, IndeedCardsSpider
 
 SEARCH_URL = (
-    "https://tr.indeed.com/jobs?q=yaz%C4%B1l%C4%B1m+stajyer"
+    "https://tr.indeed.com/jobs?q=stajyer"
     "&l=%C4%B0stanbul&start=0"
 )
 
@@ -46,13 +46,14 @@ def _spider(signed_in=True):
     spider.session.document_headers.return_value = {}
     spider._seen_keys = defaultdict(set)
     spider._repeated_pages = defaultdict(int)
+    spider._total_jobs = {}
     spider._discovery = defaultdict(set)
     spider.crawler = MagicMock()
     spider.__dict__["logger"] = logging.getLogger("indeed-listing-test")
     return spider
 
 
-def _search_page(records, page=1, search_key="yazilim-stajyer"):
+def _search_page(records, page=1, search_key="stajyer"):
     payload = {"metaData": {"mosaicProviderJobCardsModel": {"results": records}}}
     body = (
         "<html><script>window.mosaic.providerData"
@@ -105,7 +106,7 @@ class TestWhatTheCrawlRequests:
         asked = urlparse(requests[0].url)
         assert asked.path == "/jobs"
         assert parse_qs(asked.query)["start"] == ["10"]
-        assert parse_qs(asked.query)["q"] == ["yazılım stajyer"]
+        assert parse_qs(asked.query)["q"] == ["stajyer"]
         # Referred by the page it came from, as a browser would be.
         spider.session.document_headers.assert_called_with(referer=SEARCH_URL)
 
