@@ -975,6 +975,12 @@ was UNKNOWN, though, because the page matched neither `"isJobExpired":true`
 alone nor `false` alone. The body was not saved. `verdict()` now logs how
 the flag appears when it cannot decide.
 
+**The same request again at 13:06 UTC: a Cloudflare challenge.** Same
+address, client and posting. So this path is served some of the time, not
+always, and one request does not measure it. How many `/viewjob` requests an
+address carries before the challenge is the open number
+(`docs/proxies.md`).
+
 ## A full run on an empty table: 343 requests, one refusal - measured 21.09.2026
 
 The table had been emptied first (`backups/job_posts-20260921-120942.csv`),

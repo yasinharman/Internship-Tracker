@@ -238,3 +238,25 @@ Log: `backups/pool-indeed-check-curl-20260922.log`.
   that the word was on the page. The body was not kept. Since then an
   inconclusive Indeed page logs how the flag appears, so the next request
   says whether it was "both" or "a different spelling".
+
+**The same request again, 13:06 UTC** (owner approved; same address, client
+and posting; log `backups/pool-indeed-check-curl-2-20260922.log`): **403,
+`cf-mitigated=challenge`**. Line 17 rests for tr.indeed.com until 23.09 13:06
+UTC. Lines 10 and 18 are the European addresses still free for Indeed.
+
+Line 17's day on Indeed, all curl_cffi `safari184`, anonymous:
+
+| Time | Request | Result |
+|---|---|---|
+| morning | search page 1, `/viewjob` | 200, 200 |
+| 11:42 UTC | `/viewjob` (id=2092) | 200 |
+| 13:06 UTC | `/viewjob` (id=2092) | **challenge** |
+
+- **One request does not judge a client.** Nothing we control changed
+  between the last two, and the answer did. Whether a client works from
+  the pool is a rate out of many requests, not a single pass or fail.
+- **The number the pool is built on is still unmeasured:** how many
+  `/viewjob` requests one address carries before Indeed challenges it. On
+  line 17 the fourth Indeed request of the day was challenged. Line 4 had
+  carried seven search pages that morning without one.
+
