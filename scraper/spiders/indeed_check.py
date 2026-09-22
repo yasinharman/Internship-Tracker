@@ -19,6 +19,7 @@ being true.
 """
 
 import json
+import os
 import re
 from datetime import datetime, timedelta
 
@@ -95,6 +96,44 @@ class IndeedCheckSpider(OpeningCheckMixin, IndeedCardsSpider):
         **IndeedCardsSpider.custom_settings,
         "ITEM_PIPELINES": {},
     }
+
+    #####################################################################
+    # FROM THE POOL: curl_cffi, STRAIGHT TO /viewjob - 22.09.2026       #
+    #####################################################################
+    '''
+        The owner: "indeed check in zaten havuzda olması gerekiyor 1 ip den
+        500 tane ilana istek atamayız".
+
+        Through the pool, this checker as it stands - headless Chromium, a
+        warm-up on the home page first - was refused on that warm-up by four
+        European addresses in a row (docs/proxies.md, "indeed_check through
+        the pool"). The same morning, two of the pool's addresses had been
+        served by curl_cffi with safari184, straight to /jobs and to an
+        anonymous /viewjob.
+
+        INDEED_CHECK_VIA_CURL=1 makes this checker that client:
+          - curl_cffi instead of the browser (CurlImpersonateMiddleware);
+          - no warm-up. That also means no session: the exported cookies
+            only ever ride on the warm-up (api_spider.warmup_cookies), and
+            a posting request carries no Referer (Sec-Fetch-Site: none), the
+            shape the anonymous /viewjob was served in.
+        Off by default until it is measured. Set INDEED_IMPERSONATE=safari184
+        with it if INDEED_COOKIES is set, or the session's Firefox handshake
+        leads the ladder.
+
+        curl_cffi blocks the reactor for each request. This spider runs one
+        request at a time with a long delay anyway, so nothing is lost.
+    '''
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if os.getenv("INDEED_CHECK_VIA_CURL", "").strip().lower() in ("1", "true", "yes", "on"):
+            self.USE_PLAYWRIGHT = False
+            self.IMPERSONATE_WITH_CURL = True
+            self.warmup_url = None
+            self.logger.info(
+                "INDEED_CHECK_VIA_CURL: curl_cffi (%s), no warm-up, no session",
+                self.impersonate_candidates[0],
+            )
 
     ###################################################################
     # A POSTING PAGE IS OPENED WHEN THERE IS SOMETHING TO LEARN       #
@@ -222,4 +261,17 @@ class IndeedCheckSpider(OpeningCheckMixin, IndeedCardsSpider):
             return OPEN
         # Neither: a challenge page, a sign-in wall, or a page shape that has
         # changed. Both: Indeed contradicting itself. Neither is evidence.
+        #
+        # Said out loud since 22.09.2026: the first curl_cffi page from the
+        # pool came back 200 with its description and no verdict, and nothing
+        # in the log told "both" from "neither" or showed how the flag was
+        # written.
+        first = body.find("isJobExpired")
+        self.logger.info(
+            "%s: no verdict - isJobExpired appears %s time(s), %s read as "
+            "true, %s as false; first: %r",
+            response.url, body.count("isJobExpired"), len(EXPIRED.findall(body)),
+            len(NOT_EXPIRED.findall(body)),
+            body[max(first - 20, 0):first + 40] if first >= 0 else None,
+        )
         return UNKNOWN

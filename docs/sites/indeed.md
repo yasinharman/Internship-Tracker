@@ -968,6 +968,13 @@ Indeed refused. The whole table is in `docs/proxies.md`, "`indeed_check`
 through the pool". Until one of the two is measured alone, `indeed_check`
 stays off the pool.
 
+**Measured alone the same day, 11:42 UTC** (`INDEED_CHECK_VIA_CURL=1`,
+curl_cffi `safari184`, no warm-up, no session, line 17, one request): **200**
+with the description. Indeed serves this client from the pool. The verdict
+was UNKNOWN, though, because the page matched neither `"isJobExpired":true`
+alone nor `false` alone. The body was not saved. `verdict()` now logs how
+the flag appears when it cannot decide.
+
 ## A full run on an empty table: 343 requests, one refusal - measured 21.09.2026
 
 The table had been emptied first (`backups/job_posts-20260921-120942.csv`),

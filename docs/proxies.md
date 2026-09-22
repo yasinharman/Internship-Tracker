@@ -220,3 +220,21 @@ HEADLESS"), and on 28.08 Indeed challenged the browser's own fingerprint
 - `indeed_check` stays **out** of `PROXY_POOL_SPIDERS` until a one-variable
   measurement shows how it gets served from a pool address.
 
+**The one-variable measurement, the same day, 11:42 UTC.** The owner
+approved one request. `INDEED_CHECK_VIA_CURL=1` makes `indeed_check` the
+morning's client: curl_cffi with `safari184`, no warm-up, no session, no
+Referer. The run was a dry run of one posting from line 17 only, with
+`PROXY_POOL_MAX_SWITCHES=0`, so at worst one address would rest.
+Log: `backups/pool-indeed-check-curl-20260922.log`.
+
+| Request | Result |
+|---|---|
+| `/viewjob?jk=` (posting id=2092) | **200**, 393 kB, no challenge; `sanitizedJobDescription` read |
+
+- **Served.** So the four refusals were the headless browser, the warm-up,
+  or both - not the addresses.
+- **But no verdict.** The page gave neither a clean `"isJobExpired":true`
+  nor a clean `false` to the regexes. The morning probe had only checked
+  that the word was on the page. The body was not kept. Since then an
+  inconclusive Indeed page logs how the flag appears, so the next request
+  says whether it was "both" or "a different spelling".
