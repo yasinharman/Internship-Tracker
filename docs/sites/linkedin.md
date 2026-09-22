@@ -13,7 +13,103 @@ automating. This is an exception bought with an account we can afford to lose,
 not a refutation. If it is ever pointed at a personal profile, the 27.07 entry
 becomes correct again.
 
-**Status:** OUT OF THE SCRAPING FLOW since 16.09.2026. Two burner accounts were restricted that day, the second before any request, and further requests from this address put the owner's own account at risk (see the last sections). `spiders/linkedin_cards.py` and `spiders/linkedin_check.py` are kept but refuse to start without `LINKEDIN_ENABLED=1`, and `main.py` does not know them.
+**Status 22.09.2026: BACK IN THE FLOW AS A GUEST - no account at all.** `linkedin_cards` searches "stajyer" in Greater Istanbul through the public page and the guest endpoint; `linkedin_check` reads each posting page as a guest. Both carry no session (`STORAGE_STATE_ENV = None`) and refuse to start unless `PROXY_POOL_SPIDERS` lists them, so nothing leaves the home address. The measurements are in the next section. What follows the status line below is the burner era, kept as history.
+
+**Status until 22.09:** OUT OF THE SCRAPING FLOW since 16.09.2026. Two burner accounts were restricted that day, the second before any request, and further requests from this address put the owner's own account at risk (see the last sections). `spiders/linkedin_cards.py` and `spiders/linkedin_check.py` are kept but refuse to start without `LINKEDIN_ENABLED=1`, and `main.py` does not know them.
+
+## A posting page opens with no account - measured 22.09.2026
+
+**No account, no session, no LinkedIn spider.** Two navigations, 20 s apart,
+through a pool address (line 10, DE; `docs/proxies.md`). Each came from a
+fresh, cookie-less context in a windowed Chromium launched as the middleware
+does. The URLs were the owner's.
+
+| URL | Result |
+|---|---|
+| `/jobs/search-results/?currentJobId=...&keywords=AI%20Engineer&geoId=90010422` (the signed-in search UI) | **redirected to `/uas/login`** - "Oturum açın" |
+| `/jobs/view/4439226311/` (one posting) | **200, 281 kB, the whole posting** |
+
+Read back from the saved page, with no further request:
+
+- **The description:** 2,981 characters of it, in
+  `div.show-more-less-html__markup`.
+- **The rest of the posting:** the company (`arabam.com`), the location, the
+  age ("2 hafta önce"), the applicant count, and the criteria block (seniority,
+  employment type, job function, industry).
+- **No closed marker.** The posting was open.
+- **Not a challenge.** "captcha" appeared only as a config attribute
+  (`data-recaptcha-v3-integration-lix-value`).
+- **38 links to other `/jobs/view/` postings** ("similar jobs").
+
+**This corrects the 26.08.2026 line at the top**, "guest access ... is
+genuinely gone", for posting pages. A signed-out visitor on a residential
+address gets the full posting. The signed-in search UI still walls.
+
+**The public search opens, but ignores the internship filter** - measured the
+same day, 13:21, one navigation, no scrolling, pool line 18 (GB), no account:
+
+    /jobs/search/?geoId=90010422&f_E=1
+    -> 200, 342 kB, not walled
+       "Greater Istanbul Konumunda (3,000+ Açık Pozisyon)"
+       60 cards, 60 distinct postings, every location in Greater Istanbul
+       titles that read as internship: 0 of 60
+       ("Senior Java Software Engineer", "Proje Yöneticisi", ...)
+
+`geoId` binds for a guest. `f_E=1` does not: the count is every job in the
+city, not every internship. The page carries no guest pagination url in its
+html; more cards arrive by script on scroll.
+
+**A keyword search does work as a guest** - measured 13:24, two requests in
+one cookie-less context (the page, then the batch a scrolling visitor
+fetches), pool line 18, no account:
+
+| Request | Result |
+|---|---|
+| `/jobs/search/?keywords=stajyer&geoId=90010422` | 200, 332 kB, not walled. "(531 Açık Pozisyon) Stajyer". **60 cards, 60 of 60 internship titles**, English "Intern" titles included, all in Istanbul districts |
+| `/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=stajyer&geoId=90010422&start=25` | 200, 31 kB, **10 cards, all internships, served to a guest** |
+
+The second request answered, but all 10 of its cards were already on page
+one: the page shows 60, so `start=25` falls inside them. **Measured next,
+13:3x, one request, same address:** `start=60` returned 200, 30 kB, **10 cards,
+all 10 new** (none of page one's 60), all 10 internships - "Expansion Intern",
+"Uzun Dönem Satış Stajyeri", "CEO Office Intern". Guest pagination works: the
+page gives 60, then the endpoint gives 10 per request from start=60.
+
+What this means:
+- **Discovery:** all of Istanbul's LinkedIn internships are findable with no
+  account. "stajyer" alone matched 531 postings.
+- **Cost:** about 1 + (531 - 60) / 10, roughly 48 listing requests. On an
+  empty table, every posting also needs its page opened once for the
+  description (see the section above).
+- **No account anywhere.** Nothing a restriction could land on.
+
+**What a closed posting looks like to a guest** - measured the same day, one
+navigation, pool line 10, no account. The posting was `jobs/view/4460320033/`,
+which the burner-era checker had called closed on 02.09.2026 (in
+`backups/job_posts-20260909-173719.csv`):
+
+| Marker | Closed (4460320033) | Open (4439226311) |
+|---|---|---|
+| `closed-job...` classes (`closed-job__flavor--closed`) | **5** | 0 |
+| text | **"Artık başvuru kabul etmiyor"** (Turkish under `tr-TR`; the signed-in page had said it in English) | - |
+| apply link (`data-tracking-control-name="public_jobs_apply-link-..."`) | **0** | 2 |
+| `show-more-less-html__markup` (the description) | present | present |
+
+So a guest checker can decide:
+- **CLOSED:** the page says so, through that class or that sentence.
+- **OPEN:** the apply link is there.
+- **Neither:** UNKNOWN, and nothing is written.
+
+**The guest spiders, first run - 22.09.2026, 13:33.** Kept as small as a real
+run allows, through the pool, no account:
+
+- `linkedin_cards -s CLOSESPIDER_PAGECOUNT=2` left from line 4 (DE). It read
+  the total, 531. Page one gave 60 cards and kept all 60; the guest batch at
+  start=60 gave 10 and kept all 10. Both requests were 200. 70 postings were
+  stored, and all 70 had a logo from the card.
+- `linkedin_check -a dry_run=1` with `OPENINGS_MAX_PER_SITE=2` left from line
+  5 (FR), the address least recently used on this site. It opened 2 posting
+  pages, both 200: 2 open, 0 closed, 0 inconclusive, 2 descriptions.
 
 ## Everything below was measured on 26.08.2026, through the burner session
 

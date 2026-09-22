@@ -121,43 +121,40 @@ class TestIndeed:
 
 
 class TestLinkedIn:
-    """The closed marker here is UNMEASURED - no LinkedIn posting was old
-    enough to have closed when this was written - so the asymmetry is turned
-    up rather than down. Until the marker fires for real, "N open, 0 closed,
-    M inconclusive" is the correct outcome of a run."""
+    """
+    Guest pages since 22.09.2026 - there is no account any more
+    (docs/sites/linkedin.md). MEASURED with no account on two postings: the
+    open one carries the apply link, the closed one the closed-job notice and
+    "Artık başvuru kabul etmiyor", and no apply link.
+    """
 
     def verdict(self, make_checker, body):
         return make_checker(LinkedinCheckSpider).verdict(html(body))
 
-    @pytest.mark.parametrize("label", [
-        "Easy Apply to this job",
-        "Apply on company website",   # measured 27.08.2026 - a third form,
-                                      # and half the board applies this way
-        "Apply to this job",
+    @pytest.mark.parametrize("control", [
+        "public_jobs_apply-link-onsite",     # measured 22.09.2026
+        "public_jobs_apply-link-offsite",    # the same control, employer's site
     ])
-    def test_any_apply_affordance_means_open(self, make_checker, label):
-        assert self.verdict(make_checker, f'<button aria-label="{label}"></button>'.encode()) == OPEN
+    def test_the_apply_link_means_open(self, make_checker, control):
+        body = f'<a data-tracking-control-name="{control}">Başvur</a>'.encode()
+        assert self.verdict(make_checker, body) == OPEN
 
-    @pytest.mark.parametrize("phrase", [
-        "No longer accepting applications",
-        "Bu ilan artık başvuru almıyor",
+    @pytest.mark.parametrize("notice", [
+        '<span class="closed-job__flavor--closed">x</span>',   # measured
+        "<p>Artık başvuru kabul etmiyor</p>",                     # measured
+        "<p>No longer accepting applications</p>",                # signed-in, 27.08
     ])
-    def test_the_page_saying_so_in_words_means_closed(self, make_checker, phrase):
-        assert self.verdict(make_checker, f"<p>{phrase}</p>".encode()) == CLOSED
+    def test_the_page_saying_so_means_closed(self, make_checker, notice):
+        assert self.verdict(make_checker, notice.encode()) == CLOSED
 
     def test_a_rendered_page_with_neither_is_unknown(self, make_checker):
-        assert self.verdict(make_checker, b'<h2>About the job</h2>') == UNKNOWN
+        body = b'<h1 class="top-card-layout__title">Intern</h1>'
+        assert self.verdict(make_checker, body) == UNKNOWN
 
-    def test_a_page_that_never_rendered_is_unknown_and_counted(self, make_checker):
+    def test_an_unreadable_page_is_unknown_and_counted(self, make_checker):
         spider = make_checker(LinkedinCheckSpider)
-        assert spider.verdict(html(b'<div>Sign in</div>')) == UNKNOWN
-        assert spider.crawler.stats.values["linkedin/unreadable_detail"] == 1
-
-    def test_the_closed_marker_is_counted_when_it_first_fires(self, make_checker):
-        # This counter is how the missing measurement announces itself.
-        spider = make_checker(LinkedinCheckSpider)
-        spider.verdict(html(b'<p>No longer accepting applications</p>'))
-        assert spider.crawler.stats.values["linkedin/closed_marker_seen"] == 1
+        assert spider.verdict(html(b"<div>Oturum a\xc3\xa7\xc4\xb1n</div>")) == UNKNOWN
+        assert spider.crawler.stats.values["linkedin/unreadable_posting"] == 1
 
 
 class TestNobodyGuesses:

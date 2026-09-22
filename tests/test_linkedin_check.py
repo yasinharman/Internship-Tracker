@@ -1,238 +1,86 @@
 """
-linkedin_check: the wait for the job page, and the time it is given.
+Is a LinkedIn posting still open - read as a guest.
 
-15.09.2026. Three things the checker got wrong without any run saying so:
+Measured 22.09.2026 on two postings with no account (docs/sites/linkedin.md):
+an open one carries the apply link (`public_jobs_apply-link-onsite`), a closed
+one carries `closed-job__flavor--closed` and "Artık başvuru kabul etmiyor"
+and no apply link. Both carry the description in
+`div.show-more-less-html__markup`.
 
-  * DETAIL_MARKERS was a hand-written copy of APPLY_MARKERS that never learned
-    "Apply on company website", so a page applying on the employer's site and
-    carrying no description box sat out the whole wait and was counted as
-    never rendered.
-  * the wait ended on the FIRST marker, so content() could be read before the
-    description box arrived - and since 12.09.2026 a LinkedIn row without a
-    description is never classified.
-  * main.py gave it the shared 1200s, about 140 postings of a 760-row board.
+The asymmetry every checker keeps: CLOSED only when the page says so, OPEN
+only with the apply link, anything else UNKNOWN - a wall must never remove a
+real posting from the board.
 
-Nothing here touches the network or the database. The page and the parent's
-load_open_postings are stand-ins.
+Nothing here opens a browser or sends a request.
 """
 
-import time
-
 import pytest
-from parsel import Selector
-from scrapy.http import HtmlResponse, Request
-from scrapy.settings import Settings
+from scrapy import Request
+from scrapy.http import HtmlResponse
 
-import main
-from scraper.openings import CLOSED, OPEN, OpeningCheckMixin
-from scraper.spiders.linkedin_check import APPLY_MARKERS, LinkedinCheckSpider
+from scraper.openings import CLOSED, OPEN, UNKNOWN
+from scraper.spiders.linkedin_check import LinkedinCheckSpider
 
-
-def html(body, posting_id=7):
-    return HtmlResponse(
-        url="https://www.linkedin.com/jobs/view/4459636725/",
-        body=body, encoding="utf-8",
-        request=Request("https://www.linkedin.com/jobs/view/4459636725/",
-                        meta={"posting_id": posting_id}),
-    )
+URL = "https://www.linkedin.com/jobs/view/4439226311/"
+DESCRIPTION = (
+    '<div class="show-more-less-html__markup"><strong>About the Role</strong>'
+    "<p>We are looking for an intern.</p></div>"
+)
 
 
-class FakePage:
-    """
-    Answers wait_for_selector the way a page would.
+class _Stats:
+    def __init__(self):
+        self.values = {}
 
-    `renders` is what exists once the page has rendered; `late` is what turns
-    up only if you keep waiting; everything else never appears.
-    """
-
-    def __init__(self, renders=(), late=()):
-        self.renders = set(renders)
-        self.late = set(late)
-        self.waited_for = []
-
-    def wait_for_selector(self, selector, timeout):
-        self.waited_for.append(selector)
-        wanted = {part.strip() for part in selector.split(", ")}
-        if wanted & self.renders:
-            return
-        if wanted & self.late:
-            time.sleep(0.3)
-            return
-        raise TimeoutError(selector)
+    def inc_value(self, key, count=1, start=0):
+        self.values[key] = self.values.get(key, start) + count
 
 
-BOX = LinkedinCheckSpider.DESCRIPTION_BOX
-COMPANY_SITE = '[aria-label="Apply on company website"]'
-EASY_APPLY = '[aria-label="Easy Apply to this job"]'
-DETAIL = Request("https://www.linkedin.com/jobs/view/1/", meta={"posting_id": 1})
+@pytest.fixture
+def spider(monkeypatch):
+    monkeypatch.setenv("PROXY_POOL_SPIDERS", "linkedin_cards,linkedin_check")
+    instance = LinkedinCheckSpider()
+    instance.crawler = type("C", (), {"stats": _Stats()})()
+    return instance
 
 
-class TestTheWaitForTheJobPage:
-
-    @pytest.mark.parametrize("marker", APPLY_MARKERS)
-    def test_every_apply_control_the_verdict_knows_ends_the_wait(self, marker):
-        # The drift this replaced: the verdict knew three, the wait knew two.
-        page = Selector(text=f"<button {marker}></button>")
-        assert page.css(LinkedinCheckSpider.DETAIL_MARKERS)
-
-    def test_the_description_box_ends_the_wait_too(self):
-        # A closed posting has no apply control; this is how its page is read.
-        page = Selector(text='<div data-testid="expandable-text-box">x</div>')
-        assert page.css(LinkedinCheckSpider.DETAIL_MARKERS)
-
-    def test_the_feed_is_not_waited_on(self, make_checker):
-        spider = make_checker(LinkedinCheckSpider)
-        page = FakePage()
-        spider.page_actions(page, Request("https://www.linkedin.com/feed/"))
-        assert page.waited_for == []
-
-    def test_a_box_already_there_costs_nothing_and_counts_nothing(self, make_checker):
-        spider = make_checker(LinkedinCheckSpider)
-        spider.page_actions(FakePage(renders={EASY_APPLY, BOX}), DETAIL)
-        assert "linkedin/description_box_late" not in spider.crawler.stats.values
-        assert "linkedin/description_box_absent" not in spider.crawler.stats.values
-
-    def test_a_box_that_arrives_after_the_button_is_waited_for(self, make_checker):
-        spider = make_checker(LinkedinCheckSpider)
-        spider.page_actions(FakePage(renders={COMPANY_SITE}, late={BOX}), DETAIL)
-        assert spider.crawler.stats.values["linkedin/description_box_late"] == 1
-
-    def test_a_box_that_never_comes_is_counted(self, make_checker):
-        spider = make_checker(LinkedinCheckSpider)
-        spider.page_actions(FakePage(renders={COMPANY_SITE}), DETAIL)
-        stats = spider.crawler.stats.values
-        assert stats["linkedin/description_box_absent"] == 1
-        assert "linkedin/detail_never_rendered" not in stats
-
-    def test_a_page_that_never_rendered_is_not_waited_on_twice(self, make_checker):
-        spider = make_checker(LinkedinCheckSpider)
-        page = FakePage()
-        spider.page_actions(page, DETAIL)
-        assert spider.crawler.stats.values["linkedin/detail_never_rendered"] == 1
-        assert len(page.waited_for) == 1
+def _page(body):
+    return HtmlResponse(URL, body=f"<html><body>{body}</body></html>", encoding="utf-8",
+                        request=Request(URL))
 
 
-class TestTheTimeItIsGiven:
-
-    def test_the_ceiling_clears_a_board_of_a_thousand_at_the_worst_rate(self):
-        closes_at = main.soft_close_after(main.SPIDER_TIMEOUTS["linkedin_check"])
-        worst_case = 1000 * LinkedinCheckSpider.WORST_S_PER_POSTING
-        assert closes_at > worst_case, (
-            f"linkedin_check can take {worst_case / 60:.0f} min for 1000 "
-            f"postings but closes at {closes_at / 60:.0f} min"
-        )
-
-    def test_the_worst_rate_follows_the_delay(self):
-        # 1.5x is the throttle's upper bound; the rest is the fetch itself.
-        delay = LinkedinCheckSpider.custom_settings["DOWNLOAD_DELAY"]
-        assert LinkedinCheckSpider.WORST_S_PER_POSTING >= delay * 1.5
-
-    def test_a_board_too_big_for_the_ceiling_is_said_at_the_start(
-        self, make_checker, monkeypatch, caplog,
-    ):
-        rows = [{"id": n, "url": f"u{n}", "job_title": "t"} for n in range(300)]
-        monkeypatch.setattr(OpeningCheckMixin, "load_open_postings", lambda self: rows)
-        spider = make_checker(LinkedinCheckSpider)
-        spider.crawler.settings = Settings({"CLOSESPIDER_TIMEOUT": 600})
-
-        with caplog.at_level("WARNING"):
-            assert spider.load_open_postings() == rows
-        assert "will not all fit" in caplog.text
-
-    def test_a_board_that_fits_says_nothing(self, make_checker, monkeypatch, caplog):
-        rows = [{"id": n, "url": f"u{n}", "job_title": "t"} for n in range(300)]
-        monkeypatch.setattr(OpeningCheckMixin, "load_open_postings", lambda self: rows)
-        spider = make_checker(LinkedinCheckSpider)
-        spider.crawler.settings = Settings(
-            {"CLOSESPIDER_TIMEOUT": main.soft_close_after(main.SPIDER_TIMEOUTS["linkedin_check"])}
-        )
-
-        with caplog.at_level("WARNING"):
-            spider.load_open_postings()
-        assert "will not all fit" not in caplog.text
+OPEN_PAGE = (
+    '<h1 class="top-card-layout__title">Forward Deployed AI Engineer</h1>'
+    '<a data-tracking-control-name="public_jobs_apply-link-onsite">Başvur</a>' + DESCRIPTION
+)
+CLOSED_PAGE = (
+    '<h1 class="top-card-layout__title">Software Engineer</h1>'
+    '<figure class="closed-job"><span class="closed-job__flavor--closed">'
+    "Artık başvuru kabul etmiyor</span></figure>" + DESCRIPTION
+)
 
 
-class TestWhatTheRunLeavesToLookAt:
-
-    def test_a_closed_marker_beside_an_apply_control_is_counted_not_acted_on(
-        self, make_checker,
-    ):
-        spider = make_checker(LinkedinCheckSpider)
-        body = (b'<p>No longer accepting applications</p>'
-                b'<button aria-label="Easy Apply to this job"></button>')
-        assert spider.verdict(html(body)) == CLOSED
-        assert spider.crawler.stats.values["linkedin/closed_marker_beside_apply"] == 1
-
-    def test_a_plain_closed_page_is_not_flagged(self, make_checker):
-        spider = make_checker(LinkedinCheckSpider)
-        spider.verdict(html(b'<p>No longer accepting applications</p>'))
-        assert "linkedin/closed_marker_beside_apply" not in spider.crawler.stats.values
-
-    def test_an_open_page_without_a_description_is_kept_when_asked(
-        self, make_checker, monkeypatch, tmp_path,
-    ):
-        monkeypatch.setenv("LINKEDIN_DUMP_DIR", str(tmp_path))
-        spider = make_checker(LinkedinCheckSpider)
-        spider.crawler.stats.get_value = (
-            lambda key, default=None: spider.crawler.stats.values.get(key, default)
-        )
-        response = html(b'<button aria-label="Apply on company website"></button>')
-
-        assert spider.verdict(response) == OPEN
-        assert spider.description(response) is None
-        assert (tmp_path / "7-no-description.html").exists()
-
-    def test_a_wall_is_not_kept(self, make_checker, monkeypatch, tmp_path):
-        monkeypatch.setenv("LINKEDIN_DUMP_DIR", str(tmp_path))
-        spider = make_checker(LinkedinCheckSpider)
-        spider.crawler.stats.get_value = (
-            lambda key, default=None: spider.crawler.stats.values.get(key, default)
-        )
-        spider.description(html(b'<div>Sign in</div>'))
-        assert list(tmp_path.iterdir()) == []
-
-    def test_nothing_is_kept_unless_asked(self, make_checker, monkeypatch, tmp_path):
-        monkeypatch.delenv("LINKEDIN_DUMP_DIR", raising=False)
-        monkeypatch.chdir(tmp_path)
-        spider = make_checker(LinkedinCheckSpider)
-        spider.description(html(b'<button aria-label="Easy Apply to this job"></button>'))
-        assert list(tmp_path.iterdir()) == []
+def test_an_apply_link_means_open(spider):
+    assert spider.verdict(_page(OPEN_PAGE)) == OPEN
 
 
-def test_each_page_is_read_before_the_next_is_fetched():
-    """
-    SCRAPER_SLOT_MAX_ACTIVE_SIZE, measured 15.09.2026: at Scrapy's 5 MB the
-    full run fetched 57 job pages before deciding one verdict, so WRITE_EVERY
-    never got its chance. Starting a real crawler here would need the reactor,
-    so this pins the setting and linkedin_check.py carries the measurement.
-    """
-    assert LinkedinCheckSpider.custom_settings["SCRAPER_SLOT_MAX_ACTIVE_SIZE"] == 1
+def test_the_closed_notice_means_closed(spider):
+    assert spider.verdict(_page(CLOSED_PAGE)) == CLOSED
 
 
-class TestTheUnknownPageIsKept:
-    """15.09.2026, id=1042: rendered, described, and no apply control we know."""
+def test_a_page_that_says_neither_is_unknown(spider):
+    # A sign-in wall, a challenge, a page that never rendered.
+    assert spider.verdict(_page("<h1>Oturum açın</h1>")) == UNKNOWN
+    assert spider.crawler.stats.values["linkedin/unreadable_posting"] == 1
 
-    def _spider(self, make_checker, monkeypatch, tmp_path):
-        monkeypatch.setenv("LINKEDIN_DUMP_DIR", str(tmp_path))
-        spider = make_checker(LinkedinCheckSpider)
-        spider.crawler.stats.get_value = (
-            lambda key, default=None: spider.crawler.stats.values.get(key, default)
-        )
-        return spider
 
-    def test_a_rendered_page_with_neither_marker_is_kept(self, make_checker, monkeypatch, tmp_path):
-        spider = self._spider(make_checker, monkeypatch, tmp_path)
-        spider.verdict(html(b"<h2>About the job</h2><button>Apply now</button>"))
-        assert (tmp_path / "7-unknown.html").exists()
+def test_the_description_is_read_from_the_same_page(spider):
+    assert spider.description(_page(OPEN_PAGE)) == "About the Role We are looking for an intern."
+    assert spider.description(_page("<h1>Oturum açın</h1>")) is None
 
-    def test_an_unrendered_page_is_not_kept(self, make_checker, monkeypatch, tmp_path):
-        spider = self._spider(make_checker, monkeypatch, tmp_path)
-        spider.verdict(html(b"<div>Sign in</div>"))
-        assert list(tmp_path.iterdir()) == []
 
-    def test_the_limit_is_shared_by_both_kinds(self, make_checker, monkeypatch, tmp_path):
-        monkeypatch.setenv("LINKEDIN_DUMP_MAX", "1")
-        spider = self._spider(make_checker, monkeypatch, tmp_path)
-        spider.verdict(html(b"<h2>About the job</h2>", posting_id=1))
-        spider.description(html(b'<button aria-label="Easy Apply to this job"></button>', posting_id=2))
-        assert [p.name for p in tmp_path.iterdir()] == ["1-unknown.html"]
+def test_every_posting_is_opened_as_a_new_visitor(spider):
+    request = spider.probe_request({"id": 7, "url": URL})
+    assert request.url == URL
+    assert request.meta["fresh_context"] is True
+    assert request.meta["posting_id"] == 7

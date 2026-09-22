@@ -66,15 +66,17 @@ SCRAPY_PROJECT_FOLDER = "scraper"
 # been deleted - see docs/sites/ for what each site actually turned out to
 # need, and git history for the old code.
 # LinkedIn came back on 26.08.2026 after a month out of scope, on a burner
-# account - and is OUT OF THE FLOW AGAIN SINCE 16.09.2026. That day the burner
-# was restricted, and a second one was restricted the moment it was opened,
-# before this project had sent it a request. Both came from this machine and
-# this address, which is also where the owner's own account lives, so every
-# further LinkedIn request risks that account too. linkedin_cards and
-# linkedin_check are in neither SPIDERS, PARKED_SPIDERS nor CHECKER_FOR, and
-# the spiders refuse to start without LINKEDIN_ENABLED=1.
-# docs/sites/linkedin.md has the whole of it.
-SPIDERS = ["kariyernet_cards", "techcareer_api", "indeed_cards"]
+# account - and was OUT OF THE FLOW from 16.09.2026. That day the burner was
+# restricted, and a second one was restricted the moment it was opened,
+# before this project had sent it a request.
+#
+# BACK SINCE 22.09.2026, WITH NO ACCOUNT AT ALL. Measured that day through
+# the bought IP pool: LinkedIn serves its public search and its posting
+# pages to a guest (docs/sites/linkedin.md). Both LinkedIn spiders carry no
+# session and refuse to start unless PROXY_POOL_SPIDERS lists them, so no
+# LinkedIn request leaves this address - the one the restricted accounts
+# were tied to.
+SPIDERS = ["kariyernet_cards", "techcareer_api", "indeed_cards", "linkedin_cards"]
 
 # indeed_cards was parked from 28.07.2026 to 30.07.2026. Un-parked on the
 # terms the parking comment itself set: a static residential address and the
@@ -127,6 +129,7 @@ CHECKER_FOR = {
     "kariyernet_cards": "kariyernet_check",
     "techcareer_api": "techcareer_check",
     "indeed_cards": "indeed_check",
+    "linkedin_cards": "linkedin_check",
 }
 
 CHECK_SPIDERS = list(CHECKER_FOR.values())

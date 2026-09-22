@@ -142,13 +142,13 @@ def test_a_parked_site_named_by_hand_is_still_checked(ran, waits, monkeypatch):
     assert ran == ["indeed_check"]
 
 
-def test_linkedin_is_out_of_the_flow_entirely():
-    # 16.09.2026: two burner accounts restricted from this address. Not
-    # parked - parked spiders stay runnable with --spider.
-    assert "linkedin_cards" not in main.SPIDERS
+def test_linkedin_is_back_as_a_guest():
+    # Out of the flow from 16.09.2026 (two burner accounts restricted); back
+    # on 22.09.2026 with no account, from the pool only - the spiders refuse
+    # to start otherwise (tests/test_linkedin_cards.py).
+    assert "linkedin_cards" in main.SPIDERS
+    assert main.CHECKER_FOR["linkedin_cards"] == "linkedin_check"
     assert "linkedin_cards" not in main.PARKED_SPIDERS
-    assert "linkedin_cards" not in main.CHECKER_FOR
-    assert "linkedin_check" not in main.CHECK_SPIDERS
 
 
 ###############################################################

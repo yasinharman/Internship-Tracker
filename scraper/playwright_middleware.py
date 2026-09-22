@@ -286,6 +286,13 @@ class PlaywrightMiddleware:
         every later call, so the reason cannot scroll past unnoticed.
         """
         env_var = getattr(spider, "STORAGE_STATE_ENV", "INDEED_STORAGE_STATE")
+        # A spider that must never carry an account says so with None - the
+        # guest LinkedIn spiders since 22.09.2026 - and no variable is read,
+        # so no exported session can be loaded into its browser by accident.
+        if env_var is None:
+            self.storage_state_env = None
+            self.storage_state_path = None
+            return
         raw_path = (os.getenv(env_var) or "").strip()
         if raw_path and not os.path.isfile(raw_path):
             raise RuntimeError(
