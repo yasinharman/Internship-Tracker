@@ -954,6 +954,20 @@ its config rather than in the jobcards blob:
   reaches it (`_last_page`). `MAX_PAGES` went from 15 to 40, a circuit
   breaker now.
 
+## `indeed_check` from the pool: refused before the first posting - 22.09.2026
+
+A dry run of `indeed_check` through the pool, 11:09-11:10 UTC. Its warm-up to
+the home page drew a **403 on four European addresses in a row** (lines 4-7),
+from headless Chromium with no session. Nothing was checked. Those four
+addresses rest for Indeed until 23.09 11:10 UTC.
+
+The same morning, line 4 had served seven searches and line 17 an anonymous
+`/viewjob`. Both went through curl_cffi (`safari184`) with no warm-up. The
+dry run changed the transport AND the first URL, so it does not say which one
+Indeed refused. The whole table is in `docs/proxies.md`, "`indeed_check`
+through the pool". Until one of the two is measured alone, `indeed_check`
+stays off the pool.
+
 ## A full run on an empty table: 343 requests, one refusal - measured 21.09.2026
 
 The table had been emptied first (`backups/job_posts-20260921-120942.csv`),

@@ -16,6 +16,11 @@ The owner's rules, 22.09.2026:
   * A refused address rests 24 hours for the site that refused it.
   * At most 3 switches per site per run, so one bad night cannot burn the
     whole pool on one site.
+  * No address carries a site's whole run: after PROXY_POOL_ROTATE_AFTER
+    requests (30) it hands over to the next, without resting. The owner, the
+    same day: "1 IP'den 500 tane ilana istek atamayız". A full check queue
+    is spread over the pool instead of waiting for one address to be
+    refused. 30 sits under kariyer.net's measured wall of 34-43.
   * The pace does not change. A pool spreads the requests; it is not a
     licence to send more of them (memory: probing-a-site-costs-the-address).
 
@@ -38,7 +43,8 @@ FILES, ALL IN proxies/ (GIT-IGNORED)
                   the run that caused it.
 
     PROXY_POOL_FILE / PROXY_POOL_META / PROXY_POOL_STATE override the paths.
-    PROXY_POOL_REST_HOURS (24) and PROXY_POOL_MAX_SWITCHES (3) the rules.
+    PROXY_POOL_REST_HOURS (24), PROXY_POOL_MAX_SWITCHES (3) and
+    PROXY_POOL_ROTATE_AFTER (30) the rules.
 """
 
 import json
@@ -192,15 +198,24 @@ class PoolState:
 # ONE RUN'S VIEW OF THE POOL                        #
 #####################################################
 class ProxyPool:
-    def __init__(self, addresses, state, rest_hours=24, max_switches=3, clock=utcnow):
+    def __init__(self, addresses, state, rest_hours=24, max_switches=3,
+                 rotate_after=30, clock=utcnow):
         self.addresses = addresses
         self.state = state
         self.rest_hours = rest_hours
         self.max_switches = max_switches
+        self.rotate_after = rotate_after
         self.clock = clock
         self.current = {}
         self.switches = defaultdict(int)
         self.given_up = {}
+        # (site, ip) -> requests this run, and the pairs that have done their
+        # share. A full address is not resting: it is simply not asked again
+        # by this site until the next run.
+        self.served = defaultdict(int)
+        self.full = set()
+        # site -> responses it answered this run. See on_refusal.
+        self.answered = defaultdict(int)
 
     @classmethod
     def from_env(cls):
@@ -218,6 +233,7 @@ class ProxyPool:
             PoolState(state_path),
             rest_hours=float(os.getenv("PROXY_POOL_REST_HOURS", "24")),
             max_switches=int(os.getenv("PROXY_POOL_MAX_SWITCHES", "3")),
+            rotate_after=int(os.getenv("PROXY_POOL_ROTATE_AFTER", "30")),
         )
         tiers = defaultdict(int)
         for address in pool.addresses:
@@ -235,7 +251,10 @@ class ProxyPool:
 
     def _choose(self, site):
         now = self.clock()
-        free = [a for a in self.addresses if not self.state.resting_until(site, a.ip, now)]
+        free = [
+            a for a in self.addresses
+            if not self.state.resting_until(site, a.ip, now) and (site, a.ip) not in self.full
+        ]
         if not free:
             return None
         return min(free, key=lambda a: (a.tier, self.state.last_used(site, a.ip), a.line))
@@ -248,7 +267,7 @@ class ProxyPool:
         if address is None:
             address = self._choose(site)
             if address is None:
-                self._give_up(site, "every address is resting for this site")
+                self._give_up(site, "every address is resting or has done its share this run")
                 return None
             self.current[site] = address
             logger.info("%s leaves from %s (%s)", site, address.label, TIER_NAMES[address.tier])
@@ -256,6 +275,21 @@ class ProxyPool:
 
     def note_request(self, site, address):
         self.state.note_request(site, address.ip, self.clock())
+        self.served[(site, address.ip)] += 1
+        if self.rotate_after and self.served[(site, address.ip)] >= self.rotate_after:
+            # Its share is done: the next request from this site takes the
+            # next address. Not a refusal - nothing rests, no switch counted.
+            self.full.add((site, address.ip))
+            if self.current.get(site) == address:
+                self.current.pop(site)
+            logger.info(
+                "%s: %s has carried %s requests this run - handing over",
+                site, address.label, self.served[(site, address.ip)],
+            )
+
+    def note_answer(self, site):
+        """A response from this site that was not a refusal."""
+        self.answered[site] += 1
 
     def on_refusal(self, site, ip, reason):
         """
@@ -278,6 +312,19 @@ class ProxyPool:
         )
         if self.switches[site] >= self.max_switches:
             self._give_up(site, f"{self.max_switches} switches used this run")
+            return None
+        # TWO FRESH ADDRESSES REFUSED BEFORE ANY ANSWER - 22.09.2026. Then it
+        # is not the address the site is refusing but the client, and every
+        # further switch only rests another good address. Measured the hard
+        # way: indeed_check, headless Chromium with no session, was refused
+        # on its first request from four European addresses in a row - one
+        # of which had served Indeed seven times that morning through
+        # curl_cffi. Stop at the second.
+        if self.answered[site] == 0 and self.switches[site] >= 1:
+            self._give_up(
+                site, "refused on two addresses before answering once - the "
+                      "client, not the address; no further address is spent",
+            )
             return None
         self.switches[site] += 1
         return self.address_for(site)

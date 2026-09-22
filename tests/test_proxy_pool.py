@@ -150,6 +150,7 @@ def test_the_rest_lasts_24_hours_and_outlives_the_run(pool, files, clock):
 
 def test_reserve_is_used_once_every_european_address_rests(pool):
     site = "kariyer.net"
+    pool.note_answer(site)      # the site has served this run - see below
     pool.on_refusal(site, pool.address_for(site).ip, "403")        # FR
     reserve = pool.on_refusal(site, pool.address_for(site).ip, "403")  # DE
     assert reserve.tier == 1
@@ -157,6 +158,7 @@ def test_reserve_is_used_once_every_european_address_rests(pool):
 
 def test_three_switches_then_the_site_is_done_for_the_run(pool):
     site = "kariyer.net"
+    pool.note_answer(site)
     for _ in range(3):
         assert pool.on_refusal(site, pool.address_for(site).ip, "403") is not None
     assert pool.on_refusal(site, pool.address_for(site).ip, "403") is None
@@ -251,6 +253,7 @@ def test_a_refused_pooled_request_is_retried_from_the_next_address(blocks, pool)
 
 def test_when_the_pool_is_spent_the_request_is_dropped(blocks, pool):
     url = "https://www.kariyer.net/is-ilani/x-123"
+    pool.note_answer("kariyer.net")
     for _ in range(3):
         request, response = _refused(url, pool.address_for("kariyer.net").ip)
         blocks.process_response(request, response, _spider("kariyernet_check"))
@@ -258,3 +261,88 @@ def test_when_the_pool_is_spent_the_request_is_dropped(blocks, pool):
     request, response = _refused(url, pool.address_for("kariyer.net").ip)
     with pytest.raises(IgnoreRequest):
         blocks.process_response(request, response, _spider("kariyernet_check"))
+
+
+#####################################################################
+# NO ADDRESS CARRIES A SITE'S WHOLE RUN - 22.09.2026                #
+#####################################################################
+# The owner: "1 IP'den 500 tane ilana istek atamayız". After its share of
+# requests an address hands over to the next - nothing rests, no switch is
+# counted, and it is free again next run.
+
+def _pool(files, clock, rotate_after):
+    return ProxyPool(
+        load_addresses(files / "list.txt", files / "meta.json"),
+        PoolState(files / "state.json"), rotate_after=rotate_after, clock=clock,
+    )
+
+
+def test_an_address_hands_over_after_its_share(files, clock):
+    pool = _pool(files, clock, rotate_after=2)
+    first = pool.address_for("tr.indeed.com")
+    pool.note_request("tr.indeed.com", first)
+    assert pool.address_for("tr.indeed.com") is first
+    pool.note_request("tr.indeed.com", first)
+
+    second = pool.address_for("tr.indeed.com")
+    assert second.ip != first.ip and second.tier == 0
+    assert pool.switches["tr.indeed.com"] == 0
+    assert not pool.state.resting_until("tr.indeed.com", first.ip, clock.now)
+
+
+def test_reserve_takes_over_once_every_european_address_has_done_its_share(files, clock):
+    pool = _pool(files, clock, rotate_after=1)
+    for _ in range(2):                        # the two European addresses
+        pool.note_request("x.test", pool.address_for("x.test"))
+    assert pool.address_for("x.test").tier == 1
+
+
+def test_when_every_address_has_done_its_share_the_site_waits_for_the_next_run(files, clock):
+    pool = _pool(files, clock, rotate_after=1)
+    for _ in range(5):
+        pool.note_request("x.test", pool.address_for("x.test"))
+    assert pool.address_for("x.test") is None
+    assert "share" in pool.given_up["x.test"]
+
+    clock.now = T0 + timedelta(days=3)        # the next run: all free again
+    next_run = ProxyPool(pool.addresses, pool.state, rotate_after=1, clock=clock)
+    assert next_run.address_for("x.test") is not None
+
+
+def test_a_share_counts_per_site(files, clock):
+    pool = _pool(files, clock, rotate_after=1)
+    first = pool.address_for("tr.indeed.com")
+    pool.note_request("tr.indeed.com", first)
+    # Indeed has had its one request from it; LinkedIn has not.
+    assert pool.address_for("linkedin.com").ip == first.ip
+
+
+#####################################################################
+# A SITE THAT REFUSES THE CLIENT, NOT THE ADDRESS - 22.09.2026      #
+#####################################################################
+# indeed_check through the pool: headless Chromium with no session, refused
+# on its first request from four European addresses in a row. Every switch
+# after the second only rested another good address.
+
+def test_two_fresh_refusals_before_any_answer_stop_the_site(pool):
+    site = "tr.indeed.com"
+    assert pool.on_refusal(site, pool.address_for(site).ip, "403") is not None
+    assert pool.on_refusal(site, pool.address_for(site).ip, "403") is None
+    assert "the client" in pool.given_up[site]
+    assert sum(e["refusals"] for e in pool.state.sites[site].values()) == 2
+
+
+def test_once_the_site_has_answered_refusals_are_the_address_again(pool):
+    site = "kariyer.net"
+    pool.note_answer(site)
+    for _ in range(3):
+        assert pool.on_refusal(site, pool.address_for(site).ip, "403") is not None
+
+
+def test_an_answered_pooled_response_is_counted(blocks, pool):
+    url = "https://www.kariyer.net/is-ilani/x-123"
+    ip = pool.address_for("kariyer.net").ip
+    request = Request(url, meta={"pool_address": ip, "_via_proxy": True})
+    blocks.process_response(request, HtmlResponse(url, status=200, body=b"<html>ok</html>", request=request),
+                            _spider("kariyernet_check"))
+    assert pool.answered["kariyer.net"] == 1

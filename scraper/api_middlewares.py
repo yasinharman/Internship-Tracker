@@ -593,6 +593,9 @@ class BlockDetectionMiddleware:
             # ROW rather than in total, because a run that is mostly working
             # with the odd refusal in it does not want a ten-minute pause.
             self.blocks_in_a_row[domain] = 0
+            if request.meta.get("pool_address"):
+                original = (request.meta.get("redirect_urls") or [None])[0] or request.url
+                get_proxy_pool(self.crawler).note_answer(site_of(original))
             return response
 
         self.crawler.stats.inc_value("blocks/detected")

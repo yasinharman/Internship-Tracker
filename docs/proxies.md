@@ -114,6 +114,19 @@ and `BlockDetectionMiddleware`. The rules are the owner's, set the same day:
 - **Among the addresses that are free**, a site takes the one it has used
   least recently. Over several nights the load spreads across all seven
   European addresses.
+- **No address carries a site's whole run** (added the same afternoon).
+  After `PROXY_POOL_ROTATE_AFTER` requests (30) for one site in one run, an
+  address hands over to the next. Nothing rests and no switch is counted. The
+  owner's words: "1 IP'den 500 tane ilana istek atamayız". One run can then
+  send a site 7 x 30 = 210 requests from European addresses, or 600 with the
+  reserve. A bigger first-run queue finishes on the next run. 30 sits under
+  kariyer.net's measured wall of 34-43.
+- **Two fresh refusals end the site's run** (added 22.09 evening). If a site
+  refuses two addresses before it has answered once in the run, the pool
+  stops there instead of spending the third and fourth switch. The site is
+  refusing the client, not the address; see "`indeed_check` through the
+  pool" below. Once a site has answered, refusals count against the address
+  again and the three switches apply.
 - **The pace is unchanged.** A refused pooled request is retried from the
   next address with the same TLS identity, so the address is the only thing
   that changed. It does not spend the site's block budget; the pool's cap
@@ -164,3 +177,46 @@ What it shows:
 - **Line 5 was refused on its very first request.** It sits on "Free Pro",
   a business line. One request is not a verdict, but it joins the carrier
   addresses as a candidate for a swap.
+
+## `indeed_check` through the pool: four addresses refused - measured 22.09.2026
+
+The owner, the same afternoon: "indeed check in zaten havuzda olması
+gerekiyor 1 ip den 500 tane ilana istek atamayız". A dry run,
+`OPENINGS_MAX_PER_SITE=2 scrapy crawl indeed_check -a dry_run=1`, with
+`indeed_check` in `PROXY_POOL_SPIDERS`.
+
+| Time (UTC) | Address | Request | Result |
+|---|---|---|---|
+| 11:09:16 | line 4 (DE) | warm-up `https://tr.indeed.com/`, headless Chromium, no session | **403** |
+| 11:09:17 | line 5 (FR) | the same | **403** |
+| 11:09:34 | line 6 (GB) | the same | **403** |
+| 11:10:02 | line 7 (GB) | the same | **403**, and the pool gave up (3 switches) |
+
+No posting was checked and nothing was written. Lines 4-7 rest for
+tr.indeed.com until 23.09 about 11:10 UTC. Lines 10, 17 and 18 are still free
+for Indeed.
+
+**It was the client, not the addresses.** Line 4 had served Indeed seven
+times that morning (`docs/sites/indeed.md`, "All of Istanbul's internships in
+three searches"). Line 17 had served `/viewjob` to an anonymous visitor
+("A foreign address on every board", above). Both used **curl_cffi with
+`safari184`**, straight to `/jobs` or `/viewjob`. `indeed_check` differs in
+two ways:
+- the **transport**: headless bundled Chromium, launched as
+  `PlaywrightMiddleware` does;
+- the **first request**: a warm-up on the home page.
+
+Two variables moved together, so this run cannot say which one Indeed
+refused. That breaks the rule the measurements in this repo keep: a control
+differs by one thing. The headless browser is the likelier cause.
+`indeed_cards` notes it was never measured past headless ("UNMEASURED PAST
+HEADLESS"), and on 28.08 Indeed challenged the browser's own fingerprint
+(`docs/sites/indeed.md`).
+
+**Changed because of it:**
+- The pool now stops a site that refuses two fresh addresses before
+  answering once (see the rules above). This run would have cost two
+  addresses, not four.
+- `indeed_check` stays **out** of `PROXY_POOL_SPIDERS` until a one-variable
+  measurement shows how it gets served from a pool address.
+
