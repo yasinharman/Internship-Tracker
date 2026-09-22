@@ -68,6 +68,28 @@ is one; for an unattended run there is Xvfb, which is a real windowed
 browser painting into a virtual framebuffer rather than a headless one
 pretending. _resolve_headless says so with the command to run when no
 display is present.
+
+THE PROXY - ADDED 22.09.2026
+----------------------------
+Until then this transport ignored request.meta["proxy"]. ResidentialProxy-
+Middleware (725) runs before this one (729) and does fill it in, but the
+browser opened every page from the machine's own address anyway - so every
+kariyer.net request, and every Indeed request that went through a browser,
+left from home whatever PROXY_MODE said (docs/proxies.md).
+
+A page for a proxied request now opens in a context bound to that proxy:
+
+  * a fresh-visitor request (meta["fresh_context"]) gets its throwaway
+    context with the proxy on it;
+  * any other proxied request gets a shared context for that proxy, one per
+    address, made on first use and kept for the run.
+
+A proxied context carries NO session - no storage state, no seeded cookies.
+The signed-in session stays in the run's own context, on the address it was
+made from. Indeed ties a session to the handshake it was made with
+(docs/sites/indeed.md, "6. The session and the handshake are a PAIR"), and
+carrying an account onto another address is the owner's call, not a side
+effect of turning a proxy on.
 """
 
 import logging
@@ -76,6 +98,7 @@ import queue
 import threading
 from collections import defaultdict
 from concurrent.futures import Future, TimeoutError as FutureTimeout
+from urllib.parse import unquote, urlsplit
 
 from scrapy import signals
 from scrapy.exceptions import IgnoreRequest
@@ -85,6 +108,25 @@ from scrapy.utils.python import to_unicode
 from .throttle import SlotThrottle
 
 logger = logging.getLogger(__name__)
+
+
+def playwright_proxy(proxy_url):
+    """
+    request.meta["proxy"] as Playwright wants it, or None for no proxy.
+
+    Scrapy takes one url with the credentials inside it - and
+    ProxyConfig.build_url percent-encodes them, because IPRoyal packs options
+    into the password. Playwright wants the server and the credentials apart,
+    decoded.
+    """
+    if not proxy_url:
+        return None
+    parts = urlsplit(proxy_url)
+    proxy = {"server": f"{parts.scheme or 'http'}://{parts.hostname}:{parts.port}"}
+    if parts.username:
+        proxy["username"] = unquote(parts.username)
+        proxy["password"] = unquote(parts.password or "")
+    return proxy
 
 # Cloudflare's managed challenge resolves itself via JS in a few seconds when
 # it resolves at all - these are the page titles it shows while that runs.
@@ -130,6 +172,8 @@ class PlaywrightMiddleware:
         self._spider = None
         self._browser = None
         self._context_kwargs = {}
+        # proxy server -> the shared context for it. See _proxied_context.
+        self._proxied_contexts = {}
         self._job_queue = queue.Queue()
         self._ready = threading.Event()
         self._startup_error = None
@@ -285,6 +329,7 @@ class PlaywrightMiddleware:
                 self._ready.set()
                 self._run_job_loop(context)
 
+                self._close_proxied_contexts()
                 context.close()
                 browser.close()
         except Exception as error:
@@ -351,10 +396,61 @@ class PlaywrightMiddleware:
         browser that has not been to the site before, which is what a person
         opening a link in a private window looks like.
     '''
-    def _fresh_context(self):
-        context = self._browser.new_context(**self._context_kwargs)
+    def _fresh_context(self, proxy=None):
+        kwargs = dict(self._context_kwargs)
+        if proxy:
+            kwargs["proxy"] = proxy
+        context = self._browser.new_context(**kwargs)
         self.crawler.stats.inc_value("playwright/fresh_contexts")
         return context
+
+    def _proxied_context(self, proxy):
+        """
+        The shared context for one proxy address, made on first use.
+
+        Built from the same kwargs as a fresh visitor's - locale and viewport,
+        never storage_state and never the seeded cookies - so the session in
+        the run's own context does not travel to this address. See THE PROXY
+        at the top of this file.
+        """
+        key = (proxy["server"], proxy.get("username"))
+        context = self._proxied_contexts.get(key)
+        if context is None:
+            context = self._browser.new_context(**self._context_kwargs, proxy=proxy)
+            self._proxied_contexts[key] = context
+            logger.info(
+                "Browser context for proxy %s - carries no session",
+                proxy["server"],
+            )
+        return context
+
+    def _close_proxied_contexts(self):
+        for context in self._proxied_contexts.values():
+            try:
+                context.close()
+            except Exception as error:
+                logger.debug("could not close proxied context: %s", error)
+        self._proxied_contexts.clear()
+
+    def _page_for(self, request, context):
+        """
+        A page for this request, and the throwaway context it lives in if
+        any - the caller closes that one after the navigation.
+
+            fresh visitor, proxied     -> throwaway context on that proxy
+            fresh visitor, direct      -> throwaway context, direct
+            shared, proxied            -> the shared context for that proxy
+            shared, direct             -> the run's own context (the session)
+        """
+        proxy = playwright_proxy(request.meta.get("proxy"))
+        if proxy:
+            self.crawler.stats.inc_value("playwright/proxied_navigations")
+        if request.meta.get("fresh_context"):
+            visitor = self._fresh_context(proxy)
+            return visitor.new_page(), visitor
+        if proxy:
+            return self._proxied_context(proxy).new_page(), None
+        return context.new_page(), None
 
     def _open_ephemeral(self, p, launch_kwargs, context_kwargs):
         """A fresh context per run, the way this middleware started."""
@@ -489,14 +585,11 @@ class PlaywrightMiddleware:
             page = None
             # A request that asked to arrive as a new visitor gets its own
             # context, thrown away afterwards - see _fresh_context. Everything
-            # else shares the run's, which is what a session normally is.
+            # else shares the run's, which is what a session normally is -
+            # unless it came with a proxy, see _page_for.
             visitor = None
             try:
-                if request.meta.get("fresh_context"):
-                    visitor = self._fresh_context()
-                    page = visitor.new_page()
-                else:
-                    page = context.new_page()
+                page, visitor = self._page_for(request, context)
                 future.set_result(self._navigate(page, request))
             except Exception as error:
                 future.set_exception(error)
