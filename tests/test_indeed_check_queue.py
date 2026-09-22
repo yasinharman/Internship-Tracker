@@ -152,9 +152,13 @@ class TestTheSpider:
         self, make_checker, engine, session, monkeypatch, caplog,
     ):
         recent = datetime.utcnow() - timedelta(minutes=40)
+        # Relative to the real clock, not NOW: load_open_postings applies the
+        # seven-day horizon against utcnow(), so a fixed date ages out of the
+        # queue - this test broke on 22.09.2026, seven days after NOW - 2d.
+        two_days_ago = datetime.utcnow() - timedelta(days=2)
         _posting(session, "waiting", "N/A", last_seen_at=recent)
         _posting(session, "known", DESCRIBED, checked_at=recent, last_seen_at=recent)
-        _posting(session, "dropped", DESCRIBED, checked_at=TWO_DAYS_AGO, last_seen_at=TWO_DAYS_AGO)
+        _posting(session, "dropped", DESCRIBED, checked_at=two_days_ago, last_seen_at=two_days_ago)
         _posting(session, "linkedin", "N/A", source_site="linkedin.com")
         monkeypatch.setattr(openings, "db_connect", lambda: engine)
         spider = make_checker(IndeedCheckSpider)
@@ -169,7 +173,11 @@ class TestTheSpider:
         self, make_checker, engine, session, monkeypatch,
     ):
         # OPENINGS_MAX_PER_SITE must cut the queue's tail, not a random slice.
-        _posting(session, "dropped", DESCRIBED, checked_at=TWO_DAYS_AGO, last_seen_at=TWO_DAYS_AGO)
+        # Real clock for the same reason as the test above: with a fixed date
+        # "dropped" ages out of the queue and this passes without testing
+        # anything.
+        two_days_ago = datetime.utcnow() - timedelta(days=2)
+        _posting(session, "dropped", DESCRIBED, checked_at=two_days_ago, last_seen_at=two_days_ago)
         _posting(session, "waiting", "N/A")
         monkeypatch.setattr(openings, "db_connect", lambda: engine)
         monkeypatch.setattr(openings, "MAX_PER_SITE", 1)
