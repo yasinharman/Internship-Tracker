@@ -19,6 +19,12 @@ import pytest
 import main
 
 
+@pytest.fixture(autouse=True)
+def no_pool(monkeypatch):
+    """The pool is off unless a test turns it on - whatever .env says."""
+    monkeypatch.delenv("PROXY_POOL_SPIDERS", raising=False)
+
+
 @pytest.fixture
 def ran(monkeypatch):
     """Record which spiders run_checks would start, without starting any."""
@@ -143,3 +149,29 @@ def test_linkedin_is_out_of_the_flow_entirely():
     assert "linkedin_cards" not in main.PARKED_SPIDERS
     assert "linkedin_cards" not in main.CHECKER_FOR
     assert "linkedin_check" not in main.CHECK_SPIDERS
+
+
+###############################################################
+# NO WAIT WHEN THE CRAWL AND THE CHECK LEAVE FROM THE POOL    #
+###############################################################
+# 22.09.2026: each pooled spider picks the address its site has used least
+# recently, so the check does not come from the crawl's address and the gap
+# the wait buys is already there. The owner's call the same day.
+
+def test_a_site_whose_crawl_and_check_are_both_pooled_does_not_wait(
+        ran, waits, monkeypatch):
+    monkeypatch.setenv("PROXY_POOL_SPIDERS", "kariyernet_cards, kariyernet_check")
+    monkeypatch.setitem(main._CRAWL_FINISHED_AT, "kariyernet_cards",
+                        time.monotonic())
+    main.run_checks(["kariyernet_cards"])
+    assert waits == []
+    assert ran == ["kariyernet_check"]
+
+
+def test_a_pool_that_covers_only_the_crawl_still_waits(ran, waits, monkeypatch):
+    # The check would leave from home - the address the wait protects.
+    monkeypatch.setenv("PROXY_POOL_SPIDERS", "kariyernet_cards")
+    monkeypatch.setitem(main._CRAWL_FINISHED_AT, "kariyernet_cards",
+                        time.monotonic())
+    main.run_checks(["kariyernet_cards"])
+    assert sum(waits) > main.SITE_COOLDOWN_S["kariyernet_cards"] * 0.9

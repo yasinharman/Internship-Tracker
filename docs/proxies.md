@@ -135,3 +135,32 @@ session.
 
 `python -m tools.proxy_pool status` prints the tiers, and for each site the
 requests, refusals and any rest in force per address.
+
+## The first runs through the pool - measured 22.09.2026
+
+Today's filters, pool on for the four kariyer.net and techcareer spiders,
+nothing else changed. Logs: `backups/pool-smoke-kariyernet-20260922.log`
+and `backups/pool-smoke-techcareer-20260922.log`.
+
+| Step | Address | Result |
+|---|---|---|
+| `kariyernet_cards` 11:56 | line 4 (DE, 1&1 Versatel) | 4 listing requests, all 200, 49 postings |
+| `kariyernet_check` 12:27, first request | line 5 (FR, Free Pro SAS) | **403**: PerimeterX press-and-hold page |
+| the pool | 5 rests for kariyer.net until 23.09 09:27 UTC | the same posting retried from line 6 |
+| `kariyernet_check`, the rest | line 6 (GB, Glide) | 25 posting pages, all 200, 25 descriptions, no further refusal |
+| `techcareer_api` 12:37 | line 4 (DE) | 11 requests, all 200, 4 postings |
+| `techcareer_check` 12:39 | line 5 (FR) | 3 requests, all 200, 2 descriptions |
+
+What it shows:
+
+- **The switch works on a live refusal.** It took one of the three switches
+  the run allows.
+- **A rest is per site.** Line 5, resting for kariyer.net, served techcareer
+  its check eleven minutes later.
+- **The crawl and the check left from different addresses** (4, then 5 and
+  6). That is what made the 30-minute `SITE_COOLDOWN_S` wait unnecessary for
+  pooled spiders. The owner dropped it the same day; `main.py` skips it when
+  both spiders of a site are pooled.
+- **Line 5 was refused on its very first request.** It sits on "Free Pro",
+  a business line. One request is not a verdict, but it joins the carrier
+  addresses as a candidate for a swap.

@@ -161,6 +161,15 @@ CHECK_SPIDERS = list(CHECKER_FOR.values())
 
     For a verification crawl that should not trigger any of this at all,
     --skip-classify skips the post-crawl steps entirely, checkers included.
+
+    NOT WHEN BOTH LEAVE FROM THE POOL - 22.09.2026. The wait is about one
+    address visiting a site twice in quick succession. When a site's crawl
+    and its checker are both in PROXY_POOL_SPIDERS, each picks the address
+    that site has used least recently (scraper/proxy_pool.py), so the check
+    does not come from the crawl's address. Seen on the first pool run: the
+    crawl left from line 4, the check from line 5 and then 6. The owner's
+    call the same day: "Site cooldown beklememize gerek yok zaten IP
+    rotasyonu yapıyoruz". With the pool off, the wait stands.
 '''
 SITE_COOLDOWN_S = {
     "kariyernet_cards": int(os.getenv("KARIYERNET_SITE_COOLDOWN", "1800")),
@@ -644,6 +653,16 @@ def run_step(label, module, timeout):
     return False
 
 
+def _in_the_pool(spider):
+    """
+    Whether a spider leaves from the bought IP pool. The same rule as
+    scraper.api_middlewares.pool_spiders, read here rather than imported so
+    that main.py does not load the Scrapy stack just to decide on a wait.
+    """
+    listed = os.getenv("PROXY_POOL_SPIDERS", "")
+    return spider in {name.strip() for name in listed.split(",") if name.strip()}
+
+
 def _wait_out_site_cooldown(crawl_spider):
     """
     Hold a checker back until its own site has had a rest.
@@ -655,6 +674,15 @@ def _wait_out_site_cooldown(crawl_spider):
     cooldown = SITE_COOLDOWN_S.get(crawl_spider)
     finished = _CRAWL_FINISHED_AT.get(crawl_spider)
     if not cooldown or finished is None:
+        return
+
+    checker = CHECKER_FOR.get(crawl_spider)
+    if _in_the_pool(crawl_spider) and checker and _in_the_pool(checker):
+        print(
+            f"  (no wait before checking {crawl_spider}'s site - its crawl and "
+            f"its check leave from different pool addresses)",
+            flush=True,
+        )
         return
 
     remaining = cooldown - (time.monotonic() - finished)
