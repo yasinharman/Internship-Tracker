@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import and_, case, or_
 
 from ..api_spider import strip_html
+from ..browser_session import BrowserSession, profile_for_impersonate
 from ..models import JobPost
 from ..openings import CLOSED, OPEN, UNKNOWN, OpeningCheckMixin
 from .indeed_cards import IndeedCardsSpider
@@ -117,9 +118,10 @@ class IndeedCheckSpider(OpeningCheckMixin, IndeedCardsSpider):
             only ever ride on the warm-up (api_spider.warmup_cookies), and
             a posting request carries no Referer (Sec-Fetch-Site: none), the
             shape the anonymous /viewjob was served in.
-        Off by default until it is measured. Set INDEED_IMPERSONATE=safari184
-        with it if INDEED_COOKIES is set, or the session's Firefox handshake
-        leads the ladder.
+        With no session, the handshake ladder goes back to the anonymous
+        order (safari184 first) even if INDEED_COOKIES is set - that
+        reordering is for carrying a session, and this sends none.
+        INDEED_IMPERSONATE is left for experiments; it pins indeed_cards too.
 
         curl_cffi blocks the reactor for each request. This spider runs one
         request at a time with a long delay anyway, so nothing is lost.
@@ -130,6 +132,12 @@ class IndeedCheckSpider(OpeningCheckMixin, IndeedCardsSpider):
             self.USE_PLAYWRIGHT = False
             self.IMPERSONATE_WITH_CURL = True
             self.warmup_url = None
+            if not self._impersonate_pinned:
+                self.impersonate_candidates = list(self.IMPERSONATE_CANDIDATES)
+                self.session = BrowserSession(
+                    profile=profile_for_impersonate(self.impersonate_candidates[0]),
+                    origin=self.origin,
+                )
             self.logger.info(
                 "INDEED_CHECK_VIA_CURL: curl_cffi (%s), no warm-up, no session",
                 self.impersonate_candidates[0],

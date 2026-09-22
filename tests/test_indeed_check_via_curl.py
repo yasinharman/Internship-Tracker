@@ -11,7 +11,8 @@ from scraper.spiders.indeed_check import IndeedCheckSpider
 
 @pytest.fixture(autouse=True)
 def no_session(monkeypatch):
-    for name in ("INDEED_COOKIES", "INDEED_IMPERSONATE", "INDEED_CHECK_VIA_CURL"):
+    for name in ("INDEED_COOKIES", "INDEED_IMPERSONATE", "INDEED_SESSION_BROWSER",
+                 "INDEED_CHECK_VIA_CURL"):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -58,3 +59,20 @@ def test_no_verdict_says_why(caplog):
         assert spider.verdict(response) == UNKNOWN
     assert "appears 1 time(s), 0 read as true, 0 as false" in caplog.text
     assert 'isJobExpired\\\\":false' in caplog.text
+
+
+def test_a_session_in_env_does_not_pull_the_handshake_to_firefox(monkeypatch):
+    # A session puts firefox first, for carrying it (indeed_cards, "A SESSION
+    # PICKS THE HANDSHAKE"). Curl mode sends none, so it keeps the anonymous
+    # order - no INDEED_IMPERSONATE needed.
+    import scraper.spiders.indeed_cards as indeed_cards
+    monkeypatch.setattr(indeed_cards, "load_cookies", lambda env: {"SOCK": "s", "SHOE": "h"})
+
+    with_session = IndeedCheckSpider()
+    assert with_session.impersonate_candidates[0].startswith("firefox")
+
+    monkeypatch.setenv("INDEED_CHECK_VIA_CURL", "1")
+    spider = IndeedCheckSpider()
+    assert spider.impersonate_candidates[0] == "safari184"
+    assert "Safari" in spider.session.profile.user_agent
+    assert spider.default_meta()["impersonate"] == "safari184"
