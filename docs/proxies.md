@@ -96,3 +96,42 @@ throwaway spider sending three requests to ipinfo.io:
 
 Chromium on Linux applies a per-context proxy without the browser itself
 being launched with one.
+
+## The pool in code - 22.09.2026
+
+`scraper/proxy_pool.py`, wired in by `ProxyPoolMiddleware` (priority 727)
+and `BlockDetectionMiddleware`. The rules are the owner's, set the same day:
+
+- **European addresses first.** Addresses outside Europe are reserve, and so
+  are the five on carrier or business networks, whatever their country.
+  They are used only once every European address is resting for that site.
+- **Judged per site.** A refusal rests that address for the site that
+  refused it, and nowhere else.
+- **A rest lasts 24 hours**, recorded in `proxies/state.json` so it outlives
+  the run that caused it.
+- **At most 3 switches per site per run.** The fourth refusal ends that
+  site's run, so one bad night cannot burn the pool.
+- **Among the addresses that are free**, a site takes the one it has used
+  least recently. Over several nights the load spreads across all seven
+  European addresses.
+- **The pace is unchanged.** A refused pooled request is retried from the
+  next address with the same TLS identity, so the address is the only thing
+  that changed. It does not spend the site's block budget; the pool's cap
+  replaces it.
+
+The tiers, as `python -m tools.proxy_pool check` placed them on 22.09
+(countries and networks from ipinfo.io, written to `proxies/meta.json`):
+
+| Tier | Count | Lines |
+|---|---|---|
+| Europe (used first) | 7 | 4, 5, 10 (DE, FR), 6, 7, 18 (GB), 17 (FR) |
+| Reserve: outside Europe | 8 | 1, 2, 3, 9, 11, 13, 16, 19 (US) |
+| Reserve: carrier network | 5 | 8 (GTT), 12 (Verizon Business), 14 and 20 (Telecom Italia Sparkle), 15 (Vorboss) |
+
+**Opt-in, by spider name.** `PROXY_POOL_SPIDERS` lists the spiders that use
+the pool; empty means the pool is off. A spider that carries a signed-in
+session should not be listed, because a proxied browser context carries no
+session.
+
+`python -m tools.proxy_pool status` prints the tiers, and for each site the
+requests, refusals and any rest in force per address.

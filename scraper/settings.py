@@ -77,16 +77,21 @@ COOKIES_ENABLED = True
     725 - ResidentialProxyMiddleware runs before Scrapy's HttpProxyMiddleware
           (750), which converts the credentials in our proxy URL into a
           Proxy-Authorization header.
-    729 - PlaywrightMiddleware, opt-in via USE_PLAYWRIGHT = True. Only
-          indeed_cards sets it, so this is a no-op for every other spider.
+    727 - ProxyPoolMiddleware, the bought static IP pool (proxy_pool.py).
+          Opt-in by spider name in PROXY_POOL_SPIDERS; after 725 so its
+          address stands, before the two transports that read meta["proxy"].
+    729 - PlaywrightMiddleware, opt-in via USE_PLAYWRIGHT = True (Indeed,
+          LinkedIn, kariyer.net). Opens a proxied request's page in a context
+          bound to that proxy.
 
-    Both proxy-related middlewares self-disable when PROXY_MODE=off or no
-    IPRoyal credentials are set, so local development goes out direct with no
-    extra configuration.
+    Both IPRoyal-related middlewares self-disable when PROXY_MODE=off or no
+    IPRoyal credentials are set, and the pool when PROXY_POOL_SPIDERS is
+    empty, so local development goes out direct with no extra configuration.
 '''
 DOWNLOADER_MIDDLEWARES = {
     "scraper.api_middlewares.BlockDetectionMiddleware": 590,
     "scraper.api_middlewares.ResidentialProxyMiddleware": 725,
+    "scraper.api_middlewares.ProxyPoolMiddleware": 727,
     "scraper.playwright_middleware.PlaywrightMiddleware": 729,
     # 730: after ResidentialProxyMiddleware puts the proxy url in meta, before
     # HttpProxyMiddleware (750) moves its credentials into a header that

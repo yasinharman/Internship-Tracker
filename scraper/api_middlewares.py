@@ -34,9 +34,11 @@ Middleware priorities matter here:
 """
 
 import logging
+import os
 from collections import defaultdict
 
 from curl_cffi import requests as curl_requests
+from scrapy import signals
 from scrapy.exceptions import IgnoreRequest, NotConfigured
 from scrapy.responsetypes import responsetypes
 from scrapy.utils.python import to_unicode
@@ -44,6 +46,7 @@ from scrapy.utils.response import response_status_message
 
 from .browser_session import profile_for_impersonate
 from .proxy import ProxyConfig, new_session_id
+from .proxy_pool import ProxyPool, site_of
 from .throttle import SlotThrottle, sleep_out_loud
 
 logger = logging.getLogger(__name__)
@@ -173,6 +176,77 @@ class ResidentialProxyMiddleware:
         if request.meta.get("_via_proxy"):
             self.state.rotate(reason=f"transport error: {type(exception).__name__}")
         return None
+
+
+#####################################################
+# THE BOUGHT STATIC IP POOL - see proxy_pool.py     #
+#####################################################
+def get_proxy_pool(crawler):
+    """One ProxyPool per crawl, shared with BlockDetectionMiddleware."""
+    pool = getattr(crawler, "_proxy_pool", None)
+    if pool is None:
+        pool = ProxyPool.from_env()
+        crawler._proxy_pool = pool
+    return pool
+
+
+def pool_spiders():
+    return {
+        name.strip() for name in os.getenv("PROXY_POOL_SPIDERS", "").split(",")
+        if name.strip()
+    }
+
+
+class ProxyPoolMiddleware:
+    """
+    Sends a listed spider's requests from the pool: one address per site,
+    the next one when the site refuses it (BlockDetectionMiddleware calls
+    back into the pool for that).
+
+    Opt-in by name, PROXY_POOL_SPIDERS=kariyernet_cards,kariyernet_check,...
+    - nothing changes for a spider that is not listed. Independent of
+    PROXY_MODE, which drives the older IPRoyal path.
+
+    Priority 727: after ResidentialProxyMiddleware (725), so for a listed
+    spider the pool's address is the one that stands; before the two
+    transports that read meta["proxy"] - PlaywrightMiddleware (729) and
+    CurlImpersonateMiddleware (730) - and Scrapy's HttpProxyMiddleware (750).
+    """
+
+    def __init__(self, crawler):
+        self.spiders = pool_spiders()
+        if not self.spiders:
+            raise NotConfigured("PROXY_POOL_SPIDERS is empty")
+        self.crawler = crawler
+        crawler.signals.connect(self._closed, signal=signals.spider_closed)
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        return cls(crawler)
+
+    def process_request(self, request, spider):
+        if spider.name not in self.spiders or request.meta.get("use_proxy") is False:
+            return None
+
+        pool = get_proxy_pool(self.crawler)
+        site = site_of(request.url)
+        address = pool.address_for(site)
+        if address is None:
+            self.crawler.stats.inc_value("pool/dropped_no_address")
+            raise IgnoreRequest(f"{site}: {pool.given_up.get(site, 'no pool address left')}")
+
+        pool.note_request(site, address)
+        self.crawler.stats.inc_value(f"pool/requests/{site}")
+        request.meta["proxy"] = address.url
+        request.meta["pool_address"] = address.ip
+        # Same flag the IPRoyal path sets: this request is already on a proxy.
+        request.meta["_via_proxy"] = True
+        return None
+
+    def _closed(self, spider):
+        pool = getattr(self.crawler, "_proxy_pool", None)
+        if pool is not None:
+            pool.close()
 
 
 ###################
@@ -525,6 +599,16 @@ class BlockDetectionMiddleware:
         self.blocks_in_a_row[domain] += 1
         escalations = request.meta.get("_escalations", 0)
 
+        # A request from the bought pool is answered by the pool: this
+        # address rests for this site and the request is retried from the
+        # next one. It spends neither the site's block budget nor a cool-off.
+        # The pool's own cap (PROXY_POOL_MAX_SWITCHES) is what ends a site's
+        # run, and moving on beats waiting when a refusal is a state that
+        # does not clear - kariyer.net's press-and-hold page never does.
+        pool_ip = request.meta.get("pool_address")
+        if pool_ip:
+            return self._retry_from_the_pool(request, spider, pool_ip, reason, escalations)
+
         # Before spending the budget on it. A spider that has asked to wait
         # would rather wait than be given up on, and waiting is the only
         # answer measured to work against a refusal that has become a state.
@@ -621,22 +705,7 @@ class BlockDetectionMiddleware:
             )
             new_meta = {"use_proxy": True}
 
-        # Retry what we originally asked for, not where we were sent.
-        #
-        # When the block arrived as a redirect, `request` is the redirected
-        # request - the sign-in page - because RedirectMiddleware already
-        # followed it. Copying that would fetch the sign-in page again on the
-        # fresh IP, get a clean 200 with no redirect this time, sail past
-        # every check here, and hand the parser a login page: the same silent
-        # empty crawl, now with an escalation in the stats to make it look
-        # like something was done about it.
-        if original_url and original_url != request.url:
-            retry = request.replace(url=original_url)
-            for key in ("redirect_urls", "redirect_reasons", "redirect_times"):
-                retry.meta.pop(key, None)
-        else:
-            retry = request.copy()
-
+        retry = self._retry_of(request)
         retry.meta.update(new_meta)
         retry.meta["_escalations"] = escalations + 1
         # Drop the stale proxy so ResidentialProxyMiddleware rebuilds the URL
@@ -652,6 +721,59 @@ class BlockDetectionMiddleware:
                 next_token, profile.name,
             )
 
+        retry.dont_filter = True
+        retry.priority = request.priority + 1
+        return retry
+
+    @staticmethod
+    def _retry_of(request):
+        """
+        Retry what we originally asked for, not where we were sent.
+
+        When the block arrived as a redirect, `request` is the redirected
+        request - the sign-in page - because RedirectMiddleware already
+        followed it. Copying that would fetch the sign-in page again on the
+        fresh IP, get a clean 200 with no redirect this time, sail past every
+        check here, and hand the parser a login page: the same silent empty
+        crawl, now with an escalation in the stats to make it look like
+        something was done about it.
+        """
+        original_url = (request.meta.get("redirect_urls") or [None])[0]
+        if original_url and original_url != request.url:
+            retry = request.replace(url=original_url)
+            for key in ("redirect_urls", "redirect_reasons", "redirect_times"):
+                retry.meta.pop(key, None)
+            return retry
+        return request.copy()
+
+    def _retry_from_the_pool(self, request, spider, pool_ip, reason, escalations):
+        """
+        Rest the refused address for this site, retry from the next one - or
+        end the site's run when the pool says there is none.
+
+        The TLS identity is left alone on purpose: the address is the one
+        thing that changes, so a retry that passes says the address was the
+        problem (memory: control-must-differ-by-one-thing).
+        """
+        pool = get_proxy_pool(self.crawler)
+        original_url = (request.meta.get("redirect_urls") or [None])[0] or request.url
+        site = site_of(original_url)
+
+        following = pool.on_refusal(site, pool_ip, reason)
+        if following is None:
+            self.crawler.stats.inc_value("pool/gave_up")
+            raise IgnoreRequest(f"{site}: {pool.given_up.get(site, 'pool exhausted')}")
+
+        self.crawler.stats.inc_value("pool/switched")
+        spider.logger.warning(
+            "BLOCKED on pool address %s (%s) - retrying %s from %s",
+            pool_ip, reason, original_url, following.label,
+        )
+        retry = self._retry_of(request)
+        retry.meta["_escalations"] = escalations + 1
+        # ProxyPoolMiddleware puts the current address back on the way out.
+        for key in ("proxy", "pool_address", "_via_proxy"):
+            retry.meta.pop(key, None)
         retry.dont_filter = True
         retry.priority = request.priority + 1
         return retry
