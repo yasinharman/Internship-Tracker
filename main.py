@@ -76,7 +76,12 @@ SCRAPY_PROJECT_FOLDER = "scraper"
 # session and refuse to start unless PROXY_POOL_SPIDERS lists them, so no
 # LinkedIn request leaves this address - the one the restricted accounts
 # were tied to.
-SPIDERS = ["kariyernet_cards", "techcareer_api", "indeed_cards", "linkedin_cards"]
+# youthall_cards added 22.09.2026 - one request for the Istanbul list
+# (docs/sites/youthall.md).
+SPIDERS = [
+    "kariyernet_cards", "techcareer_api", "indeed_cards", "linkedin_cards",
+    "youthall_cards",
+]
 
 # indeed_cards was parked from 28.07.2026 to 30.07.2026. Un-parked on the
 # terms the parking comment itself set: a static residential address and the
@@ -130,6 +135,7 @@ CHECKER_FOR = {
     "techcareer_api": "techcareer_check",
     "indeed_cards": "indeed_check",
     "linkedin_cards": "linkedin_check",
+    "youthall_cards": "youthall_check",
 }
 
 CHECK_SPIDERS = list(CHECKER_FOR.values())
