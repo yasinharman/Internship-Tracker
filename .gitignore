@@ -14,6 +14,9 @@ httpcache/
 #Passwords
 .env
 
+#proxy lists - every line is a working login to a paid proxy
+proxies/
+
 #exported browser session - these files ARE the account they came from
 indeed-cookies.txt
 indeed-cookies.b64
