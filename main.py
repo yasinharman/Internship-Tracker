@@ -332,9 +332,13 @@ def soft_close_after(timeout):
     """The CLOSESPIDER_TIMEOUT a spider with this hard ceiling is given."""
     return max(timeout - CLOSE_GRACE_S, 1)
 
-# 150 postings at 8 concurrent requests finish in well under a minute; this is
-# a ceiling for a hung provider, not an expected duration.
-CLASSIFY_TIMEOUT = int(os.getenv("CLASSIFY_TIMEOUT", "900"))
+# A ceiling for a hung model server, sized to a full run - 22.09.2026. The
+# local model sorts about 1.3 s a posting (314 in 419 s, docs/pipeline.md),
+# and a first run on all five boards leaves roughly 800-1,000 postings with a
+# description to sort. The old 900 s covered about 690. classify writes its
+# verdicts at the end, so a run killed at the ceiling keeps none of them.
+# 3600 s covers about 2,700.
+CLASSIFY_TIMEOUT = int(os.getenv("CLASSIFY_TIMEOUT", "3600"))
 
 # Pure SQL over a few hundred rows - a second is generous.
 DEDUPE_TIMEOUT = int(os.getenv("DEDUPE_TIMEOUT", "120"))
