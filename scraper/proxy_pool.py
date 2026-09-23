@@ -202,7 +202,7 @@ class PoolState:
 # ONE RUN'S VIEW OF THE POOL                        #
 #####################################################
 class ProxyPool:
-    def __init__(self, addresses, state, rest_hours=24, max_switches=3,
+    def __init__(self, addresses, state, rest_hours=24, max_switches=6,
                  rotate_after=30, clock=utcnow):
         self.addresses = addresses
         self.state = state
@@ -236,7 +236,13 @@ class ProxyPool:
             load_addresses(list_path, meta_path),
             PoolState(state_path),
             rest_hours=float(os.getenv("PROXY_POOL_REST_HOURS", "24")),
-            max_switches=int(os.getenv("PROXY_POOL_MAX_SWITCHES", "3")),
+            # 3 -> 6 on 23.09.2026, Harman's call after the measurement.
+            # A refused address is refused on its FIRST request and a clean
+            # one carries 30, so a switch costs one request, not thirty. Three
+            # was enough when a site's queue was 60 postings; Indeed's was 168
+            # that afternoon and the run ended 78 short with two of its three
+            # switches spent on addresses the site had flagged the day before.
+            max_switches=int(os.getenv("PROXY_POOL_MAX_SWITCHES", "6")),
             rotate_after=int(os.getenv("PROXY_POOL_ROTATE_AFTER", "30")),
         )
         tiers = defaultdict(int)
@@ -270,7 +276,15 @@ class ProxyPool:
         # that have not been used since they were refused. Refusals come
         # before recency, and an address the site has never refused always
         # goes ahead of one it has.
-        return min(free, key=lambda a: (a.tier, self.state.refusals(site, a.ip),
+        # A CLEAN RESERVE BEATS A FLAGGED EUROPEAN ONE - measured the same
+        # afternoon. The rule is Europe first, and it still is among the
+        # addresses a site has never refused. But lines 6 and 7, which Indeed
+        # had flagged the day before, came free and went ahead of untouched US
+        # reserves purely for being European - and were refused on their first
+        # request each, which spent two of the run's three switches and ended
+        # it 78 postings short. Whether a site has refused an address is the
+        # stronger signal; where the address lives decides between equals.
+        return min(free, key=lambda a: (self.state.refusals(site, a.ip), a.tier,
                                         self.state.last_used(site, a.ip), a.line))
 
     def address_for(self, site):

@@ -476,3 +476,18 @@ def test_the_bot_detection_page_is_read_as_a_client_refusal(blocks, pool):
     assert pool.state.refusals("tr.indeed.com", ip) == 0
     assert pool.state.resting_until("tr.indeed.com", ip, pool.clock()) is None
     assert "the client" in pool.given_up["tr.indeed.com"]
+
+
+def test_a_clean_reserve_beats_a_flagged_european_address(pool, clock):
+    site = "tr.indeed.com"
+    # Refuse both European addresses, then let their rests run out.
+    first = pool.address_for(site)
+    pool.on_refusal(site, first.ip, "403")
+    second = pool.address_for(site)
+    pool.on_refusal(site, second.ip, "403")
+    clock.now = T0 + timedelta(hours=25)
+
+    fresh = ProxyPool(pool.addresses, PoolState(pool.state.path), clock=clock)
+    chosen = fresh.address_for(site)
+    assert chosen.ip not in {first.ip, second.ip}
+    assert chosen.tier == 1          # a reserve, and it has never been refused
