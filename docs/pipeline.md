@@ -861,3 +861,49 @@ company's mark on someone's posting**, so every doubt resolves to no logo and
 the board falls back to the company's initials.
 
 Logs: `backups/logos-dryrun-20260923.log`, `-dryrun2-`, `-dryrun3-`.
+
+## Every field, and the student picks - 23.09.2026
+
+Harman: "kapsamlı bir sınıflandırma şeması yapıp bütün staj ilanlarını
+görünür yapmamız gerekiyor. Öğrenciler kendileri görmek istediği ilan
+türlerine göre filtreleme yapacak".
+
+**What the old scheme cost, measured on this morning's run:** of 398 sorted
+postings, **263 were hidden** - two thirds of the board - because `other` was
+never a field. It meant "not software", and not-software was not shown.
+
+**The new vocabulary** is `scraper/fields.py`: 25 fields in six groups, a
+posting carries up to three, and `job_post_fields` is what the dashboard's
+"Alan" filter asks. A posting's first field is on the row itself for the
+card's chip. Nothing is hidden for its field. The model answers a second
+question - is this an internship at all - and that is the only hide left.
+
+**All 601 stored postings were re-sorted from their stored descriptions, with
+no request to any site.** The primary field of each, after the run:
+
+| Field | Postings | | Field | Postings |
+|---|---|---|---|---|
+| Finans/Muhasebe/Denetim | 47 | | Hukuk | 13 |
+| İnsan Kaynakları | 46 | | Veri/Yapay Zekâ | 13 |
+| Yazılım | 44 | | Turizm/Otelcilik | 13 |
+| Pazarlama/Reklam | 43 | | Endüstri/Üretim/Kalite | 12 |
+| İşletme/Yönetim/Proje | 34 | | Siber Güvenlik/Sistem/Ağ | 8 |
+| Satış/Müşteri İlişkileri | 33 | | Sağlık | 8 |
+| Tasarım | 28 | | Kimya/Biyoloji/Gıda | 7 |
+| Lojistik/Tedarik | 27 | | Ofis/İdari İşler | 7 |
+| Genel Program | 25 | | İnşaat/Mimarlık/Harita | 5 |
+| Elektrik-Elektronik | 19 | | Hizmet/Perakende | 5 |
+| Makine/Mekatronik | 17 | | Tarım/Ziraat/Veterinerlik | 3 |
+| Medya/İletişim | 16 | | Eğitim | 14 |
+
+- **Active postings went from 305 to 554.** The board shows what it collects
+  now.
+- **18 postings were hidden for not being internships**, which is what that
+  flag is for.
+- **81 are still unsorted**, all but three of them Indeed postings whose
+  description has not been fetched yet: the classifier does not guess from a
+  title, and "Stajyer" alone names no field.
+- A posting counts once per field it carries, so the multi-label totals are
+  larger than the table above: 62 postings mention Pazarlama/Reklam somewhere
+  in their labels against 43 that are mostly about it.
+

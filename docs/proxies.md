@@ -260,3 +260,63 @@ Line 17's day on Indeed, all curl_cffi `safari184`, anonymous:
   line 17 the fourth Indeed request of the day was challenged. Line 4 had
   carried seven search pages that morning without one.
 
+## How long a refused address stays refused - measured 23.09.2026
+
+Harman asked whether 24 hours is longer than it needs to be. One request per
+row, all to Indeed, all from an address it had refused, all with the client
+that was being served from other addresses at the same minute (curl_cffi
+`safari184`, no warm-up, no session):
+
+| Address | Time since its refusal | Result |
+|---|---|---|
+| line 10 | 1 h 55 | 403 challenge |
+| line 10 | 4 h 00 | 403 challenge |
+| line 17 | 20 h 18 | 403 challenge |
+| **line 4** | **24 h 01** | **200**, 386 kB, no challenge |
+
+**24 hours is right, and shortening it would only burn addresses.** The
+recovery window sits between 20 and 24 hours, which reads like a penalty
+Indeed applies for a day.
+
+What the same afternoon showed about which address to pick:
+
+- **A clean address is worth more than a European one.** Lines 6 and 7,
+  flagged by Indeed the day before, came free and went first purely for being
+  European - and were refused on their first request each. The pool now sorts
+  by "has this site ever refused this address" before tier; Europe still
+  decides between equals.
+- **A switch costs one request, not thirty.** A refused address is refused on
+  its FIRST request, a clean one carries its full 30. So the cap went from 3
+  switches per run to 6 (Harman, the same day): the 168-posting Indeed queue
+  had ended 78 short.
+- **Not every refusal is about the address.** See the Indeed section below.
+
+## The browser is the suspicious one on Indeed - measured 23.09.2026
+
+The cookie jars went in that afternoon (one per site per address, so an
+address arrives as itself rather than as a stranger every time). The first
+live test was `indeed_check` through the pool, windowed browser, line 18 -
+the address that had carried 30 Indeed requests that day without a refusal:
+
+| Request | Result |
+|---|---|
+| first visit, `https://tr.indeed.com/` | **200**, 7 cookies kept in the jar |
+| the spider's own warm-up, same page | 200, jar now 8 cookies |
+| `/viewjob?jk=...` | **401** |
+
+The 401's body is the answer: a page titled "Authenticating..." that
+redirects to
+`indeed.com/account/login?branding=login-required&from=bot-detection-anonymous`.
+Not Cloudflare - **Indeed's own bot detection, and it is a verdict on the
+client, not on the address**: curl_cffi was served 171 posting pages from the
+pool's addresses the same day, including 90 in the half hour after this.
+
+So on Indeed the browser is the suspicious client and curl_cffi is not, which
+is the reverse of kariyer.net. Two consequences, both in the code now:
+
+- `indeed_check` stays on curl_cffi. The jars serve the sites that go through
+  a browser: kariyer.net, LinkedIn and Youthall.
+- A response carrying `from=bot-detection-anonymous` no longer rests the
+  address for 24 hours. It ends that site's run and says the transport is
+  what has to change.
+

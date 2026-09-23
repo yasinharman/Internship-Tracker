@@ -981,6 +981,35 @@ always, and one request does not measure it. How many `/viewjob` requests an
 address carries before the challenge is the open number
 (`docs/proxies.md`).
 
+## THE POSTING PAGE CARRIES THE LOGO - 23.09.2026
+
+`"logoUrl"` sits in the same blob as the description, next to
+`"logoAltText":"<company> logo"`, and is `null` for an employer with no logo.
+Measured on a saved `/viewjob` page (line 4, 200, 386 kB).
+
+This is the field whose absence from the SEARCH records
+("THERE IS NO COMPANY LOGO IN THE CARD RECORDS", 09.09.2026) left all 104
+Indeed postings wearing the company's initials on 23.09 and sent
+`pipeline/company_logos.py` looking on the web for what was already in a page
+we had fetched. `indeed_check` reads it now: it opens that page anyway, so
+the employer's own mark costs nothing.
+
+## The pool checks Indeed with curl, and the browser is refused - 23.09.2026
+
+The day's Indeed work through the pool, all anonymous, all curl_cffi
+`safari184` with no warm-up:
+
+| Run | Requests | Result |
+|---|---|---|
+| the full run's `indeed_check` | 85 | 81 postings read, 4 refusals |
+| the backlog run, 30 minutes | 94 | 90 postings read, 4 refusals |
+| the same checker in a WINDOWED BROWSER | 3 | home page twice 200, first posting page **401** |
+
+The 401 is Indeed's own bot detection asking an anonymous visitor to sign in
+(`docs/proxies.md`, "The browser is the suspicious one on Indeed"). The
+checker therefore stays on curl_cffi, which is the opposite of what
+kariyer.net needs.
+
 ## A full run on an empty table: 343 requests, one refusal - measured 21.09.2026
 
 The table had been emptied first (`backups/job_posts-20260921-120942.csv`),
