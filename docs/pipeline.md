@@ -795,3 +795,69 @@ Revisit if any of these change:
   site, and cap the site whose crawl already carries the description
 * the crawl set grows enough that one classify run stops finishing inside
   `CLASSIFY_TIMEOUT`
+
+## A logo for the postings that arrived without one - measured 23.09.2026
+
+Harman asked for this on 21.09.2026 and asked for it to be left to the end:
+"Logosu olmayan iş ilanları için yapay zeka internette şirket ismini aratıp
+logoyu bulsun". `pipeline/company_logos.py`, the last step of a run.
+
+**Who is missing one.** Every board but Indeed hands the crawl a logo with
+the card:
+
+| Board | with a logo | without |
+|---|---|---|
+| indeed.com | 0 | **104** |
+| linkedin.com | 70 | 0 |
+| kariyer.net | 24 | 0 |
+| youthall.com | 13 | 0 |
+| techcareer.net | 1 | 1 |
+
+105 postings, **33 companies**. The work is per company, not per posting.
+
+**The local model cannot fetch anything.** Ollama answers from what the model
+knows and makes no requests of its own; its hosted web-search API is a
+separate paid-tier service on ollama.com with an undocumented free quota
+(checked 23.09.2026). So the layer is split: the model names the company's
+official website, and this code fetches that site and reads the mark out of
+its HTML. Two model calls and one to three requests per company, all of them
+to the company's own site. **No job board is touched.**
+
+**The order of marks on a page:** `apple-touch-icon` (square, meant for a
+home screen - the shape the dashboard's avatar wants), then the largest
+`<link rel="icon">`, then `og:image` (a social card, usually a banner with
+text), then `/favicon.ico`. The first that answers with an image wins.
+
+**Three runs over the same 33 companies, one change each:**
+
+| Run | Change | Logos found |
+|---|---|---|
+| 1 | as first written | 17 of 33 |
+| 2 | brand = the name's FIRST word; try every candidate, not one; retry a dead domain with `www.` | 18 of 32 |
+| 3 | the model confirms the page is that company | **17 of 32** |
+
+- **Run 1 lost ABB.** The model named abb.com, its real site, and the guard
+  matched on the name's longest word - "elektrik", which ABB's global page
+  never says. The brand is the FIRST word of a Turkish company name; the rest
+  describes the trade.
+- **Run 1 also gave up too early.** It picked one candidate and stopped when
+  it was not an image: FedEx and Estetik International both had a
+  `/favicon.ico` that answered 200 with HTML. Texas Instruments ships
+  `<meta property="og:image" content="">`, which `urljoin` turned into the
+  page's own url - an HTML document offered as a logo.
+- **Run 3 dropped one, and that is the point.** `pladis.com` is "Diseño y
+  Construcción | Pladis", a construction firm with the same name as the
+  snacking company whose posting we hold. The domain IS the brand, so no
+  string comparison can see it. The model, shown the page's title and
+  description, said so outright. It also threw out `estetik.com.tr`, which
+  serves an "Index of /" directory listing.
+
+**Why the model is allowed to say "I don't know", and does.** Three companies
+of the 32 got no domain at all - "Vertigo" ("the name is too generic"),
+"S-AI Media Works", and the crawl's own "N/A" placeholder, which is now
+filtered before the model is asked. Seven domains answered nothing and one
+answered 403. **A missing logo is a plain board. A wrong logo is another
+company's mark on someone's posting**, so every doubt resolves to no logo and
+the board falls back to the company's initials.
+
+Logs: `backups/logos-dryrun-20260923.log`, `-dryrun2-`, `-dryrun3-`.

@@ -340,6 +340,14 @@ def soft_close_after(timeout):
 # 3600 s covers about 2,700.
 CLASSIFY_TIMEOUT = int(os.getenv("CLASSIFY_TIMEOUT", "3600"))
 
+# The logo layer (pipeline/company_logos.py), added 23.09.2026. Measured the
+# same day on the 32 companies whose postings had no logo: about 10 s each -
+# two local model calls and one or two requests to the company's own site -
+# so 5 minutes for 32. A first full run brings a few hundred companies, and
+# the step writes each logo as it finds it, so a run cut off at the ceiling
+# keeps what it had.
+LOGO_TIMEOUT = int(os.getenv("LOGO_TIMEOUT", "3600"))
+
 # Pure SQL over a few hundred rows - a second is generous.
 DEDUPE_TIMEOUT = int(os.getenv("DEDUPE_TIMEOUT", "120"))
 
@@ -819,7 +827,10 @@ def run_post_crawl(crawled=None):
     notified = run_step("notify", "pipeline.notify_watchlist", NOTIFY_TIMEOUT)
     checked = run_checks(crawled)
     classified = run_step("classify", "pipeline.classify_jobs", CLASSIFY_TIMEOUT)
-    return deduped and notified and checked and classified
+    # LAST, and it is the only step nothing waits on: a posting with no logo
+    # is on the board already, wearing its company's initials.
+    logos = run_step("logos", "pipeline.company_logos", LOGO_TIMEOUT)
+    return deduped and notified and checked and classified and logos
 
 
 ############################################
