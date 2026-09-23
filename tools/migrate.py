@@ -103,6 +103,42 @@ MIGRATIONS = [
         "job_posts.company_logo_url",
         "ALTER TABLE job_posts ADD COLUMN IF NOT EXISTS company_logo_url VARCHAR",
     ),
+
+    ###################################################################
+    # THE FIELD TAXONOMY - 23.09.2026                                 #
+    ###################################################################
+    # The board stopped being a software board. job_category now holds a
+    # slug from scraper/fields.py instead of it|general_program|other, and
+    # the other fields a posting belongs to live in their own table. The
+    # column does not change shape, so there is no DDL for it - only the
+    # vocabulary changed, and pipeline/classify_jobs.py rewrites the rows.
+    #
+    # is_internship is the second question the classifier answers, and the
+    # only reason a posting is hidden now: a full-time job that got past the
+    # crawl's filters. NULL means not looked at yet.
+    (
+        "job_posts.is_internship",
+        "ALTER TABLE job_posts ADD COLUMN IF NOT EXISTS is_internship BOOLEAN",
+    ),
+    (
+        "job_post_fields",
+        """
+        CREATE TABLE IF NOT EXISTS job_post_fields (
+            job_post_id INTEGER NOT NULL
+                REFERENCES job_posts (id) ON DELETE CASCADE,
+            field VARCHAR(32) NOT NULL,
+            rank INTEGER,
+            PRIMARY KEY (job_post_id, field)
+        )
+        """,
+    ),
+    # The dashboard's filter is "every posting in this field", so the index
+    # is on field. The primary key already covers the other direction.
+    (
+        "job_post_fields.field index",
+        "CREATE INDEX IF NOT EXISTS ix_job_post_fields_field "
+        "ON job_post_fields (field)",
+    ),
 ]
 
 

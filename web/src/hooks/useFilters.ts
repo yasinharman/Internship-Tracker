@@ -14,7 +14,10 @@ const RANGES: RangeKey[] = ["24h", "7d", "30d", "all"];
  * and a copied address reproduce exactly what was on screen.
  *
  * `meta` supplies the defaults, so an untouched URL shows Internship +
- * Part-Time in it + general_program - the same opening view app.py had.
+ * Part-Time. No field is pre-selected since 23.09.2026: the board is for
+ * every student (scraper/fields.py), and opening it on one department would
+ * be the old software-only board wearing a different hat. An empty selection
+ * means every field, and the student narrows it.
  */
 export function useFilters(meta: Meta | undefined) {
   const [params, setParams] = useSearchParams();

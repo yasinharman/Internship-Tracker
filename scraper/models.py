@@ -70,9 +70,24 @@ class JobPost(Base):
     # two paths diverge silently: a fresh deploy gets the columns but not the
     # indexes, and classify_jobs scans the whole table on every run.
     # SQLAlchemy names these ix_job_posts_<column>, matching tools/migrate.py.
-    job_category = Column(String(32), index=True)  # it|general_program|other
+    # The posting's MAIN field, one of scraper/fields.py's slugs. Every field
+    # it carries - up to three - is in job_post_fields below; this is the
+    # first of them, kept on the row because a board that shows one chip per
+    # card would otherwise join for it on every query.
+    #
+    # Until 23.09.2026 this held it|general_program|other, where `other` meant
+    # "hide": `is_active` went False and a cleaner's posting and a lawyer's
+    # posting were the same thing. Nothing is hidden for its field now.
+    job_category = Column(String(32), index=True)
     category_reason = Column(Text)
     classified_at = Column(DateTime)
+
+    # The other question the classifier answers: is this an internship at all?
+    # NULL means not looked at yet, False means the crawl's filters let a
+    # full-time or part-time job through - that one is hidden (is_active), and
+    # the column says WHY, so a wrong call can be found and undone rather than
+    # guessed at.
+    is_internship = Column(Boolean)
 
     ###################################################################
     # THE SAME JOB, ADVERTISED ON TWO BOARDS                          #
@@ -159,6 +174,33 @@ class JobPost(Base):
     #
     # No index: nothing filters, sorts or groups on it.
     company_logo_url = Column(String)
+
+###################################################################
+# THE FIELDS A POSTING BELONGS TO - one row per (posting, field)  #
+###################################################################
+class JobPostField(Base):
+    """
+    A posting's fields, from scraper/fields.py. One to three per posting.
+
+    A table rather than a column because the dashboard filters on it: "show
+    me yazilim" is a join on an indexed column, where a comma-joined string
+    would be a LIKE '%,yazilim,%' that no index can help and that matches
+    "yazilim_test" by accident.
+
+    Rewritten wholesale every time a posting is classified (classify_jobs
+    deletes then inserts), so nothing here outlives a change of mind.
+    """
+
+    __tablename__ = "job_post_fields"
+
+    job_post_id = Column(
+        Integer, ForeignKey("job_posts.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    field = Column(String(32), primary_key=True, index=True)
+    # 0 is the field the posting is mostly about - the one on JobPost.
+    rank = Column(Integer, default=0)
+
 
 ##############################
 # CONNECTION TO THE DATABASE #

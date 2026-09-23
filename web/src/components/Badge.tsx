@@ -51,8 +51,13 @@ export function CategoryBadge({
       </Badge>
     );
   }
+  /*  One tone for every field since 23.09.2026. It used to be accent for
+   *  "it" and neutral for the rest, which was honest when the board was a
+   *  software board; on a board for every student it would be the site
+   *  saying one department matters more than the others. The field's name
+   *  is the information, and the student picked the filter themselves. */
   return (
-    <Badge tone={category === "it" ? "accent" : "neutral"} title={reason ?? undefined}>
+    <Badge tone="neutral" title={reason ?? undefined}>
       {label ?? category}
     </Badge>
   );

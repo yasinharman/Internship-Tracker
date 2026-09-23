@@ -14,9 +14,11 @@ scripts own.
 import os
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import Select, and_, distinct, func, or_, select
+from sqlalchemy import Select, and_, distinct, exists, func, or_, select
 
-from scraper.models import UNLISTED_AFTER_DAYS, JobPost
+from scraper.fields import FIELDS as FIELD_LABELS
+from scraper.fields import ORDER as FIELD_ORDER
+from scraper.models import UNLISTED_AFTER_DAYS, JobPost, JobPostField
 
 #####################################################
 # THE TWO HIDES THAT ARE NOT DELETES                #
@@ -102,20 +104,18 @@ JOB_TYPE_LABELS = {
 #####################################################
 # FIELD, AS DECIDED BY THE CLASSIFIER               #
 #####################################################
-# Default to it + general_program: the whole point of the classifier is that
-# the board should show software work, and general_program stays because
-# "Intern" at UPS could still turn out to be software - the employer has not
-# said yet.
-#
-# Unclassified rows are not a category here; they are hidden before this
-# filter is reached. See CLASSIFIED above.
-PREFERRED_CATEGORIES = ["it", "general_program"]
+# NOTHING IS PRE-SELECTED SINCE 23.09.2026. The board used to open on
+# it + general_program, because it was a software board and everything else
+# was noise. It is for every student now (scraper/fields.py), and a default
+# that shows one field would be the old hide wearing a different hat: a
+# mechanical engineering student would open the page and see software
+# postings. An empty selection means every field, and the student narrows it.
+PREFERRED_CATEGORIES = []
 
-CATEGORY_LABELS = {
-    "it": "Yazılım / IT",
-    "general_program": "Genel staj programı",
-    "other": "Başka alan",
-}
+# The dashboard's "Alan" dropdown takes its options from /api/meta, so the
+# taxonomy lives in one place: scraper/fields.py. Renaming a field there
+# renames it on the board.
+CATEGORY_LABELS = dict(FIELD_LABELS)
 
 # Cosmetic only - main.py's SITE_LABELS shows a name a human recognises
 # instead of the internal spider name. source_site holds these already, but a
@@ -245,14 +245,24 @@ def range_bounds(range_key, now=None):
 def category_condition(categories):
     """
     An empty selection means "no category filter". Otherwise the selected
-    categories and nothing else.
+    fields and nothing else.
+
+    A posting carries up to three fields (scraper/fields.py), so this asks
+    job_post_fields rather than the posting's own column: a "Yazılım ve Veri
+    Stajyeri" is in the veri_yapay_zeka list as well as the yazilim one, and
+    matching on job_category alone would show it in neither if the student
+    picked the second. EXISTS rather than a join so a posting in two selected
+    fields is still one row.
 
     Until 16.09.2026 this also let a NULL category through, whatever was
     selected. That rule is gone on purpose; see CLASSIFIED.
     """
     if not categories:
         return None
-    return JobPost.job_category.in_(categories)
+    return exists().where(
+        (JobPostField.job_post_id == JobPost.id)
+        & (JobPostField.field.in_(categories))
+    )
 
 
 def search_condition(term):

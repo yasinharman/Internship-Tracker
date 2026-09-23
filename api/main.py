@@ -48,7 +48,7 @@ from api.schemas import (
     Watchlist,
     WatchlistEntry,
 )
-from scraper.models import JobPost
+from scraper.models import JobPost, JobPostField
 
 load_dotenv()
 
@@ -135,6 +135,32 @@ def _options(session, column, labels, clauses):
     return [Option(value=value, label=labels.get(value, value), count=count) for value, count in rows]
 
 
+def _field_options(session, clauses):
+    """
+    The fields the board can show, with how many postings are in each.
+
+    Counted over job_post_fields rather than JobPost.job_category, because a
+    posting carries up to three fields and the second one is exactly what a
+    student filtering for their own department is looking for. A posting in
+    two fields counts once in each - the same way it appears in both lists.
+
+    Ordered by scraper/fields.py rather than by count: the dropdown is a
+    catalogue of departments, and a catalogue that reshuffles itself as
+    postings come and go is one nobody learns the shape of.
+    """
+    rows = session.execute(
+        select(JobPostField.field, func.count(func.distinct(JobPost.id)))
+        .join(JobPost, JobPost.id == JobPostField.job_post_id)
+        .where(and_(*clauses))
+        .group_by(JobPostField.field)
+    ).all()
+    counted = dict(rows)
+    return [
+        Option(value=slug, label=q.CATEGORY_LABELS.get(slug, slug), count=counted[slug])
+        for slug in q.FIELD_ORDER if counted.get(slug)
+    ]
+
+
 @app.get("/api/meta", response_model=Meta)
 def meta(session: Session = Depends(get_session)):
     """
@@ -146,7 +172,7 @@ def meta(session: Session = Depends(get_session)):
     visible = list(q.VISIBLE)
 
     types = _options(session, JobPost.job_type, q.JOB_TYPE_LABELS, visible)
-    categories = _options(session, JobPost.job_category, q.CATEGORY_LABELS, visible)
+    categories = _field_options(session, visible)
     sources = _options(session, JobPost.source_site, q.SITE_LABELS, visible)
 
     available_types = {option.value for option in types}

@@ -256,11 +256,17 @@ class JobScraperPipeline:
                 # is_active is NOT reset here when the classifier has already
                 # excluded this posting. It used to be set to True
                 # unconditionally, from back when nothing ever set it to
-                # False. Now the classifier owns the flag: a job it judged to
-                # belong to another field would come back to life every time
-                # the crawl saw it again, and stay there, because only rows
-                # with job_category IS NULL are ever reclassified.
-                if existing_job.job_category != "other":
+                # False. Now the classifier owns the flag: a posting it
+                # judged not to be an internship would come back to life
+                # every time the crawl saw it again, and stay there, because
+                # only rows with job_category IS NULL are ever reclassified.
+                #
+                # The test was `job_category != "other"` until 23.09.2026,
+                # when `other` stopped meaning "hidden" and became one field
+                # among two dozen (scraper/fields.py). Being in a field is
+                # not a reason to hide anything any more; not being an
+                # internship still is.
+                if existing_job.is_internship is not False:
                     existing_job.is_active = True
 
                 # The url was in a search result just now, so the posting is

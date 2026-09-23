@@ -26,7 +26,7 @@ from scraper.classifier import (
     DEFAULT_MODEL,
     LOCAL_BASE_URL,
     LOCAL_REQUEST,
-    JobCategory,
+    PostingFields,
     classify,
 )
 from tools.eval_classifier import REQUEST
@@ -53,7 +53,8 @@ def made(monkeypatch):
 
         def _parse(self, **request):
             self.calls.append(request)
-            verdict = JobCategory(category="it", reason="Başlıkta yazılım geçiyor.")
+            verdict = PostingFields(fields=["yazilim"], is_internship=True,
+                                    reason="Başlıkta yazılım geçiyor.")
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(parsed=verdict))])
 
     monkeypatch.setattr(openai, "OpenAI", Recorder)
@@ -79,8 +80,9 @@ def test_the_request_is_the_one_that_was_measured(made):
     assert call["model"] == DEFAULT_MODEL == "gemma4:12b"
     assert call["temperature"] == 0
     assert call["reasoning_effort"] == "none"
-    assert call["response_format"] is JobCategory
-    assert verdict.category == "it"
+    assert call["response_format"] is PostingFields
+    assert verdict.fields == ["yazilim"]
+    assert verdict.is_internship is True
 
 
 def test_the_measuring_tool_sends_the_same_dict():

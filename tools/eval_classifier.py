@@ -72,12 +72,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+from scraper.fields import ORDER as FIELD_ORDER
 from scraper.classifier import (
     DESCRIPTION_CHARS,
     LOCAL_BASE_URL,
     LOCAL_REQUEST,
     SYSTEM_PROMPT,
-    JobCategory,
+    PostingFields,
     build_user_text,
 )
 
@@ -91,8 +92,12 @@ RESULTS_DIR = ROOT / "backups"
 DEFAULT_BASE_URL = LOCAL_BASE_URL                   # Ollama
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
-CATEGORIES = ["it", "general_program", "other"]
-SHOWN = {"it", "general_program"}                   # `other` hides the posting
+# The vocabulary, since 23.09.2026: scraper/fields.py rather than the old
+# it|general_program|other. Two things changed about what a disagreement
+# COSTS. A posting is no longer hidden for its field, so "wrongly hidden" is
+# now about is_internship alone; and a posting carries up to three fields, so
+# two verdicts are compared as sets - equal, overlapping, or disjoint.
+CATEGORIES = list(FIELD_ORDER)
 
 # What every candidate is sent besides the prompt. Changing it is a new
 # experiment, and every model has to be re-run under it.
@@ -142,6 +147,9 @@ def take_snapshot(path, force):
                 "location": p.location,
                 "job_description": p.job_description,
                 "job_category": p.job_category,
+                "fields": sorted(f.field for f in (p.fields or [])) or (
+                    [p.job_category] if p.job_category else []),
+                "is_internship": p.is_internship,
                 "category_reason": p.category_reason,
                 "classified_at": p.classified_at.isoformat() if p.classified_at else None,
             }
@@ -204,7 +212,7 @@ def classify_one(client, model, row):
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": build_user_text(row)},
         ],
-        response_format=JobCategory,
+        response_format=PostingFields,
         **REQUEST,
     )
     seconds = time.monotonic() - started
@@ -250,12 +258,17 @@ def run_model(model, base_url, snapshot_path, limit):
             "job_title": row["job_title"],
             "company": row["company"],
             "stored": row["job_category"],
+            "stored_fields": row.get("fields") or [],
+            "stored_internship": row.get("is_internship"),
             "stored_reason": row["category_reason"],
         }
         try:
             verdict, measured = classify_one(client, model, row)
-            entry.update(category=verdict.category, reason=verdict.reason, **measured)
-            shown = f"{entry['stored']:<16} -> {verdict.category:<16} {measured['seconds']:5.1f}s"
+            entry.update(category=verdict.fields[0], fields=list(verdict.fields),
+                         is_internship=verdict.is_internship,
+                         reason=verdict.reason, **measured)
+            shown = (f"{','.join(entry['stored_fields'])[:24]:<26} -> "
+                     f"{','.join(verdict.fields)[:24]:<26} {measured['seconds']:5.1f}s")
         except Exception as error:
             entry["error"] = f"{type(error).__name__}: {error}"[:300]
             shown = f"FAILED  {entry['error'][:80]}"
@@ -293,26 +306,46 @@ def run_model(model, base_url, snapshot_path, limit):
 #####################################################
 def tally(results):
     """
-    Splits the answered rows by what a disagreement COSTS, because the three
-    kinds are not worth the same. A wrongly hidden posting is a real
-    opportunity gone; a newly shown one is a row of noise; it <-> program
-    changes nothing on the board.
+    Splits the answered rows by what a disagreement COSTS, because the kinds
+    are not worth the same.
+
+    Since 23.09.2026 a posting is not hidden for its field, so the expensive
+    error changed. WRONGLY HIDDEN is now a posting stored as an internship
+    that this model calls something else - the student never sees it. MISSED
+    is a stored field the model did not give: the posting is on the board but
+    not in the list that student is filtering for. EXTRA is the reverse, a
+    field the model added - a row of noise in somebody else's list, which is
+    the cheapest of the three.
     """
-    answered = [r for r in results if "category" in r]
+    answered = [r for r in results if "fields" in r]
+
+    def stored_set(row):
+        return set(row.get("stored_fields") or [])
+
+    def given_set(row):
+        return set(row.get("fields") or [])
+
     return {
         "answered": answered,
         "failed": [r for r in results if "error" in r],
-        "agreed": [r for r in answered if r["category"] == r["stored"]],
+        "agreed": [r for r in answered if stored_set(r) == given_set(r)],
+        "overlapping": [
+            r for r in answered
+            if stored_set(r) != given_set(r) and stored_set(r) & given_set(r)
+        ],
+        "disjoint": [
+            r for r in answered
+            if stored_set(r) and given_set(r) and not (stored_set(r) & given_set(r))
+        ],
+        "missed": [r for r in answered if stored_set(r) - given_set(r)],
+        "extra": [r for r in answered if given_set(r) - stored_set(r)],
         "wrongly_hidden": [
-            r for r in answered if r["stored"] in SHOWN and r["category"] == "other"
+            r for r in answered
+            if r.get("stored_internship") is not False and r.get("is_internship") is False
         ],
         "newly_shown": [
-            r for r in answered if r["stored"] == "other" and r["category"] in SHOWN
-        ],
-        "swapped": [
             r for r in answered
-            if r["stored"] in SHOWN and r["category"] in SHOWN
-            and r["category"] != r["stored"]
+            if r.get("stored_internship") is False and r.get("is_internship") is not False
         ],
     }
 
@@ -332,25 +365,34 @@ def report(meta, results):
           f"  request {meta['request']}")
     print(f"{'=' * 70}")
 
-    print(f"\nstored (gpt-5.4-mini) down, {meta['model']} across")
-    print(f"  {'':<16}" + "".join(f"{c:>17}" for c in CATEGORIES))
-    for stored in CATEGORIES:
-        cells = "".join(
-            f"{sum(1 for r in answered if r['stored'] == stored and r['category'] == c):>17}"
-            for c in CATEGORIES
-        )
-        print(f"  {stored:<16}{cells}")
+    print(f"\nfields: stored vs {meta['model']}")
+    print(f"  identical       {len(groups['agreed'])} of {len(answered)}")
+    print(f"  overlapping     {len(groups['overlapping'])}   (share a field, not the same set)")
+    print(f"  DISJOINT        {len(groups['disjoint'])}   <- no field in common")
+    print(f"  missed a field  {len(groups['missed'])}")
+    print(f"  added a field   {len(groups['extra'])}")
 
-    print(f"\nagreed          {len(groups['agreed'])} of {len(answered)}")
-    print(f"WRONGLY HIDDEN  {len(groups['wrongly_hidden'])}   <- the decision rule")
+    print(f"\nWRONGLY HIDDEN  {len(groups['wrongly_hidden'])}   <- called it not an internship")
     print(f"newly shown     {len(groups['newly_shown'])}")
-    print(f"it <-> program  {len(groups['swapped'])}")
     print(f"failed          {len(groups['failed'])}")
 
+    worst = sorted(
+        ((len(set(r['stored_fields']) ^ set(r['fields'])), r) for r in groups['disjoint']),
+        key=lambda pair: -pair[0],
+    )[:10]
+    if worst:
+        print(f"\n{'-' * 70}\nDISJOINT - not one field in common")
+        for _, row in worst:
+            print(f"  {row['job_title'][:60]}")
+            print(f"      stored {','.join(row['stored_fields'])}"
+                  f"  ->  {','.join(row['fields'])}")
+            print(f"      {row['reason'][:150]}")
+
     for title, key in (
-        ("WRONGLY HIDDEN - stored as shown, this model says other", "wrongly_hidden"),
-        ("NEWLY SHOWN - stored as other, this model shows it", "newly_shown"),
-        ("IT <-> GENERAL_PROGRAM", "swapped"),
+        ("WRONGLY HIDDEN - stored as an internship, this model says it is not",
+         "wrongly_hidden"),
+        ("NEWLY SHOWN - stored as not an internship, this model shows it",
+         "newly_shown"),
     ):
         if not groups[key]:
             continue

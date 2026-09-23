@@ -45,6 +45,9 @@ import os
 from pydantic import BaseModel
 from typing import Literal
 
+from . import fields as fields_module
+from .fields import FIELDS
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gemma4:12b"
@@ -68,49 +71,50 @@ LOCAL_REQUEST = {"temperature": 0, "reasoning_effort": "none"}
 #####################################################
 # WHAT COMES BACK                                   #
 #####################################################
-class JobCategory(BaseModel):
-    category: Literal["it", "general_program", "other"]
+# The slugs as an enum rather than free text: Ollama is given the list in the
+# response schema, so a field it has not been offered cannot come back at all.
+# fields.clean() is still the belt to this brace - the schema is enforced by
+# the server, and the server is a local process we restart.
+FieldSlug = Literal[tuple(FIELDS)]      # type: ignore[valid-type]
+
+
+class PostingFields(BaseModel):
+    fields: list[FieldSlug]
+    is_internship: bool
     reason: str          # one sentence, Turkish - shown in the dashboard
 
 
 #####################################################
 # THE PROMPT                                        #
 #####################################################
-# Examples are real rows from our own database, including the ones the regex
-# missed. Kept stable so the server can reuse the prefix it has already read.
 # Any edit to it is a new experiment: tools/eval_classifier.py records its
 # hash, and the model choice was measured on this exact text.
-SYSTEM_PROMPT = """\
-Sen bir iş ilanı sınıflandırıcısısın. Sana bir staj veya part-time ilanı \
-verilecek; bunun bir YAZILIM/BİLİŞİM öğrencisine uygun olup olmadığına karar \
-vereceksin.
+_FIELD_LINES = "\n".join(f"- {slug}: {label}" for slug, label in FIELDS.items())
 
-Üç kategori var:
+SYSTEM_PROMPT = f"""\
+Sen bir staj ilanı sınıflandırıcısısın. Sana bir iş ilanı verilecek. İki soruya \
+cevap vereceksin.
 
-1. "it" — ilan açıkça yazılım, bilişim, veri, siber güvenlik, test/QA, DevOps, \
-   sistem/ağ, yapay zeka veya bilgisayar mühendisliği alanında.
-   Örnekler: "Software Engineering Intern (GE)", "Bilgisayar Mühendisliği \
-   Stajyeri", "Part Time Working Student (DevOps Engineer)", "Cybersecurity \
-   Pre-Sales Stajyeri"
+1) `fields`: Bu ilan hangi bölümdeki öğrenciye uygun? Aşağıdaki listeden EN AZ \
+   BİR, EN FAZLA ÜÇ alan seç. İlk yazdığın alan ilanın asıl alanı olsun.
 
-2. "general_program" — şirket geneline açık bir staj/yetenek programı; ilan \
-   hangi departmanda çalışılacağını SÖYLEMİYOR. Departman sonradan belli \
-   oluyor, dolayısıyla yazılım da çıkabilir.
-   Örnekler: "Intern (UPS)", "Stajyer", "Yaz Stajı Programı", "Kariyer Test \
-   Sürüşü"
+{_FIELD_LINES}
 
-3. "other" — ilan BAŞKA bir alanı açıkça adlandırıyor.
-   Örnekler: "Avcılar Yarı Zamanlı Oyun Ablası Aranıyor", "Karakazan \
-   Bulaşıkçısı - Part Time", "Parttime Ofis Temizliği", "Part Time Diş Hekimi \
-   Asistanı", "Gıda Mühendisi (Freelance)", "Sales Intern", "İnsan Kaynakları \
-   Stajyeri"
+Kurallar:
+- Sadece yukarıdaki anahtarları yaz; başka bir kelime yazma.
+- İlan birden fazla bölüme açıksa hepsini yaz. Örnek: "Yazılım ve Veri \
+  Stajyeri" -> ["yazilim", "veri_yapay_zeka"].
+- İlan hangi departmanda çalışılacağını SÖYLEMİYORSA ve şirket geneline açık \
+  bir staj/yetenek programıysa yalnızca ["genel_program"] yaz.
+- Listedeki hiçbir alana uymuyorsa yalnızca ["diger"] yaz.
+- "genel_program" ve "diger" tek başına yazılır, başka alanla birlikte yazılmaz.
+- Öğrencinin bölümüne göre seç, şirketin sektörüne göre değil. Bir bankanın \
+  yazılım stajı "yazilim"dır, "finans_muhasebe" değil.
 
-EN ÖNEMLİ KURAL: "it" ile "general_program" arasında kararsız kalırsan \
-"general_program" seç. Bilinmeyeni atmıyoruz — yanlış eleme, gerçek bir \
-fırsatı kaybettirir; fazladan gösterilen bir ilan ise sadece bir satır gürültü.
-
-Alan adı geçmiyorsa "other" DEME. "other" yalnızca ilan başka bir mesleği \
-açıkça söylediğinde kullanılır.
+2) `is_internship`: İlan bir STAJ ilanıysa true yaz. Tam zamanlı bir iş, \
+   yarı zamanlı bir iş, çırak/kalfa ilanı ya da staj olmayan başka bir şeyse \
+   false yaz. Emin değilsen true yaz: yanlış eleme gerçek bir fırsatı \
+   kaybettirir, fazladan görünen bir ilan sadece bir satır gürültüdür.
 
 `reason` alanına kararının gerekçesini TEK bir Türkçe cümleyle yaz; ilandaki \
 hangi ifadeye dayandığını belirt.\
@@ -128,7 +132,6 @@ def build_user_text(posting):
         return getattr(posting, name, None) or ""
 
     description = field("job_description")[:DESCRIPTION_CHARS]
-
     return (
         f"Başlık: {field('job_title')}\n"
         f"Şirket: {field('company')}\n"
@@ -138,14 +141,15 @@ def build_user_text(posting):
 
 
 #####################################################
-# ONE POSTING -> ONE CATEGORY                       #
+# ONE POSTING -> ITS FIELDS                         #
 #####################################################
 def classify(posting, model=None):
     """
-    Returns a JobCategory. Raises whatever the openai SDK raises - a
-    connection error when Ollama is not running, a 404 when the model has not
-    been pulled - and the caller decides whether one failed posting should
-    stop the run.
+    Returns a PostingFields whose `fields` have been through fields.clean().
+
+    Raises whatever the openai SDK raises - a connection error when Ollama is
+    not running, a 404 when the model has not been pulled - and the caller
+    decides whether one failed posting should stop the run.
     """
     from openai import OpenAI
 
@@ -172,7 +176,12 @@ def classify(posting, model=None):
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": build_user_text(posting)},
         ],
-        response_format=JobCategory,
+        response_format=PostingFields,
         **LOCAL_REQUEST,
     )
-    return completion.choices[0].message.parsed
+    answer = completion.choices[0].message.parsed
+    return PostingFields(
+        fields=fields_module.clean(answer.fields if answer else []),
+        is_internship=True if answer is None else bool(answer.is_internship),
+        reason=(answer.reason if answer else "") or "",
+    )

@@ -29,7 +29,8 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import sessionmaker
 
 from scraper.classifier import classify
-from scraper.models import JobPost, db_connect
+from scraper.fields import ORDER as field_order, label as field_label
+from scraper.models import JobPost, JobPostField, db_connect
 
 load_dotenv()
 
@@ -49,7 +50,9 @@ for stream in (sys.stdout, sys.stderr):
 # 12 s, is far inside the SDK's own 600 s timeout.
 CONCURRENCY = int(os.getenv("CLASSIFY_CONCURRENCY", "8"))
 
-CATEGORY_ORDER = ["it", "general_program", "other"]
+# The order a run's summary counts them in: scraper/fields.py's own order,
+# which is the order the dashboard shows them in too.
+CATEGORY_ORDER = list(field_order)
 
 #####################################################
 # READ                                              #
@@ -217,27 +220,43 @@ def classify_all(rows, model):
 def print_grouped(rows, results):
     by_id = {row["id"]: row for row in rows}
 
+    # A posting appears under each of its fields, which is what the dashboard
+    # does too: a "Yazılım ve Veri Stajyeri" is genuinely in both lists.
     for category in CATEGORY_ORDER:
         matching = [
             (by_id[row_id], verdict)
             for row_id, verdict in results.items()
-            if verdict.category == category
+            if category in verdict.fields
         ]
-        print(f"\n{'=' * 70}\n{category.upper()}  ({len(matching)})\n{'=' * 70}")
+        if not matching:
+            continue
+        print(f"\n{'=' * 70}\n{field_label(category).upper()}  ({len(matching)})\n{'=' * 70}")
         for row, verdict in sorted(matching, key=lambda pair: pair[0]["job_title"] or ""):
-            print(f"  {row['job_title']}  [{row['company']}]")
+            others = [field_label(f) for f in verdict.fields if f != category]
+            also = f"  (ayrıca: {', '.join(others)})" if others else ""
+            print(f"  {row['job_title']}  [{row['company']}]{also}")
             print(f"      {verdict.reason}")
 
+    not_internships = [v for v in results.values() if v.is_internship is False]
+    if not_internships:
+        print(f"\n{'=' * 70}\nSTAJ DEĞİL  ({len(not_internships)})\n{'=' * 70}")
+        for row_id, verdict in results.items():
+            if verdict.is_internship is False:
+                print(f"  {by_id[row_id]['job_title']}  [{by_id[row_id]['company']}]")
+                print(f"      {verdict.reason}")
+
     counts = ", ".join(
-        f"{category}: {sum(1 for v in results.values() if v.category == category)}"
-        for category in CATEGORY_ORDER
+        f"{field_label(c)}: {n}" for c, n in (
+            (c, sum(1 for v in results.values() if c in v.fields))
+            for c in CATEGORY_ORDER
+        ) if n
     )
     print(f"\n{'-' * 70}\n{len(results)} classified - {counts}")
 
 
 def print_disagreements(rows, per_model):
     """
-    per_model: {"model-name": {row_id: JobCategory}}
+    per_model: {"model-name": {row_id: PostingFields}}
 
     Agreement is the boring case and there is a lot of it, so only the rows
     where the models split are printed - that is the whole point of the
@@ -249,7 +268,7 @@ def print_disagreements(rows, per_model):
     shared_ids = set.intersection(*(set(v) for v in per_model.values()))
     disagreed = [
         row_id for row_id in shared_ids
-        if len({per_model[m][row_id].category for m in models}) > 1
+        if len({tuple(per_model[m][row_id].fields) for m in models}) > 1
     ]
 
     print(f"\n{'=' * 70}")
@@ -261,13 +280,15 @@ def print_disagreements(rows, per_model):
         print(f"\n  {row['job_title']}  [{row['company']}]")
         for model in models:
             verdict = per_model[model][row_id]
-            print(f"      {model:<22} {verdict.category:<16} {verdict.reason}")
+            print(f"      {model:<22} {','.join(verdict.fields):<30} {verdict.reason}")
 
     print(f"\n{'-' * 70}")
     for model in models:
         counts = ", ".join(
-            f"{c}: {sum(1 for v in per_model[model].values() if v.category == c)}"
-            for c in CATEGORY_ORDER
+            f"{c}: {n}" for c, n in (
+                (c, sum(1 for v in per_model[model].values() if c in v.fields))
+                for c in CATEGORY_ORDER
+            ) if n
         )
         print(f"  {model:<22} {counts}")
 
@@ -285,17 +306,35 @@ def write_results(session, results):
 
     for posting in session.query(JobPost).filter(JobPost.id.in_(results)).all():
         verdict = results[posting.id]
+        fields = list(verdict.fields)
 
-        posting.job_category = verdict.category
+        # The first field is the one the posting is mostly about, and the one
+        # the card shows. The rest are what a student filtering for their own
+        # department should still find it under.
+        posting.job_category = fields[0]
         posting.category_reason = verdict.reason
         posting.classified_at = now
+        posting.is_internship = verdict.is_internship
 
-        if verdict.category == "other":
+        # Rewritten wholesale: a posting classified again after a change of
+        # vocabulary must not keep a label from the old one.
+        session.query(JobPostField).filter(
+            JobPostField.job_post_id == posting.id
+        ).delete(synchronize_session=False)
+        for rank, slug in enumerate(fields):
+            session.add(JobPostField(job_post_id=posting.id, field=slug, rank=rank))
+
+        # THE ONLY HIDE LEFT, and it is not about the field. Until 23.09.2026
+        # a posting in someone else's line of work was hidden outright; the
+        # board is for every student now, so a lawyer's posting is a posting
+        # under hukuk. What is still hidden is a posting that is not an
+        # internship at all - the crawl's filters let some through.
+        if verdict.is_internship is False:
             posting.is_active = False
             deactivated += 1
-            # Logged at INFO on purpose: every exclusion is visible in the
-            # run's own output, so a wrong one can be spotted without a query.
-            print(f"  hidden: {posting.job_title} - {verdict.reason}")
+            # Printed on purpose: every exclusion is visible in the run's own
+            # output, so a wrong one can be spotted without a query.
+            print(f"  hidden, not an internship: {posting.job_title} - {verdict.reason}")
 
     session.commit()
     return deactivated
@@ -395,11 +434,13 @@ def main():
 
         deactivated = write_results(session, results)
         counts = ", ".join(
-            f"{c}: {sum(1 for v in results.values() if v.category == c)}"
-            for c in CATEGORY_ORDER
+            f"{field_label(c)}: {n}" for c, n in (
+                (c, sum(1 for v in results.values() if c in v.fields))
+                for c in CATEGORY_ORDER
+            ) if n
         )
         print(f"\n{len(results)} written - {counts}")
-        print(f"{deactivated} posting(s) hidden from the dashboard.")
+        print(f"{deactivated} posting(s) hidden for not being an internship.")
 
     finally:
         session.close()

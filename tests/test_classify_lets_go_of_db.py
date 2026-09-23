@@ -19,7 +19,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import pipeline.classify_jobs as classify_jobs
-from scraper.classifier import JobCategory
+from scraper.classifier import PostingFields
 from scraper.models import Base, JobPost
 
 
@@ -52,7 +52,8 @@ def test_no_connection_is_held_while_the_model_works(engine, monkeypatch):
 
     def classify_all(rows, model):
         seen["checked_out"] = engine.pool.checkedout()
-        return {rows[0]["id"]: JobCategory(category="it", reason="Yazılım stajı.")}
+        return {rows[0]["id"]: PostingFields(fields=["yazilim"], is_internship=True,
+                                             reason="Yazılım stajı.")}
 
     monkeypatch.setattr(classify_jobs, "classify_all", classify_all)
     classify_jobs.main()
@@ -63,13 +64,14 @@ def test_no_connection_is_held_while_the_model_works(engine, monkeypatch):
 def test_the_verdict_is_still_written_afterwards(engine, monkeypatch):
     monkeypatch.setattr(
         classify_jobs, "classify_all",
-        lambda rows, model: {rows[0]["id"]: JobCategory(category="it", reason="Yazılım stajı.")},
+        lambda rows, model: {rows[0]["id"]: PostingFields(
+            fields=["yazilim"], is_internship=True, reason="Yazılım stajı.")},
     )
     classify_jobs.main()
 
     session = sessionmaker(bind=engine)()
     (posting,) = session.query(JobPost).all()
-    assert posting.job_category == "it"
+    assert posting.job_category == "yazilim"
     assert posting.category_reason == "Yazılım stajı."
     assert posting.classified_at is not None
     session.close()
