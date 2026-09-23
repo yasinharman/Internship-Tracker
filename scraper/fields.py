@@ -40,34 +40,34 @@ and both have to be redone. docs/pipeline.md keeps the measurements.
 FIELDS = {
     # Bilişim
     "yazilim": "Yazılım",
-    "veri_yapay_zeka": "Veri ve yapay zekâ",
-    "siber_guvenlik_sistem": "Siber güvenlik, sistem ve ağ",
+    "veri_yapay_zeka": "Veri/Yapay Zekâ",
+    "siber_guvenlik_sistem": "Siber Güvenlik/Sistem/Ağ",
     # Mühendislik
-    "elektrik_elektronik": "Elektrik-elektronik ve otomasyon",
-    "makine_mekatronik": "Makine, mekatronik ve otomotiv",
-    "insaat_mimarlik": "İnşaat, mimarlık ve harita",
-    "endustri_uretim": "Endüstri, üretim ve kalite",
-    "kimya_biyoloji_gida": "Kimya, biyoloji, gıda ve çevre",
+    "elektrik_elektronik": "Elektrik-Elektronik/Otomasyon",
+    "makine_mekatronik": "Makine/Mekatronik/Otomotiv",
+    "insaat_mimarlik": "İnşaat/Mimarlık/Harita",
+    "endustri_uretim": "Endüstri/Üretim/Kalite",
+    "kimya_biyoloji_gida": "Kimya/Biyoloji/Gıda/Çevre",
     # İşletme
-    "finans_muhasebe": "Finans, muhasebe ve denetim",
-    "isletme_yonetim": "İşletme, yönetim ve proje",
-    "insan_kaynaklari": "İnsan kaynakları",
-    "lojistik_tedarik": "Lojistik, tedarik ve dış ticaret",
-    # Ticaret ve iletişim
-    "pazarlama_reklam": "Pazarlama ve reklam",
-    "satis_musteri": "Satış ve müşteri ilişkileri",
-    "medya_iletisim": "Medya, iletişim ve gazetecilik",
+    "finans_muhasebe": "Finans/Muhasebe/Denetim",
+    "isletme_yonetim": "İşletme/Yönetim/Proje",
+    "insan_kaynaklari": "İnsan Kaynakları",
+    "lojistik_tedarik": "Lojistik/Tedarik/Dış Ticaret",
+    # Ticaret/İletişim
+    "pazarlama_reklam": "Pazarlama/Reklam",
+    "satis_musteri": "Satış/Müşteri İlişkileri",
+    "medya_iletisim": "Medya/İletişim/Gazetecilik",
     "tasarim": "Tasarım",
-    # Diğer alanlar
+    # Diğer Alanlar
     "hukuk": "Hukuk",
     "egitim": "Eğitim",
     "saglik": "Sağlık",
-    "turizm_otelcilik": "Turizm, otelcilik ve yiyecek-içecek",
-    "ofis_idari": "Ofis ve idari işler",
-    "hizmet_perakende": "Hizmet, perakende ve operasyon",
-    "tarim_veterinerlik": "Tarım, ziraat ve veterinerlik",
+    "turizm_otelcilik": "Turizm/Otelcilik/Yiyecek-İçecek",
+    "ofis_idari": "Ofis/İdari İşler",
+    "hizmet_perakende": "Hizmet/Perakende/Operasyon",
+    "tarim_veterinerlik": "Tarım/Ziraat/Veterinerlik",
     # Ne alan söyleyen ne de başka bir yere sığan
-    "genel_program": "Bütün bölümlere açık program",
+    "genel_program": "Genel Program",
     "diger": "Diğer",
 }
 
@@ -79,9 +79,9 @@ GROUPS = {
                     "endustri_uretim", "kimya_biyoloji_gida"],
     "İşletme": ["finans_muhasebe", "isletme_yonetim", "insan_kaynaklari",
                 "lojistik_tedarik"],
-    "Ticaret ve iletişim": ["pazarlama_reklam", "satis_musteri", "medya_iletisim",
-                            "tasarim"],
-    "Diğer alanlar": ["hukuk", "egitim", "saglik", "turizm_otelcilik",
+    "Ticaret/İletişim": ["pazarlama_reklam", "satis_musteri", "medya_iletisim",
+                         "tasarim"],
+    "Diğer Alanlar": ["hukuk", "egitim", "saglik", "turizm_otelcilik",
                       "ofis_idari", "hizmet_perakende", "tarim_veterinerlik"],
     "Belirtilmemiş": ["genel_program", "diger"],
 }
