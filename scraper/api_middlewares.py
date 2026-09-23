@@ -36,6 +36,7 @@ Middleware priorities matter here:
 import logging
 import os
 from collections import defaultdict
+from urllib.parse import urlparse
 
 from curl_cffi import requests as curl_requests
 from scrapy import signals
@@ -44,6 +45,7 @@ from scrapy.responsetypes import responsetypes
 from scrapy.utils.python import to_unicode
 from scrapy.utils.response import response_status_message
 
+from . import cookie_jars
 from .browser_session import profile_for_impersonate
 from .proxy import ProxyConfig, new_session_id
 from .proxy_pool import ProxyPool, site_of
@@ -190,6 +192,20 @@ def get_proxy_pool(crawler):
     return pool
 
 
+def cookie_jars_on():
+    """
+    Whether a pooled request carries the cookies its address already has for
+    that site.
+
+    Harman, 23.09.2026: "çerez oturumu her sitede her zaman kullanılmalı bu
+    standart olması lazım yoksa ip ler erir". Behind a switch only until it
+    has been measured once on a live site - a full run was in flight the
+    afternoon it was written, and changing what the run was doing halfway
+    would have spoiled both the run and the measurement.
+    """
+    return os.getenv("COOKIE_JARS", "0").strip().lower() in ("1", "true", "yes", "on")
+
+
 def pool_spiders():
     return {
         name.strip() for name in os.getenv("PROXY_POOL_SPIDERS", "").split(",")
@@ -218,6 +234,10 @@ class ProxyPoolMiddleware:
         if not self.spiders:
             raise NotConfigured("PROXY_POOL_SPIDERS is empty")
         self.crawler = crawler
+        # (site, ip) -> the jar as it stands this run, and which of them have
+        # changed since they were read. Written back when the spider closes.
+        self._jars = {}
+        self._dirty = set()
         crawler.signals.connect(self._closed, signal=signals.spider_closed)
 
     @classmethod
@@ -241,9 +261,52 @@ class ProxyPoolMiddleware:
         request.meta["pool_address"] = address.ip
         # Same flag the IPRoyal path sets: this request is already on a proxy.
         request.meta["_via_proxy"] = True
+
+        if cookie_jars_on():
+            self._carry_the_jar(request, site, address.ip)
         return None
 
+    ###################################################################
+    # THE ADDRESS ARRIVES AS ITSELF, NOT AS A STRANGER                #
+    ###################################################################
+    def _jar(self, site, ip):
+        """This run's copy of the (site, address) jar, read from disk once."""
+        key = (site, ip)
+        if key not in self._jars:
+            self._jars[key] = cookie_jars.load(site, ip) or {"cookies": []}
+        return self._jars[key]
+
+    def _carry_the_jar(self, request, site, ip):
+        """
+        Put this address's cookies for this site on the request.
+
+        The header is written HERE rather than left to Scrapy's
+        CookiesMiddleware (700), which keeps one jar for the whole spider and
+        would hand kariyer.net's cookies to whichever address happens to go
+        next. This middleware runs after it on the request path, so what is
+        set here is what is sent. PlaywrightMiddleware drops the header and
+        uses the same jar as a browser storage_state instead - a browser
+        keeps its own cookies.
+        """
+        request.meta["cookie_jar"] = (site, ip)
+        header = cookie_jars.cookie_header(self._jar(site, ip), urlparse(request.url).netloc)
+        if header:
+            request.headers[b"Cookie"] = header
+
+    def process_response(self, request, response, spider):
+        """Keep whatever the site handed this address."""
+        key = request.meta.get("cookie_jar")
+        handed = response.headers.getlist("Set-Cookie") if key else []
+        if handed:
+            site, ip = key
+            host = urlparse(response.url).netloc
+            self._jars[key] = cookie_jars.remember(self._jar(site, ip), handed, host)
+            self._dirty.add(key)
+        return response
+
     def _closed(self, spider):
+        for (site, ip) in self._dirty:
+            cookie_jars.save(site, ip, self._jars[(site, ip)])
         pool = getattr(self.crawler, "_proxy_pool", None)
         if pool is not None:
             pool.close()

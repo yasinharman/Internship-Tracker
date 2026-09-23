@@ -346,3 +346,72 @@ def test_an_answered_pooled_response_is_counted(blocks, pool):
     blocks.process_response(request, HtmlResponse(url, status=200, body=b"<html>ok</html>", request=request),
                             _spider("kariyernet_check"))
     assert pool.answered["kariyer.net"] == 1
+
+
+#####################################################################
+# EVERY POOLED REQUEST CARRIES ITS OWN JAR - 23.09.2026             #
+#####################################################################
+# Harman: "çerez oturumu her sitede her zaman kullanılmalı bu standart olması
+# lazım yoksa ip ler erir". Without it every request is a stranger arriving
+# for the first time, and an address that keeps arriving as a stranger is the
+# one that gets flagged. Behind COOKIE_JARS until it is measured live.
+
+@pytest.fixture
+def jars(tmp_path, monkeypatch):
+    from scraper import cookie_jars
+    monkeypatch.setattr(cookie_jars, "JAR_DIR", tmp_path / "jars")
+    monkeypatch.setenv("COOKIE_JARS", "1")
+    return cookie_jars
+
+
+def _pooled(crawler, monkeypatch, url="https://www.kariyer.net/is-ilani/x-123"):
+    monkeypatch.setenv("PROXY_POOL_SPIDERS", "kariyernet_check")
+    middleware = ProxyPoolMiddleware(crawler)
+    request = Request(url)
+    middleware.process_request(request, _spider("kariyernet_check"))
+    return middleware, request
+
+
+def test_the_jar_this_address_already_has_is_sent(crawler, monkeypatch, jars):
+    jars.save("kariyer.net", "198.51.100.2",
+              {"cookies": [{"name": "sid", "value": "abc", "domain": "kariyer.net"}]})
+    _, request = _pooled(crawler, monkeypatch)
+    assert request.headers[b"Cookie"] == b"sid=abc"
+    assert request.meta["cookie_jar"] == ("kariyer.net", "198.51.100.2")
+
+
+def test_another_address_jar_is_not_sent(crawler, monkeypatch, jars):
+    # The cookies address .3 earned must never leave from address .2: that is
+    # what a site reads as one session shared between machines.
+    jars.save("kariyer.net", "198.51.100.3",
+              {"cookies": [{"name": "sid", "value": "abc", "domain": "kariyer.net"}]})
+    _, request = _pooled(crawler, monkeypatch)
+    assert b"Cookie" not in request.headers
+
+
+def test_what_the_site_hands_back_is_kept(crawler, monkeypatch, jars):
+    middleware, request = _pooled(crawler, monkeypatch)
+    response = HtmlResponse(request.url, status=200, body=b"ok", request=request,
+                            headers={"Set-Cookie": ["sid=new; Path=/"]})
+    middleware.process_response(request, response, _spider("kariyernet_check"))
+    middleware._closed(_spider("kariyernet_check"))
+
+    stored = jars.load("kariyer.net", "198.51.100.2")
+    assert stored["cookies"][0]["value"] == "new"
+
+
+def test_a_site_that_sets_nothing_writes_no_jar(crawler, monkeypatch, jars):
+    middleware, request = _pooled(crawler, monkeypatch)
+    response = HtmlResponse(request.url, status=200, body=b"ok", request=request)
+    middleware.process_response(request, response, _spider("kariyernet_check"))
+    middleware._closed(_spider("kariyernet_check"))
+    assert jars.load("kariyer.net", "198.51.100.2") is None
+
+
+def test_the_switch_being_off_changes_nothing(crawler, monkeypatch, jars):
+    monkeypatch.setenv("COOKIE_JARS", "0")
+    jars.save("kariyer.net", "198.51.100.2",
+              {"cookies": [{"name": "sid", "value": "abc", "domain": "kariyer.net"}]})
+    _, request = _pooled(crawler, monkeypatch)
+    assert b"Cookie" not in request.headers
+    assert "cookie_jar" not in request.meta

@@ -95,3 +95,43 @@ def test_the_cookie_header_takes_the_hosts_own_cookies():
 
 def test_no_state_is_an_empty_header():
     assert cookie_jars.cookie_header(None, "tr.indeed.com") == ""
+
+
+####################################################
+# WHAT THE SITE HANDS BACK                         #
+####################################################
+def test_a_new_cookie_is_kept():
+    state = cookie_jars.remember({"cookies": []},
+                                 ["sid=abc; Path=/; HttpOnly"], "kariyer.net")
+    assert state["cookies"] == [
+        {"name": "sid", "value": "abc", "domain": "kariyer.net", "path": "/"},
+    ]
+
+
+def test_a_cookie_is_replaced_not_duplicated():
+    state = cookie_jars.remember({"cookies": []}, ["sid=one"], "kariyer.net")
+    state = cookie_jars.remember(state, ["sid=two"], "kariyer.net")
+    assert [c["value"] for c in state["cookies"]] == ["two"]
+
+
+def test_the_sites_own_domain_wins_over_the_host():
+    state = cookie_jars.remember({"cookies": []},
+                                 ["a=1; Domain=.indeed.com"], "tr.indeed.com")
+    assert state["cookies"][0]["domain"] == "indeed.com"
+
+
+def test_a_cookie_the_site_cleared_is_dropped():
+    state = cookie_jars.remember({"cookies": []}, ["sid=abc"], "kariyer.net")
+    state = cookie_jars.remember(state, ["sid=; Max-Age=0"], "kariyer.net")
+    assert state["cookies"] == []
+
+
+def test_rubbish_does_not_stop_the_run():
+    state = cookie_jars.remember({"cookies": []}, ["", "not a cookie at all"],
+                                 "kariyer.net")
+    assert isinstance(state["cookies"], list)
+
+
+def test_bytes_headers_are_read():
+    state = cookie_jars.remember({"cookies": []}, [b"sid=abc"], "kariyer.net")
+    assert state["cookies"][0]["value"] == "abc"

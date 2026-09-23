@@ -105,6 +105,7 @@ from scrapy.exceptions import IgnoreRequest
 from scrapy.responsetypes import responsetypes
 from scrapy.utils.python import to_unicode
 
+from . import cookie_jars
 from .throttle import SlotThrottle
 
 logger = logging.getLogger(__name__)
@@ -411,25 +412,75 @@ class PlaywrightMiddleware:
         self.crawler.stats.inc_value("playwright/fresh_contexts")
         return context
 
-    def _proxied_context(self, proxy):
+    def _proxied_context(self, proxy, jar_key=None):
         """
-        The shared context for one proxy address, made on first use.
+        The context for one proxy address ON ONE SITE, made on first use.
 
-        Built from the same kwargs as a fresh visitor's - locale and viewport,
-        never storage_state and never the seeded cookies - so the session in
-        the run's own context does not travel to this address. See THE PROXY
-        at the top of this file.
+        Built from the same kwargs as a fresh visitor's - locale and viewport
+        - and never the run's own session, so the account that indeed_cards
+        carries from home does not travel to a pool address. See THE PROXY at
+        the top of this file.
+
+        WHAT IT DOES CARRY, since 23.09.2026: the cookies this address already
+        has for this site (scraper/cookie_jars.py). Harman: "çerez oturumu her
+        sitede her zaman kullanılmalı bu standart olması lazım yoksa ip ler
+        erir". Keyed by site as well as address for the same reason the jars
+        are: one context per address would hand kariyer.net's cookies to
+        techcareer on the next request from that address.
         """
-        key = (proxy["server"], proxy.get("username"))
+        key = (proxy["server"], proxy.get("username"), jar_key)
         context = self._proxied_contexts.get(key)
         if context is None:
-            context = self._browser.new_context(**self._context_kwargs, proxy=proxy)
+            kwargs = dict(self._context_kwargs)
+            state = cookie_jars.load(*jar_key) if jar_key else None
+            if state:
+                kwargs["storage_state"] = state
+            context = self._browser.new_context(**kwargs, proxy=proxy)
             self._proxied_contexts[key] = context
             logger.info(
-                "Browser context for proxy %s - carries no session",
-                proxy["server"],
+                "Browser context for proxy %s on %s - %s, no session",
+                proxy["server"], jar_key[0] if jar_key else "any site",
+                f"{len(state['cookies'])} cookie(s) it already had"
+                if state else "first visit from this address",
             )
+            if jar_key and not state:
+                self._first_visit(context, jar_key)
         return context
+
+    def _first_visit(self, context, jar_key):
+        """
+        Arrive at the front door before asking for anything.
+
+        A visitor's first request to a site is its home page, not a posting
+        six levels in, and on a protected site that first page is where the
+        check happens - in a real browser, which can answer it. What it
+        leaves behind is the cookie that makes every later request this
+        address sends look like the same visitor coming back.
+
+        One request per address per site per week (cookie_jars.MAX_AGE_DAYS).
+        A failure here is not fatal: the spider's own request follows and
+        will be judged on its own.
+        """
+        site, ip = jar_key
+        page = None
+        try:
+            page = context.new_page()
+            page.goto(f"https://{site}/", wait_until="domcontentloaded",
+                      timeout=self.timeout_ms)
+            self._wait_out_challenge(page)
+            state = context.storage_state()
+            cookie_jars.save(site, ip, state)
+            logger.info("%s from %s: first visit done, %s cookie(s) kept",
+                        site, ip, len(state.get("cookies", [])))
+        except Exception as error:
+            logger.info("%s from %s: first visit did not finish (%s)",
+                        site, ip, type(error).__name__)
+        finally:
+            if page is not None:
+                try:
+                    page.close()
+                except Exception:
+                    pass
 
     def _close_proxied_contexts(self):
         for context in self._proxied_contexts.values():
@@ -456,7 +507,8 @@ class PlaywrightMiddleware:
             visitor = self._fresh_context(proxy)
             return visitor.new_page(), visitor
         if proxy:
-            return self._proxied_context(proxy).new_page(), None
+            shared = self._proxied_context(proxy, request.meta.get("cookie_jar"))
+            return shared.new_page(), None
         return context.new_page(), None
 
     def _open_ephemeral(self, p, launch_kwargs, context_kwargs):
@@ -598,6 +650,7 @@ class PlaywrightMiddleware:
             try:
                 page, visitor = self._page_for(request, context)
                 future.set_result(self._navigate(page, request))
+                self._keep_the_jar(page, request)
             except Exception as error:
                 future.set_exception(error)
             finally:
@@ -617,6 +670,23 @@ class PlaywrightMiddleware:
                         visitor.close()
                     except Exception as error:
                         logger.debug("could not close context: %s", error)
+
+    def _keep_the_jar(self, page, request):
+        """
+        Write this address's cookies back after a navigation that worked.
+
+        After every one rather than at the end of the run: a clearance cookie
+        earned on the first page is worth having even if the spider is killed
+        on the tenth, and the whole point is that the next run does not have
+        to earn it again.
+        """
+        jar_key = request.meta.get("cookie_jar")
+        if not jar_key or not request.meta.get("proxy"):
+            return
+        try:
+            cookie_jars.save(*jar_key, page.context.storage_state())
+        except Exception as error:
+            logger.debug("could not keep the jar for %s: %s", jar_key, error)
 
     ###################################################################
     # ONE NAVIGATION, RUNS ON THE WORKER THREAD                       #

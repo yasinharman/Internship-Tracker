@@ -43,6 +43,7 @@ import logging
 import os
 import re
 import time
+from http.cookies import SimpleCookie
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -149,3 +150,42 @@ def cookie_header(state, url_host):
         if domain and (url_host == domain or url_host.endswith("." + domain)):
             wanted.append(f"{cookie.get('name')}={cookie.get('value')}")
     return "; ".join(wanted)
+
+
+def remember(state, set_cookie_headers, host):
+    """
+    Merge what a site just handed this address into its jar.
+
+    For the transports that are not the browser: the browser keeps its own
+    cookies and hands the whole state back through storage_state.
+
+    Deliberately small. Scrapy's own CookiesMiddleware does expiry, domain
+    matching and secure flags properly, but it keeps ONE jar per spider, and
+    one jar per spider is the bug: the cookies kariyer.net gave address 4
+    would go out from address 6 on the next request, which is the pattern a
+    site reads as a shared session. Name, value and domain are what a jar
+    needs to make an address look like itself; a cookie that has expired is
+    refused by the site and replaced by the next response.
+    """
+    kept = {(c.get("name"), (c.get("domain") or "").lstrip(".")): c
+            for c in (state or {}).get("cookies", [])}
+
+    for raw in set_cookie_headers or []:
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", "replace")
+        parsed = SimpleCookie()
+        try:
+            parsed.load(raw)
+        except Exception:
+            continue
+        for name, morsel in parsed.items():
+            domain = (morsel["domain"] or host or "").lstrip(".")
+            if morsel["max-age"] == "0" or not morsel.value:
+                kept.pop((name, domain), None)
+                continue
+            kept[(name, domain)] = {
+                "name": name, "value": morsel.value,
+                "domain": domain, "path": morsel["path"] or "/",
+            }
+
+    return {**(state or {}), "cookies": list(kept.values())}
