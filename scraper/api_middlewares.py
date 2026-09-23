@@ -532,6 +532,17 @@ class BlockDetectionMiddleware:
         if mitigated:
             return f"cloudflare cf-mitigated={mitigated}"
 
+        # A VERDICT ON THE CLIENT, NOT ON THE ADDRESS - measured 23.09.2026.
+        # Indeed answers a posting page opened by our BROWSER with 401 and a
+        # page that redirects to
+        #   /account/login?branding=login-required&from=bot-detection-anonymous
+        # while curl_cffi was served 81 posting pages from the same pool
+        # addresses that afternoon. It is not the address: resting one for 24
+        # hours over this costs a good address and changes nothing, because
+        # the next one gets the same answer.
+        if b"from=bot-detection-anonymous" in response.body:
+            return "indeed bot-detection: sign in required (the client, not the address)"
+
         if response.status in self.BLOCK_STATUSES:
             return response_status_message(response.status)
 
@@ -824,6 +835,14 @@ class BlockDetectionMiddleware:
         pool = get_proxy_pool(self.crawler)
         original_url = (request.meta.get("redirect_urls") or [None])[0] or request.url
         site = site_of(original_url)
+
+        # A refusal aimed at the client rests nothing: the address is fine and
+        # the next one would be told exactly the same thing. The site's run
+        # ends here instead, and the transport is what has to change.
+        if "the client, not the address" in reason:
+            self.crawler.stats.inc_value("pool/client_refused")
+            pool.give_up(site, reason)
+            raise IgnoreRequest(f"{site}: {reason}")
 
         following = pool.on_refusal(site, pool_ip, reason)
         if following is None:

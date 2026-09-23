@@ -86,6 +86,13 @@ def probe_order(query, seen_after):
 # would otherwise need every escape re-implemented here.
 DESCRIPTION = re.compile(r'"sanitizedJobDescription"\s*:\s*"((?:[^"\\]|\\.)*)"')
 
+# The company's logo, in the same blob as the description. Measured
+# 23.09.2026 on a saved /viewjob page: the posting carries
+# "logoUrl":"https://..." next to "logoAltText":"<company> logo", and null
+# where the employer has no logo - which is honest and means the board keeps
+# its initials rather than borrowing somebody else's mark.
+LOGO_URL = re.compile(r'"logoUrl"\s*:\s*"(https?://[^"]+)"')
+
 EXPIRED = re.compile(r'"isJobExpired"\s*:\s*true')
 NOT_EXPIRED = re.compile(r'"isJobExpired"\s*:\s*false')
 
@@ -231,6 +238,19 @@ class IndeedCheckSpider(OpeningCheckMixin, IndeedCardsSpider):
             # A truncated or re-encoded blob is not worth guessing at.
             return None
         return strip_html(text) or None
+
+    def logo(self, response):
+        """
+        The employer's logo, off the page this checker fetched anyway.
+
+        Indeed's SEARCH records carry no logo at all (docs/sites/indeed.md,
+        "THERE IS NO COMPANY LOGO IN THE CARD RECORDS"), which is why every
+        Indeed posting arrived without one and why pipeline/company_logos.py
+        exists. The POSTING page has the field, and this checker opens every
+        posting page anyway - so it costs nothing.
+        """
+        match = LOGO_URL.search(response.text)
+        return match.group(1).replace("\\u002F", "/") if match else None
 
     def verdict(self, response):
         """

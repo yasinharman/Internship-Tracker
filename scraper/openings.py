@@ -135,6 +135,9 @@ class OpeningCheckMixin:
         # id -> description text read out of the same response. Empty for a
         # site whose checker does not override description().
         self._descriptions = {}
+        # Only the spiders whose posting page carries one fill this in; see
+        # logo() below.
+        self._logos = {}
         # Accumulated across flushes rather than built once at the end, now
         # that there is more than one write.
         self._newly_closed = []
@@ -305,6 +308,18 @@ class OpeningCheckMixin:
         else:
             self.crawler.stats.inc_value("check/description_missing")
 
+        # The company's own mark, off the page that was fetched anyway. Same
+        # argument as the description: this request is being paid for by the
+        # open/closed question, and whatever else the page carries is free.
+        try:
+            mark = self.logo(response)
+        except Exception as error:
+            self.logger.warning("id=%s logo failed: %s", posting_id, error)
+            mark = None
+        if mark:
+            self._logos[posting_id] = mark
+            self.crawler.stats.inc_value("check/logo_found")
+
         self._verdicts[posting_id] = outcome
         self._pending.append(posting_id)
         self.logger.debug("id=%s -> %s (%s)", posting_id, outcome, response.url)
@@ -315,6 +330,19 @@ class OpeningCheckMixin:
     def verdict(self, response):
         """Override: OPEN, CLOSED or UNKNOWN. Default refuses to guess."""
         return UNKNOWN
+
+    def logo(self, response):
+        """
+        Override: the company's logo url on this page, or None.
+
+        Empty by default because most boards hand the crawl a logo with the
+        card and this would only re-read it. Indeed is the exception - its
+        cards carry none (docs/sites/indeed.md, 09.09.2026) and its posting
+        page does, which left 104 of its postings on 23.09.2026 wearing the
+        company's initials until pipeline/company_logos.py went looking on
+        the web for what was already in a page we had fetched.
+        """
+        return None
 
     def description(self, response):
         """
@@ -381,6 +409,13 @@ class OpeningCheckMixin:
                 description = self._descriptions.get(posting.id)
                 if description:
                     posting.job_description = description
+
+                # Only onto a posting that has none: the crawl's own logo, if
+                # it found one, came off the card of the board that is
+                # advertising the job and is the one the board shows.
+                mark = self._logos.get(posting.id)
+                if mark and not posting.company_logo_url:
+                    posting.company_logo_url = mark
 
                 if outcome == UNKNOWN:
                     # Not even checked_at: a probe that could not tell is

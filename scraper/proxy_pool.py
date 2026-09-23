@@ -174,6 +174,10 @@ class PoolState:
     def last_used(self, site, ip):
         return self.sites.get(site, {}).get(ip, {}).get("last_used") or ""
 
+    def refusals(self, site, ip):
+        """How many times this site has refused this address, ever."""
+        return self.sites.get(site, {}).get(ip, {}).get("refusals", 0)
+
     def note_request(self, site, ip, now):
         entry = self.entry(site, ip)
         entry["requests"] += 1
@@ -257,7 +261,17 @@ class ProxyPool:
         ]
         if not free:
             return None
-        return min(free, key=lambda a: (a.tier, self.state.last_used(site, a.ip), a.line))
+        # A SITE THAT HAS REFUSED AN ADDRESS ONCE KEEPS REFUSING IT - measured
+        # 23.09.2026. Indeed challenged line 10 two hours after its refusal
+        # and line 17 twenty hours after, while line 18, which it had never
+        # refused, carried 30 requests in a row the same afternoon. So a rest
+        # running out does not make an address clean again, and least-recently
+        # used would send exactly the flagged ones first - they are the ones
+        # that have not been used since they were refused. Refusals come
+        # before recency, and an address the site has never refused always
+        # goes ahead of one it has.
+        return min(free, key=lambda a: (a.tier, self.state.refusals(site, a.ip),
+                                        self.state.last_used(site, a.ip), a.line))
 
     def address_for(self, site):
         """The address this site's requests leave from, or None if none is left."""
@@ -328,6 +342,10 @@ class ProxyPool:
             return None
         self.switches[site] += 1
         return self.address_for(site)
+
+    def give_up(self, site, why):
+        """End a site's run from outside - see BlockDetectionMiddleware."""
+        self._give_up(site, why)
 
     def _give_up(self, site, why):
         if site not in self.given_up:

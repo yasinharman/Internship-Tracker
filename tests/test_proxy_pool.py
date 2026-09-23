@@ -140,12 +140,18 @@ def test_the_rest_lasts_24_hours_and_outlives_the_run(pool, files, clock):
     pool.on_refusal("kariyer.net", pool.address_for("kariyer.net").ip, "HTTP 403")
 
     clock.now = T0 + timedelta(hours=23)
-    tomorrow_early = ProxyPool(pool.addresses, PoolState(files / "state.json"), clock=clock)
-    assert tomorrow_early.address_for("kariyer.net").ip != "198.51.100.2"
+    state = PoolState(files / "state.json")
+    assert state.resting_until("kariyer.net", "198.51.100.2", clock.now) is not None
 
     clock.now = T0 + timedelta(hours=24, minutes=1)
-    rested = ProxyPool(pool.addresses, PoolState(files / "state.json"), clock=clock)
-    assert rested.address_for("kariyer.net").ip == "198.51.100.2"
+    state = PoolState(files / "state.json")
+    assert state.resting_until("kariyer.net", "198.51.100.2", clock.now) is None
+
+    # Free again, but it does not go first. A site that refused an address
+    # once tends to keep refusing it (23.09.2026), so the addresses it has
+    # never refused are tried while there are any.
+    rested = ProxyPool(pool.addresses, state, clock=clock)
+    assert rested.address_for("kariyer.net").ip != "198.51.100.2"
 
 
 def test_reserve_is_used_once_every_european_address_rests(pool):
@@ -415,3 +421,58 @@ def test_the_switch_being_off_changes_nothing(crawler, monkeypatch, jars):
     _, request = _pooled(crawler, monkeypatch)
     assert b"Cookie" not in request.headers
     assert "cookie_jar" not in request.meta
+
+
+#####################################################################
+# A FLAGGED ADDRESS GOES LAST, NOT FIRST - measured 23.09.2026      #
+#####################################################################
+# Indeed challenged line 10 two hours after refusing it and line 17 twenty
+# hours after, while line 18 - never refused - carried 30 requests in a row
+# the same afternoon. A rest running out does not make an address clean, and
+# least-recently-used would hand the site exactly the addresses it flagged:
+# they are the ones that have not been used since.
+
+def test_an_address_the_site_refused_before_goes_last(pool, clock):
+    site = "kariyer.net"
+    refused = pool.address_for(site)                 # .2, the first European
+    pool.on_refusal(site, refused.ip, "403")
+    clock.now = T0 + timedelta(hours=25)             # its rest has run out
+
+    fresh = ProxyPool(pool.addresses, PoolState(pool.state.path), clock=clock)
+    assert fresh.address_for(site).ip != refused.ip
+
+
+def test_among_clean_addresses_the_least_recently_used_still_wins(pool, clock):
+    site = "kariyer.net"
+    first = pool.address_for(site)
+    pool.note_request(site, first)
+    clock.now = T0 + timedelta(minutes=5)
+    pool.current.pop(site)
+
+    second = pool.address_for(site)
+    assert second.ip != first.ip
+
+
+#####################################################################
+# A REFUSAL AIMED AT THE CLIENT RESTS NOTHING - 23.09.2026          #
+#####################################################################
+# Indeed answered our BROWSER's posting request with 401 and a page that
+# redirects to ...&from=bot-detection-anonymous, while curl_cffi was served 81
+# posting pages from the same addresses that afternoon. Resting an address for
+# that costs a good address and changes nothing.
+
+def test_the_bot_detection_page_is_read_as_a_client_refusal(blocks, pool):
+    url = "https://tr.indeed.com/viewjob?jk=1"
+    body = (b'<html><head><title>Authenticating...</title><script>var t = '
+            b'"https://www.indeed.com/account/login?branding=login-required'
+            b'&from=bot-detection-anonymous&continue=";</script></head></html>')
+    ip = pool.address_for("tr.indeed.com").ip
+    request = Request(url, meta={"pool_address": ip, "_via_proxy": True})
+    response = HtmlResponse(url, status=401, body=body, request=request)
+
+    with pytest.raises(IgnoreRequest):
+        blocks.process_response(request, response, _spider("indeed_check"))
+
+    assert pool.state.refusals("tr.indeed.com", ip) == 0
+    assert pool.state.resting_until("tr.indeed.com", ip, pool.clock()) is None
+    assert "the client" in pool.given_up["tr.indeed.com"]

@@ -166,3 +166,31 @@ class TestNobodyGuesses:
     ])
     def test_an_empty_page_is_never_closed(self, make_checker, spider_class):
         assert make_checker(spider_class).verdict(text(b"")) != CLOSED
+
+
+#####################################################################
+# THE LOGO IS ON THE PAGE THE CHECKER ALREADY FETCHED - 23.09.2026  #
+#####################################################################
+# Indeed's cards carry no logo, so all 104 of its postings arrived without
+# one. Its POSTING page has "logoUrl", and the checker opens every posting
+# page anyway.
+
+def test_indeed_reads_the_logo_off_the_posting_page():
+    from scraper.spiders.indeed_check import IndeedCheckSpider
+    spider = IndeedCheckSpider()
+    body = ('{"logoAltText":"Bir Firma logo","logoUrl":'
+            '"https://d2q79iu7y748jz.cloudfront.net/s/_squarelogo/abc.png",'
+            '"showJpBrandLogo":false}')
+    response = HtmlResponse("https://tr.indeed.com/viewjob?jk=1",
+                            body=body.encode(), encoding="utf-8")
+    assert spider.logo(response) == \
+        "https://d2q79iu7y748jz.cloudfront.net/s/_squarelogo/abc.png"
+
+
+def test_a_company_with_no_logo_gets_none():
+    from scraper.spiders.indeed_check import IndeedCheckSpider
+    spider = IndeedCheckSpider()
+    body = '{"logoAltText":"Viayapı taahhüt logo","logoUrl":null}'
+    response = HtmlResponse("https://tr.indeed.com/viewjob?jk=1",
+                            body=body.encode(), encoding="utf-8")
+    assert spider.logo(response) is None
