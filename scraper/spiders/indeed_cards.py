@@ -458,6 +458,15 @@ class IndeedCardsSpider(BaseApiSpider):
     '''
     USE_PLAYWRIGHT = True
 
+    # THE SESSION LEAVES FROM ONE POOL ADDRESS - 03.10.2026, Harman's
+    # decision: "benim ev ip mi hiçbir yerde kullanmayacağız". The crawl needs
+    # his account (page two of a search asks for one, measured 30.07.2026) and
+    # the account must not appear from a different country every thirty
+    # requests, so this spider takes the address named in PROXY_POOL_PINNED
+    # and stays on it. Its 32 search pages fit inside one address's share; the
+    # 242 anonymous posting pages that need rotation are indeed_check's.
+    USES_PINNED_ADDRESS = True
+
     custom_settings = {
         **BaseApiSpider.custom_settings,
         # The most protected of the sites and the only independent source left,

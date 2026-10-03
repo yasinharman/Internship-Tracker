@@ -198,12 +198,13 @@ def cookie_jars_on():
     that site.
 
     Harman, 23.09.2026: "çerez oturumu her sitede her zaman kullanılmalı bu
-    standart olması lazım yoksa ip ler erir". Behind a switch only until it
-    has been measured once on a live site - a full run was in flight the
-    afternoon it was written, and changing what the run was doing halfway
-    would have spoiled both the run and the measurement.
+    standart olması lazım yoksa ip ler erir". It was behind a switch, off,
+    until the afternoon of 03.10.2026, when two addresses were refused on
+    their first contact with Indeed while carrying no cookies at all. DEFAULT
+    ON since: an address that arrives as a stranger every time is the thing
+    being paid for. COOKIE_JARS=0 still turns it off for a measurement.
     """
-    return os.getenv("COOKIE_JARS", "0").strip().lower() in ("1", "true", "yes", "on")
+    return os.getenv("COOKIE_JARS", "1").strip().lower() in ("1", "true", "yes", "on")
 
 
 def pool_spiders():
@@ -250,6 +251,27 @@ class ProxyPoolMiddleware:
 
         pool = get_proxy_pool(self.crawler)
         site = site_of(request.url)
+
+        # THE SIGNED-IN PATH LEAVES FROM ONE ADDRESS AND STAYS THERE -
+        # 03.10.2026. Harman's decision: his Indeed account's crawl goes
+        # through the pool rather than his home address, and an account whose
+        # requests arrive from a different country every thirty requests is
+        # the pattern a platform reads as a shared password. The spider asks
+        # for this; its own checker must not inherit it (see indeed_check).
+        pinned = pool.pinned_for(site) if getattr(spider, "USES_PINNED_ADDRESS", False) else None
+        if pinned is not None:
+            pool.note_request(site, pinned)
+            self.crawler.stats.inc_value(f"pool/requests/{site}")
+            request.meta["proxy"] = pinned.url
+            request.meta["pool_address"] = pinned.ip
+            request.meta["pinned_address"] = True
+            # The one flag that lets a session into a proxied browser context.
+            # Everything else gets a context with no session at all; see
+            # playwright_middleware._proxied_context.
+            request.meta["session_ok"] = True
+            request.meta["_via_proxy"] = True
+            return None
+
         address = pool.address_for(site)
         if address is None:
             self.crawler.stats.inc_value("pool/dropped_no_address")
@@ -315,6 +337,15 @@ class ProxyPoolMiddleware:
 ###################
 # BLOCK DETECTION #
 ###################
+def _set_cookie_lines(reply):
+    """Every Set-Cookie line from a curl_cffi reply, not just the last one."""
+    try:
+        items = reply.headers.multi_items()
+    except AttributeError:
+        items = reply.headers.items()
+    return [value for name, value in items if name.lower() == "set-cookie"]
+
+
 class BlockDetectionMiddleware:
     """
     A blocked JSON API rarely says so honestly. It gives you a 403, or a 200
@@ -836,6 +867,21 @@ class BlockDetectionMiddleware:
         original_url = (request.meta.get("redirect_urls") or [None])[0] or request.url
         site = site_of(original_url)
 
+        # A PINNED ADDRESS DOES NOT MOVE. It carries a session, and the
+        # session cannot be presented from somewhere else just because this
+        # address was refused - that is the thing pinning exists to prevent.
+        # Rest it, stop this site for the run, and let the log say why.
+        if request.meta.get("pinned_address"):
+            pool.state.rest(site, pool_ip, pool.clock(), pool.rest_hours, reason)
+            pool.state.save()
+            self.crawler.stats.inc_value("pool/pinned_refused")
+            pool.give_up(site, f"the pinned address was refused ({reason})")
+            raise IgnoreRequest(
+                f"{site}: the session's own address was refused ({reason}). "
+                f"It is not swapped for another - rotating a signed-in session "
+                f"is what pinning avoids."
+            )
+
         # A refusal aimed at the client rests nothing: the address is fine and
         # the next one would be told exactly the same thing. The site's run
         # ends here instead, and the transport is what has to change.
@@ -931,6 +977,56 @@ class CurlImpersonateMiddleware:
     def from_crawler(cls, crawler):
         return cls(crawler)
 
+    def _arrive_at_the_front_door(self, request, headers, token, proxies, spider):
+        """
+        An address's first request to a site is its home page, not a posting.
+
+        MEASURED 03.10.2026: indeed_check asked two addresses for a posting
+        page as their first contact with Indeed, carrying no cookies at all,
+        and both were refused on that first request - one of them an address
+        that had served 30 Indeed requests the week before. A visitor with no
+        history arriving straight at a posting is a shape the site can see,
+        and a cookie jar cannot help on the request that happens before the
+        jar exists.
+
+        So: once per (site, address) per week, fetch the site root with the
+        same client, keep what it sets, and send the real request carrying it.
+        A failure here is not fatal - the real request follows and is judged
+        on its own.
+        """
+        jar_key = request.meta.get("cookie_jar")
+        if not jar_key or not proxies:
+            return
+
+        site, ip = jar_key
+        state = cookie_jars.load(site, ip)
+        if state and state.get("cookies"):
+            return                      # this address has been here before
+
+        front_door = {name: value for name, value in headers.items()
+                      if name.lower() not in ("referer", "cookie")}
+        try:
+            self.throttle.wait_turn(request)
+            reply = curl_requests.get(
+                f"https://{site}/", headers=front_door, impersonate=token,
+                proxies=proxies, timeout=self.timeout, allow_redirects=True,
+            )
+        except Exception as error:
+            spider.logger.info("%s from %s: first visit failed (%s)",
+                               site, ip, type(error).__name__)
+            return
+
+        state = cookie_jars.remember(state or {"cookies": []},
+                                     _set_cookie_lines(reply), site)
+        cookie_jars.save(site, ip, state)
+        header = cookie_jars.cookie_header(state, urlparse(request.url).netloc)
+        if header:
+            request.headers[b"Cookie"] = header
+        spider.logger.info(
+            "%s from %s: first visit %s, %s cookie(s) kept",
+            site, ip, reply.status_code, len(state.get("cookies", [])),
+        )
+
     def process_request(self, request, spider):
         if not getattr(spider, "IMPERSONATE_WITH_CURL", False):
             return None
@@ -947,6 +1043,8 @@ class CurlImpersonateMiddleware:
 
         proxy = request.meta.get("proxy")
         proxies = {"http": proxy, "https": proxy} if proxy else None
+
+        self._arrive_at_the_front_door(request, headers, token, proxies, spider)
 
         self.throttle.wait_turn(request)
 

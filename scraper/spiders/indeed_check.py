@@ -60,6 +60,14 @@ NOT_EXPIRED = re.compile(r'"isJobExpired"\s*:\s*false')
 class IndeedCheckSpider(OpeningCheckMixin, IndeedCardsSpider):
     name = "indeed_check"
 
+    # NOT the pinned one, and not signed in. The parent crawls with Harman's
+    # account from a single fixed address; this opens 242 posting pages, which
+    # needs the rotation - and needs no account, since an anonymous /viewjob
+    # was served 171 times from the pool on 23.09.2026. Inheriting the pin
+    # would both rotate the session and spend its address on logged-out
+    # traffic.
+    USES_PINNED_ADDRESS = False
+
     custom_settings = {
         **IndeedCardsSpider.custom_settings,
         "ITEM_PIPELINES": {},

@@ -412,14 +412,19 @@ class PlaywrightMiddleware:
         self.crawler.stats.inc_value("playwright/fresh_contexts")
         return context
 
-    def _proxied_context(self, proxy, jar_key=None):
+    def _proxied_context(self, proxy, jar_key=None, with_session=False):
         """
         The context for one proxy address ON ONE SITE, made on first use.
 
         Built from the same kwargs as a fresh visitor's - locale and viewport
-        - and never the run's own session, so the account that indeed_cards
-        carries from home does not travel to a pool address. See THE PROXY at
-        the top of this file.
+        - and WITHOUT the run's own session, unless the request carries
+        `session_ok`. That flag is set in exactly one place
+        (api_middlewares.ProxyPoolMiddleware, the pinned address) and it is
+        the whole of the permission: Harman decided on 03.10.2026 that his
+        Indeed account crawls through the pool instead of from his home
+        address, from ONE pinned address that never changes. Every other
+        proxied context carries no session at all, which is what keeps a
+        rotating address from presenting somebody's account.
 
         WHAT IT DOES CARRY, since 23.09.2026: the cookies this address already
         has for this site (scraper/cookie_jars.py). Harman: "çerez oturumu her
@@ -428,22 +433,31 @@ class PlaywrightMiddleware:
         are: one context per address would hand kariyer.net's cookies to
         techcareer on the next request from that address.
         """
-        key = (proxy["server"], proxy.get("username"), jar_key)
+        key = (proxy["server"], proxy.get("username"), jar_key, bool(with_session))
         context = self._proxied_contexts.get(key)
         if context is None:
             kwargs = dict(self._context_kwargs)
-            state = cookie_jars.load(*jar_key) if jar_key else None
-            if state:
-                kwargs["storage_state"] = state
+            state = None
+            if with_session and self.storage_state_path:
+                # The account's own cookies ARE this address's history, and
+                # they are not merged with a jar: one place to look when the
+                # session stops being honoured, and nothing of the account is
+                # copied into proxies/jars/.
+                kwargs["storage_state"] = self.storage_state_path
+            else:
+                state = cookie_jars.load(*jar_key) if jar_key else None
+                if state:
+                    kwargs["storage_state"] = state
             context = self._browser.new_context(**kwargs, proxy=proxy)
             self._proxied_contexts[key] = context
             logger.info(
-                "Browser context for proxy %s on %s - %s, no session",
+                "Browser context for proxy %s on %s - %s",
                 proxy["server"], jar_key[0] if jar_key else "any site",
-                f"{len(state['cookies'])} cookie(s) it already had"
-                if state else "first visit from this address",
+                "carrying the run's session (pinned address)" if with_session
+                else f"{len(state['cookies'])} cookie(s) it already had"
+                if state else "first visit from this address, no session",
             )
-            if jar_key and not state:
+            if jar_key and not state and not with_session:
                 self._first_visit(context, jar_key)
         return context
 
@@ -507,7 +521,9 @@ class PlaywrightMiddleware:
             visitor = self._fresh_context(proxy)
             return visitor.new_page(), visitor
         if proxy:
-            shared = self._proxied_context(proxy, request.meta.get("cookie_jar"))
+            shared = self._proxied_context(
+                proxy, request.meta.get("cookie_jar"), request.meta.get("session_ok"),
+            )
             return shared.new_page(), None
         return context.new_page(), None
 
@@ -682,6 +698,12 @@ class PlaywrightMiddleware:
         """
         jar_key = request.meta.get("cookie_jar")
         if not jar_key or not request.meta.get("proxy"):
+            return
+        if request.meta.get("session_ok"):
+            # The pinned address carries the account's own storage state, and
+            # that file is Harman's to manage (tools/save_session.py). Writing
+            # it into proxies/jars/ would put account cookies in a second
+            # place and leave two versions of one session.
             return
         try:
             cookie_jars.save(*jar_key, page.context.storage_state())

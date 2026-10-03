@@ -144,6 +144,27 @@ def load_addresses(list_path, meta_path=None):
     return addresses
 
 
+def parse_pinned(raw):
+    """
+    "tr.indeed.com:9, kariyer.net:4" -> {"tr.indeed.com": 9, "kariyer.net": 4}
+
+    Anything unparseable is dropped with a warning rather than guessed at: the
+    wrong line here would send a signed-in session out from an address nobody
+    chose.
+    """
+    pinned = {}
+    for part in (raw or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        site, _, line = part.rpartition(":")
+        if site and line.strip().isdigit():
+            pinned[site.strip()] = int(line)
+        else:
+            logger.warning("PROXY_POOL_PINNED: cannot read %r - ignored", part)
+    return pinned
+
+
 #####################################################
 # WHAT OUTLIVES THE RUN                             #
 #####################################################
@@ -203,6 +224,7 @@ class PoolState:
 #####################################################
 class ProxyPool:
     def __init__(self, addresses, state, rest_hours=24, max_switches=6,
+                 pinned_lines=None,
                  rotate_after=30, clock=utcnow):
         self.addresses = addresses
         self.state = state
@@ -220,6 +242,8 @@ class ProxyPool:
         self.full = set()
         # site -> responses it answered this run. See on_refusal.
         self.answered = defaultdict(int)
+        # site -> the line a signed-in session leaves from. See pinned_for().
+        self.pinned_lines = dict(pinned_lines or {})
 
     @classmethod
     def from_env(cls):
@@ -244,6 +268,7 @@ class ProxyPool:
             # switches spent on addresses the site had flagged the day before.
             max_switches=int(os.getenv("PROXY_POOL_MAX_SWITCHES", "6")),
             rotate_after=int(os.getenv("PROXY_POOL_ROTATE_AFTER", "30")),
+            pinned_lines=parse_pinned(os.getenv("PROXY_POOL_PINNED", "")),
         )
         tiers = defaultdict(int)
         for address in pool.addresses:
@@ -261,9 +286,14 @@ class ProxyPool:
 
     def _choose(self, site):
         now = self.clock()
+        reserved = self.pinned_lines.get(site)
         free = [
             a for a in self.addresses
-            if not self.state.resting_until(site, a.ip, now) and (site, a.ip) not in self.full
+            if not self.state.resting_until(site, a.ip, now)
+            and (site, a.ip) not in self.full
+            # The address carrying this site's session does that and nothing
+            # else - see pinned_for().
+            and a.line != reserved
         ]
         if not free:
             return None
@@ -300,6 +330,48 @@ class ProxyPool:
             self.current[site] = address
             logger.info("%s leaves from %s (%s)", site, address.label, TIER_NAMES[address.tier])
         return address
+
+    ###################################################################
+    # ONE ADDRESS THAT NEVER MOVES - 03.10.2026                       #
+    ###################################################################
+    def pinned_for(self, site):
+        """
+        The address this site's SIGNED-IN requests always leave from, or None.
+
+        Set as PROXY_POOL_PINNED="tr.indeed.com:9". One address per site, and
+        the anonymous traffic never uses it (see _choose): the address that
+        carries an account does that and nothing else, so the account is not
+        also the source of a few hundred logged-out requests an hour.
+        """
+        line = self.pinned_lines.get(site)
+        return self.pinned(line) if line else None
+
+    def pinned(self, line):
+        """
+        The address on this line, whatever the rotation would have chosen.
+
+        For the one path that cannot be rotated: a signed-in session. Harman
+        decided on 03.10.2026 that his Indeed account's crawl leaves from the
+        pool rather than from his home address - and if an account's requests
+        arrive from a different country every thirty requests, that is the
+        pattern a platform reads as a shared password. Pinned, Indeed sees one
+        location change and then a machine that stays put.
+
+        It is still the pool, so the request is still counted and a refusal
+        still rests the address. What it does NOT do is move: the rotation
+        after 30 requests and the switch on refusal are both about finding
+        another address, and there is no other address this session can use.
+        The crawl it serves is 32 search pages, well inside one address's
+        share; the 242 posting pages that need rotation are the anonymous
+        ones (docs/sites/indeed.md).
+        """
+        for address in self.addresses:
+            if address.line == line:
+                return address
+        raise RuntimeError(
+            f"PROXY_POOL pinned address {line} is not in the list "
+            f"({len(self.addresses)} addresses)"
+        )
 
     def note_request(self, site, address):
         self.state.note_request(site, address.ip, self.clock())

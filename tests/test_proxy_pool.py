@@ -491,3 +491,99 @@ def test_a_clean_reserve_beats_a_flagged_european_address(pool, clock):
     chosen = fresh.address_for(site)
     assert chosen.ip not in {first.ip, second.ip}
     assert chosen.tier == 1          # a reserve, and it has never been refused
+
+
+#####################################################################
+# ONE ADDRESS THAT NEVER MOVES, FOR THE SIGNED-IN PATH - 03.10.2026 #
+#####################################################################
+# Harman: "benim ev ip mi hiçbir yerde kullanmayacağız" - his Indeed account
+# crawls through the pool now. An account whose requests arrive from a
+# different country every thirty requests is the pattern a platform reads as
+# a shared password, so the session's address is pinned and the rotation is
+# left to the anonymous traffic.
+
+@pytest.mark.parametrize("raw, expected", [
+    ("tr.indeed.com:9", {"tr.indeed.com": 9}),
+    (" tr.indeed.com : 9 , kariyer.net:4 ", {"tr.indeed.com": 9, "kariyer.net": 4}),
+    ("", {}),
+    ("nonsense", {}),
+    ("tr.indeed.com:abc", {}),
+])
+def test_parse_pinned(raw, expected):
+    from scraper.proxy_pool import parse_pinned
+    assert parse_pinned(raw) == expected
+
+
+def test_the_pinned_address_is_the_one_named(files, clock):
+    pool = ProxyPool(load_addresses(files / "list.txt", files / "meta.json"),
+                     PoolState(files / "state.json"), clock=clock,
+                     pinned_lines={"tr.indeed.com": 3})
+    assert pool.pinned_for("tr.indeed.com").line == 3
+    assert pool.pinned_for("kariyer.net") is None
+
+
+def test_a_line_that_is_not_in_the_list_is_an_error(pool):
+    with pytest.raises(RuntimeError):
+        pool.pinned(99)
+
+
+def test_the_anonymous_traffic_leaves_the_session_s_address_alone(files, clock):
+    # .2 is the first European address and would be chosen; pinned, it is not.
+    pool = ProxyPool(load_addresses(files / "list.txt", files / "meta.json"),
+                     PoolState(files / "state.json"), clock=clock,
+                     pinned_lines={"kariyer.net": 2})
+    assert pool.address_for("kariyer.net").ip != "198.51.100.2"
+
+
+def test_a_spider_that_asks_for_it_gets_it_and_may_carry_the_session(
+    crawler, pool, monkeypatch,
+):
+    monkeypatch.setenv("PROXY_POOL_SPIDERS", "indeed_cards")
+    pool.pinned_lines = {"tr.indeed.com": 3}
+    middleware = ProxyPoolMiddleware(crawler)
+    request = Request("https://tr.indeed.com/jobs?q=staj")
+    spider = _spider("indeed_cards")
+    spider.USES_PINNED_ADDRESS = True
+    middleware.process_request(request, spider)
+
+    assert request.meta["pool_address"] == "198.51.100.3"
+    assert request.meta["pinned_address"] is True
+    # The one flag that lets a session into a proxied browser context.
+    assert request.meta["session_ok"] is True
+
+
+def test_a_spider_that_does_not_ask_rotates_as_usual(crawler, pool, monkeypatch):
+    monkeypatch.setenv("PROXY_POOL_SPIDERS", "indeed_check")
+    pool.pinned_lines = {"tr.indeed.com": 3}
+    middleware = ProxyPoolMiddleware(crawler)
+    request = Request("https://tr.indeed.com/viewjob?jk=1")
+    spider = _spider("indeed_check")
+    spider.USES_PINNED_ADDRESS = False
+    middleware.process_request(request, spider)
+
+    assert request.meta["pool_address"] != "198.51.100.3"
+    assert "session_ok" not in request.meta
+
+
+def test_the_pinned_address_is_rested_but_never_swapped(blocks, pool, monkeypatch):
+    # There is nowhere to move a session to. Rest it, end the site's run, and
+    # say so - rotating a signed-in session is what pinning avoids.
+    url = "https://tr.indeed.com/jobs?q=staj"
+    pinned = pool.pinned(3)
+    request = Request(url, meta={"pool_address": pinned.ip, "pinned_address": True,
+                                 "_via_proxy": True})
+    response = HtmlResponse(url, status=403, body=b"nope", request=request)
+
+    with pytest.raises(IgnoreRequest):
+        blocks.process_response(request, response, _spider("indeed_cards"))
+
+    assert pool.state.refusals("tr.indeed.com", pinned.ip) == 1
+    assert pool.state.resting_until("tr.indeed.com", pinned.ip, pool.clock())
+    assert "pinned address" in pool.given_up["tr.indeed.com"]
+
+
+def test_the_jars_are_on_by_default(monkeypatch):
+    # Off until 03.10.2026, when two addresses were refused on their first
+    # contact with Indeed carrying no cookies at all.
+    monkeypatch.delenv("COOKIE_JARS", raising=False)
+    assert api_middlewares.cookie_jars_on() is True
