@@ -44,3 +44,6 @@ PLAN-*.md
 #local database backups and run logs - scraped data, never committed
 backups/
 
+#learning notes (profile, progress, project map) - local state, not the repo's
+.vibe-wise/
+
