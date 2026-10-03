@@ -965,3 +965,34 @@ opened. The second question is the one `docs/activity-checks-plan.md` has
 listed as unmeasured since 20.09 - absence is a usable signal at 24 of 24 on
 kariyer.net (12.09 -> 14.09) and a useless one at 14 of 36 (21.08, with the
 old searches).
+
+### The first live run of the rule - 03.10.2026
+
+The run after it was built, for the record:
+
+| Site | Scan recorded | Postings | What the checker's queue said |
+|---|---|---|---|
+| kariyernet.com | complete | 174 | no 3 complete scans yet - all queued |
+| techcareer.net | complete | 2 | same |
+| indeed.com | **incomplete** (`downloader/exception_count=1`) | 363 | same |
+| linkedin.com | complete | 168 | same |
+| youthall.com | complete | 6 | same |
+
+So the rule skipped nothing, which is what it should do with no history: the
+saving starts once a site has three complete scans, which at a three-day
+cadence is the fourth run.
+
+**It caught its own bug first, though.** The run before this one had
+Playwright's chromium missing after an upgrade; every kariyer.net request
+failed with a download error and the scan was recorded as COMPLETE with 0
+postings - a crawl that saw nothing being written down as evidence that
+nothing is there. Three of those would have sent every stored posting to be
+re-opened. `scraper/scans.py` now reads a request that never came back, a
+callback that raised, and a scan that collected nothing as "stopped short".
+The unit tests had not imagined any of the three.
+
+**One judgement to revisit**: Indeed's scan was recorded incomplete over a
+single failed request out of several hundred. Strictly correct - one page was
+not read - but if that is how Indeed's runs usually end, Indeed will never
+accumulate three complete scans and the rule will never save it anything.
+Whether a transient single failure deserves a tolerance is open.

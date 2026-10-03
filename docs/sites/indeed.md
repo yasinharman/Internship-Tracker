@@ -1220,3 +1220,32 @@ ending in a stray "N/A". Set that field in one call.
 
 ---
 
+
+## The pooled check is refused outright - 03.10.2026
+
+`indeed_check` queued 242 postings and opened none of them:
+
+| Address | History on Indeed | First request |
+|---|---|---|
+| line 18 (GB) | 30 requests served on 23.09, never refused | **challenge** |
+| line 19 (US) | **never used for Indeed** | **challenge** |
+
+The pool then stopped on its own: two fresh addresses refused before the site
+had answered once reads as a verdict on the client rather than on the address
+(`docs/proxies.md`), so it spent no further address. Two rested instead of six.
+
+**What changed is not on our side.** Same client as the 23.09 run that was
+served 171 posting pages from this pool: curl_cffi `safari184`, no warm-up, no
+session, `INDEED_CHECK_VIA_CURL=1`. Ten days passed with no request to the
+site in between. The second address had never been used here at all, which
+rules out our own refusal history as the cause and leaves two candidates that
+two requests cannot separate: Indeed's detection changed, or the whole
+Webshare range is now scored as proxy space.
+
+**The crawl is unaffected**: `indeed_cards` collected 363 postings the same
+run, from the home address with the owner's session through the browser.
+
+**The cost** is 122 Indeed postings with no description. The description comes
+off the posting page, so they cannot be classified and do not reach the board
+(`docs/pipeline.md`). Nothing is lost - they keep their place in the queue,
+undescribed rows go first, and the next run starts on them.
