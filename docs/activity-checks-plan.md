@@ -9,9 +9,11 @@ measurement that lives somewhere else - `docs/sites/*.md`, `pipeline.md`, or
 the database on the date given. Where a layer depends on something not yet
 measured, the measurement that would settle it is named.
 
-**Status: not built.** The decision of 20.09.2026 was to start with a simple
-seven-day horizon instead (see "What is being done first"), and to come back
-to these layers afterwards.
+**Status: Layer 0 built 03.10.2026**, in the shape Harman asked for - and it
+counts RUNS rather than hours. Layers 1-3 are still plans. The seven-day
+horizon of 20.09 stayed, raised to ten days, as the outer edge behind the new
+rule rather than the rule itself. See "Layer 0" below and
+"What is being done first" for what it replaced.
 
 ---
 
@@ -50,7 +52,53 @@ shown. That is the gap the layers below close.
 
 ## Layer 0 - a posting seen in the crawl needs no check
 
-**Costs nothing. Ready to build.**
+**BUILT 03.10.2026.** Harman: "Mantıken bot 3 günde 1 çalıştığında birçok ilan
+aramalarda tekrardan gözükecektir. O ilanlar kontrol edilmesin çünkü aramada
+çıkıyorsa halen aktif demektir... Last seen değerini gün bazında yapmak yerine
+3 aramada 1 yapalım."
+
+Three things were decided with it, and each one is a way the simple version
+would have been wrong:
+
+- **It counts complete scans, not hours.** The twelve-hour window Indeed used
+  was a stand-in for "this run's crawl", and it breaks in the case this
+  project actually hit: nothing ran between 23.09 and 03.10.2026, and a rule
+  written in days would have called every posting "missed three runs" and
+  spent 400 requests re-confirming rows nothing had touched.
+- **A scan counts only when the searches reached their end** - his definition:
+  "Bir sitede toplanabilecek bütün ilanları topladığımızda tam koşu yapılmış
+  kabul edeceğiz." `scraper/scans.py` reads the crawl's own stats for the four
+  ways it can stop short: the `MAX_PAGES` ceiling, the pool giving up, a
+  dropped request, and a finish reason other than `finished`. A page that
+  repeats itself is NOT one of them - that is the site saying it has no more
+  to give (`api_spider.next_page_allowed`, reason 2). This is also what gives
+  the circuit breaker a job it did not have before: the breaker firing means
+  the run does not count.
+- **A posting with no description is always opened**, whatever the scans say.
+  The same response carries the description and the verdict, and the
+  description is what the classifier sorts on, so skipping an undescribed
+  posting would strand it off the board - which is exactly what 79 Indeed
+  postings were doing on 03.10.2026.
+
+Written as `site_scans` (one row per crawl per site) plus one filter in
+`openings.load_open_postings`. With fewer than three complete scans on record
+the rule has no opinion and every open posting is queued, which is what the
+checkers did before. `MISSED_SCANS_BEFORE_CHECK=0` turns it off.
+
+Guarded by `tests/test_scan_log.py` (18 tests) and `tests/test_check_queue.py`
+(21). **Not yet measured on a live run** - the first one will say how many
+requests it actually saves, and `docs/pipeline.md` is where that goes.
+
+### What the measurement before it said
+
+`indeed_check.probe_query` (16.09.2026) already skipped rows seen in a search
+in the last 12 hours, for Indeed only. `kariyernet_check`, `techcareer_check`
+and `linkedin_check` did not override `probe_query` at all and took the whole
+open board every run. On 23.09.2026 that cost **487 page opens of which 487
+had been seen in that same run's searches** - about 1 hour 40 minutes of a
+2.5-hour run. Every one of those descriptions arrived on the same responses,
+though, so the saving is on the runs after a posting is described, not on the
+run that discovers it.
 
 Presence in a search result proves the posting is open. Absence proves
 nothing - measured 21.08.2026, only 14 of 36 stored kariyer.net postings
@@ -222,7 +270,7 @@ techcareer were last seen on the 14th, so unless a crawl runs first, the board
 goes from 30 postings to 10 and the queue loses 20. That is the rule working,
 not a bug - but it is a reason to crawl before then.
 
-### Still open
+### Still open (as of 20.09; the scheduler is still missing on 03.10)
 
 Nothing schedules anything today. `main.py` is started by hand
 (`README.md:97`), and the `--schedule` path that `docker-compose.yml` uses

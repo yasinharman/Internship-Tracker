@@ -15,20 +15,22 @@ Base = declarative_base()
 # It lives here because those are the only two readers and they must not
 # drift apart.
 #
-# DECIDED 20.09.2026, and deliberately the crudest thing that works: the
+# DECIDED 20.09.2026 at seven days, as the crudest thing that works: the
 # per-posting check request is what the sites refuse (Indeed stopped answering
-# after 145 of them on 16.09.2026), so the queue has to shrink before anything
-# clever is built. docs/activity-checks-plan.md holds the design this is
-# standing in for.
+# after 145 of them on 16.09.2026), so the queue had to shrink before anything
+# clever was built. docs/activity-checks-plan.md holds the fuller design.
 #
 # Nothing is written, no column, no flag. A posting the crawl finds again gets
 # a fresh last_seen_at from pipelines.py and comes back on its own - same row,
 # same history, no second payment for the description or the classification.
-# Undoing the rule is deleting two filters.
 #
-# Seven days against a crawl that runs every three days means a posting has to
-# be missed by two consecutive crawls before it drops out.
-UNLISTED_AFTER_DAYS = 7
+# SEVEN -> TEN DAYS, 03.10.2026, Harman's call, and it is now the OUTER edge
+# rather than the rule. A posting missing from three complete scans is opened
+# and asked (scraper/scans.py, MISSED_SCANS_BEFORE_CHECK): at a three-day
+# cadence that is about nine days, so the check gets its turn with a day to
+# spare before the board lets the posting go. Set below nine and the board
+# would drop postings the checker never got to ask about.
+UNLISTED_AFTER_DAYS = 10
 
 ###################################################################
 # CREATED OUR TABLE'S STRUCTURE ON THE DATABASE USING SQL ALCHEMY #
@@ -200,6 +202,38 @@ class JobPostField(Base):
     field = Column(String(32), primary_key=True, index=True)
     # 0 is the field the posting is mostly about - the one on JobPost.
     rank = Column(Integer, default=0)
+
+
+###################################################################
+# DID WE ACTUALLY SEE THE WHOLE SITE? - one row per crawl per site #
+###################################################################
+class SiteScan(Base):
+    """
+    A cards spider's own report: this run, this site, did the searches reach
+    their end or did something stop them short.
+
+    It exists because "the posting was not in the search results" is only
+    evidence when we actually read the search results to their end. A crawl
+    that hit a page ceiling, had requests dropped for want of an address, or
+    was killed by its timeout did not look - and an absence it reports means
+    nothing. Harman's definition, 03.10.2026: a complete scan is one that
+    collected every posting the searches yield.
+
+    scraper/scans.py writes these rows and answers the only question asked of
+    them: what was the finishing time of the Nth most recent COMPLETE scan of
+    this site. Everything else here is evidence for reading later.
+    """
+
+    __tablename__ = "site_scans"
+
+    id = Column(Integer, primary_key=True)
+    site = Column(String(64), nullable=False, index=True)
+    finished_at = Column(DateTime, nullable=False, index=True)
+    complete = Column(Boolean, nullable=False)
+    # What the scan brought in, and why it was not complete. Kept because a
+    # row saying "incomplete" is useless a week later without the reason.
+    postings = Column(Integer)
+    note = Column(String(200))
 
 
 ##############################

@@ -55,10 +55,44 @@ verdict().
 import os
 from datetime import datetime, timedelta
 
-from sqlalchemy import or_
+from sqlalchemy import and_, case, or_
 from sqlalchemy.orm import sessionmaker
 
+from . import scans
 from .models import UNLISTED_AFTER_DAYS, JobPost, db_connect
+
+
+###################################################################
+# "NOT DESCRIBED YET", IN ONE PLACE                               #
+###################################################################
+# What a spider writes when it has nothing: the crawl's own DEFAULT_VALUE is
+# "N/A", and "" has been seen too. Since 21.09.2026 no crawl opens a posting
+# page, so a checker is the only writer of a description on every site - which
+# is why this moved out of indeed_check and up here on 03.10.2026. A test
+# keeps the pair in step with pipeline/classify_jobs.py, which waits on the
+# same two values.
+NO_DESCRIPTION = ("N/A", "")
+
+
+def lacks_description():
+    return or_(
+        JobPost.job_description.is_(None),
+        JobPost.job_description.in_(NO_DESCRIPTION),
+    )
+
+
+def seen_since(moment):
+    """
+    True for a posting a search result carried at or after `moment`.
+
+    Written with the NULLs in mind. A row never seen in a search has a NULL
+    last_seen_at, and `NOT (last_seen_at >= x)` is NULL for it - which a WHERE
+    clause treats as false, so the row would drop out of the queue without
+    anything saying so. Testing for NULL first makes the negation true for it,
+    and "no evidence" then means "ask", which is the direction this file
+    refuses to get wrong.
+    """
+    return and_(JobPost.last_seen_at.is_not(None), JobPost.last_seen_at >= moment)
 
 # Compared with == rather than `is` below. They are module constants, so
 # identity works today - but a checker written later that returns a bare
@@ -117,6 +151,12 @@ class OpeningCheckMixin:
     # lot of rows at once, and "Aktif Ilan" dropping by half should be a
     # thing you expected.
     dry_run = False
+
+    # The parent is a cards spider and records whether its scan of the site
+    # was complete (api_spider._record_scan). A checker must not: it reads a
+    # queue of postings it was handed and never reads the search results, so
+    # a row from it would claim a scan that never happened.
+    RECORDS_A_SCAN = False
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -185,6 +225,7 @@ class OpeningCheckMixin:
                     )
                 )
             )
+            query = self.skip_the_recently_seen(session, query)
             query = self.probe_query(query)
             if MAX_PER_SITE > 0:
                 query = query.limit(MAX_PER_SITE)
@@ -205,20 +246,73 @@ class OpeningCheckMixin:
         )
         return rows
 
+    def skip_the_recently_seen(self, session, query):
+        """
+        Leave out the postings today's searches already proved are open.
+
+        THE RULE, Harman 03.10.2026: a posting that has its description
+        stored is opened again only once it has been missing from three
+        COMPLETE scans of its site (scraper/scans.py). A posting still
+        turning up in the searches needs no request - presence in a search
+        result is the site saying it is open, and we already paid for that
+        page.
+
+        Two things stay in the queue whatever the scans say:
+
+          * a posting with no description. The same response carries the
+            description and the verdict, and the description is what the
+            classifier sorts on - so an undescribed posting is off the board
+            until it is opened, and skipping it would strand it there. This
+            is why the rule is about verification, not about discovery.
+          * a posting with no last_seen_at at all. No evidence is not
+            evidence; see seen_since().
+
+        And the rule does nothing at all until the site has three complete
+        scans on record. A fresh database, or a site whose crawl keeps being
+        cut short, falls back to the behaviour before this rule: ask about
+        everything.
+        """
+        cutoff = scans.missed_since(session, self.site_name)
+        if cutoff is None:
+            self.logger.info(
+                "%s: no %s complete scans on record yet - every open posting "
+                "is queued", self.site_name, scans.MISSED_SCANS_BEFORE_CHECK,
+            )
+            return query
+
+        skipped = query.filter(~lacks_description(), seen_since(cutoff)).count()
+        self.logger.info(
+            "%s: %s posting(s) skipped - described, and in a search result "
+            "since the %s complete scans before this one (%s)",
+            self.site_name, skipped, scans.MISSED_SCANS_BEFORE_CHECK,
+            cutoff.strftime("%d.%m %H:%M"),
+        )
+        return query.filter(or_(lacks_description(), ~seen_since(cutoff)))
+
     def probe_query(self, query):
         """
         The order the rows are probed in, and any this site leaves out.
 
-        Never checked first, then longest ago. It matters whenever a run
-        cannot reach every row - a cap, a block, a time limit - because it
-        decides which rows wait. NULLS FIRST is spelled out because Postgres
-        sorts them LAST on an ascending order by, which is the opposite of
-        what "never checked" should mean here.
+        A posting with no description goes first, then never checked, then
+        longest ago. It matters whenever a run cannot reach every row - a cap,
+        a block, a time limit - because it decides which rows wait, and the
+        rows that cannot be classified at all are the ones worth reaching.
+        NULLS FIRST is spelled out because Postgres sorts them LAST on an
+        ascending order by, which is the opposite of what "never checked"
+        should mean here.
 
-        Override where a site's own measurements say otherwise; indeed_check
-        does, since 16.09.2026.
+        This was indeed_check's own ordering until 03.10.2026; nothing about
+        it was specific to Indeed once every site's description started
+        arriving from its checker. Override where a site's own measurements
+        say otherwise.
         """
-        return query.order_by(JobPost.checked_at.asc().nulls_first())
+        return query.order_by(
+            case((lacks_description(), 0), else_=1),
+            JobPost.checked_at.asc().nulls_first(),
+            # Oldest row first among equals: the postings a refusal left
+            # behind go ahead of the ones tonight's crawl just added.
+            JobPost.id.asc(),
+        )
 
     def _reopen_seen_again(self, session):
         """

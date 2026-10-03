@@ -2,11 +2,18 @@
 A posting the crawl has stopped seeing drops off the board and out of the
 checker's queue.
 
-DECIDED 20.09.2026, as the crude stand-in for docs/activity-checks-plan.md.
-The per-posting check request is what the sites refuse - Indeed stopped
-answering after 145 of them on 16.09.2026 - so the queue has to stop growing
-before anything cleverer is built. The rule is one WHERE clause in two places
-and writes nothing: scraper.models.UNLISTED_AFTER_DAYS.
+DECIDED 20.09.2026 at seven days, as the crude stand-in for
+docs/activity-checks-plan.md: the per-posting check request is what the sites
+refuse - Indeed stopped answering after 145 of them on 16.09.2026 - so the
+queue had to stop growing before anything cleverer was built. The rule is one
+WHERE clause in two places and writes nothing:
+scraper.models.UNLISTED_AFTER_DAYS.
+
+RAISED TO TEN DAYS on 03.10.2026, when the cleverer thing arrived. It is the
+outer edge now rather than the working rule: a described posting missing from
+three complete scans is opened and asked first (tests/test_scan_log.py), which
+at a three-day cadence is about nine days. The horizon has to sit above that
+or the board would let go of postings the checker never got to ask about.
 
 What these tests are really guarding is the two ways it could go wrong
 quietly: hiding a posting that IS still listed, and hiding the closed pile

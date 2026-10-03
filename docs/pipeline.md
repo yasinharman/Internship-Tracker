@@ -907,3 +907,61 @@ no request to any site.** The primary field of each, after the run:
   larger than the table above: 62 postings mention Pazarlama/Reklam somewhere
   in their labels against 43 that are mostly about it.
 
+
+## The check asks only about postings the searches have stopped finding - 03.10.2026
+
+Harman's rule, and the first thing built in learning mode:
+
+> Mantıken bot 3 günde 1 çalıştığında birçok ilan aramalarda tekrardan
+> gözükecektir. O ilanlar kontrol edilmesin çünkü aramada çıkıyorsa halen
+> aktif demektir. [...] Last seen değerini gün bazında yapmak yerine 3 aramada
+> 1 yapalım.
+
+**What it replaces.** Before this, every checker but Indeed's opened every
+open posting of its site on every run. Measured on the 23.09.2026 run: **487
+postings were opened and all 487 had been seen in that same run's own
+searches** - roughly 1 hour 40 minutes of a 2 hour 24 minute run spent
+re-confirming what the crawl had just proved. Indeed's checker had a narrower
+version of this rule since 16.09 (`SEEN_RECENTLY_H = 12`), which has now been
+deleted in favour of the general one.
+
+**The rule.**
+
+| The posting | What happens |
+|---|---|
+| no description yet | opened, and first in the queue |
+| described, and in a search result since the third most recent complete scan | **not opened at all** |
+| described, missing from three complete scans | opened |
+| never seen in any search (`last_seen_at IS NULL`) | opened - no evidence is not evidence |
+
+**Why it counts scans and not days.** Nothing ran between 23.09 and
+03.10.2026. A rule written in days would have read those ten days as ten days
+of absence and opened about 400 pages on the next run - the exact cost it
+exists to avoid. A rule written in runs says, correctly, that nothing
+happened. `MISSED_SCANS_BEFORE_CHECK=3`.
+
+**What makes a scan complete**, his definition: it collected every posting the
+searches yield. `scraper/scans.py` reads the crawl's own stats for the ways it
+can stop short - the `MAX_PAGES` ceiling, the pool running out of addresses, a
+dropped request, or a finish reason other than `finished` - and records one
+`site_scans` row per crawl per site. An incomplete scan does not count towards
+anybody's three, so a run that never looked at a site can never be read as
+evidence about that site. A repeated page does **not** make a scan incomplete:
+that is the site saying it has nothing more to give.
+
+**Where it does nothing.** With fewer than three complete scans on record the
+rule has no opinion and every open posting is queued, exactly as before. That
+covers a fresh database and a site whose crawl keeps being cut short.
+
+**The board's horizon moved with it**: `UNLISTED_AFTER_DAYS` 7 -> 10. Three
+runs at a three-day cadence is about nine days, so at ten the checker gets its
+turn with a day to spare before the board lets the posting go. Below nine the
+board would drop postings the checker never asked about.
+
+**Not yet measured on a live run.** The first run after this is the
+measurement: how many postings each site skips, and whether a posting that
+stops appearing in the searches turns out to be closed when it is finally
+opened. The second question is the one `docs/activity-checks-plan.md` has
+listed as unmeasured since 20.09 - absence is a usable signal at 24 of 24 on
+kariyer.net (12.09 -> 14.09) and a useless one at 14 of 36 (21.08, with the
+old searches).

@@ -21,57 +21,17 @@ being true.
 import json
 import os
 import re
-from datetime import datetime, timedelta
-
-from sqlalchemy import and_, case, or_
 
 from ..api_spider import strip_html
 from ..browser_session import BrowserSession, profile_for_impersonate
-from ..models import JobPost
 from ..openings import CLOSED, OPEN, UNKNOWN, OpeningCheckMixin
 from .indeed_cards import IndeedCardsSpider
 
-# What "no description yet" looks like in the column: the crawl writes "N/A",
-# and "" has been seen too. The same two values pipeline/classify_jobs.py waits
-# on, so "this checker still owes the row a description" and "classify is
-# still waiting for one" mean the same rows. A test keeps them in step.
-NO_DESCRIPTION = ("N/A", "")
-
-
-def lacks_description():
-    return or_(
-        JobPost.job_description.is_(None),
-        JobPost.job_description.in_(NO_DESCRIPTION),
-    )
-
-
-def seen_since(moment):
-    return and_(JobPost.last_seen_at.is_not(None), JobPost.last_seen_at >= moment)
-
-
-def probe_order(query, seen_after):
-    """
-    See "A POSTING PAGE IS OPENED WHEN THERE IS SOMETHING TO LEARN" below.
-
-    Written with the NULLs in mind. A row never seen in a search has a NULL
-    last_seen_at, and `NOT (last_seen_at >= x)` is NULL for it - which a
-    WHERE clause treats as false, so the row would drop out of the queue
-    without anything saying so. seen_since() tests for NULL first, so its
-    negation is true for that row.
-    """
-    missing = lacks_description()
-    return (
-        query
-        .filter(or_(missing, ~seen_since(seen_after)))
-        .order_by(
-            case((missing, 0), else_=1),
-            JobPost.checked_at.asc().nulls_first(),
-            # Oldest row first among equals: the postings a refusal left
-            # behind go ahead of the ones tonight's crawl just added.
-            JobPost.id.asc(),
-        )
-    )
-
+# "No description yet" and "seen in a search since" moved to
+# scraper/openings.py on 03.10.2026, together with the queue rule that uses
+# them. They were written here on 16.09.2026 because Indeed was the only site
+# whose checker owed its postings a description; since 21.09 no crawl opens a
+# posting page, so every site's checker does.
 # Indeed states it outright in window._initialData. Matched with a regex rather
 # than by parsing because the blob is ~400 kB of nested JSON with escaped quotes
 # inside string values - the same reason extract_provider_json() brace-scans
@@ -162,54 +122,26 @@ class IndeedCheckSpider(OpeningCheckMixin, IndeedCardsSpider):
 
         The refused rows were already safe. A probe that gets no answer does
         not stamp checked_at, and unchecked rows go first, so tomorrow starts
-        on them. What was missing is kariyer.net's other half, "a posting
+        on them. What was missing is kariyernet_cards' other half, "a posting
         page is worth a request only when there is something to learn from
-        it" (kariyernet_cards, 10.09.2026). Without it, this checker opens
-        EVERY open posting EVERY night - about 300 once the backlog is gone,
-        against a wall measured once, at the 51st - so the wall is hit every
-        night, whatever the backlog, and refusals accumulate on the address.
+        it" (10.09.2026). Without it, this checker opens EVERY open posting
+        EVERY night - about 300 once the backlog is gone, against a wall
+        measured once, at the 51st - so the wall is hit every night, whatever
+        the backlog, and refusals accumulate on the address.
 
-        So a row is opened when one of two things can be learned:
+        THE RULE MOVED TO scraper/openings.py ON 03.10.2026 and is every
+        site's now rather than Indeed's. It also stopped being measured in
+        hours: a described posting is skipped while the searches keep finding
+        it, and is opened once it has been missing from three COMPLETE scans
+        of the site. The twelve-hour window this file used was a stand-in for
+        "this run's crawl", and it was wrong in the one case that matters - a
+        run that never happened. Ten days without one (23.09 to 03.10.2026)
+        would have made every posting look twelve-hours-stale and spent 400
+        requests re-confirming rows nothing had touched.
 
-            no description yet                      -> open it, FIRST
-            description, seen in a search result    -> skip it
-              in the last SEEN_RECENTLY_H hours
-            description, not seen lately            -> open it, after the above
-
-        THE SKIP rests on the rule openings.py is built on: a posting in a
-        search result is open, and last_seen_at is that evidence. A posting
-        tonight's crawl just saw has nothing to tell the checker. One that
-        has dropped out of the searches is the one that may have closed, and
-        it is still opened. The cost: a posting that closes while Indeed
-        still lists it in search is caught only once it drops out.
-
-        TWELVE HOURS is "this run's crawl" with room to spare. The crawl may
-        take 90 minutes, and the checker starts right after it. A checker run
-        on its own the next day finds every sighting older than that and
-        opens the described rows again - after the ones without a description.
-
-        DESCRIPTION FIRST, even ahead of a row never checked. A posting that
-        was checked but had no description on its page would otherwise wait
-        behind every row that was never checked. It is also the order
-        classify needs: it sorts nothing until the text arrives.
-
-        One cost is accepted, not solved. A page that NEVER carries
-        sanitizedJobDescription is opened first every night. None has been
-        seen - 51 of 51 open pages had one on 16.09 - and check/
-        description_missing in the stats would show one.
+        The ordering it used - no description first, then never checked, then
+        longest ago - moved with it and is now every checker's default.
     '''
-    SEEN_RECENTLY_H = 12
-
-    def probe_query(self, query):
-        seen_after = datetime.utcnow() - timedelta(hours=self.SEEN_RECENTLY_H)
-        waiting = query.filter(lacks_description()).count()
-        skipped = query.filter(~lacks_description(), seen_since(seen_after)).count()
-        self.logger.info(
-            "%s posting(s) without a description go first. %s with one were "
-            "in a search result in the last %sh and are not opened again.",
-            waiting, skipped, self.SEEN_RECENTLY_H,
-        )
-        return probe_order(query, seen_after)
 
     def description(self, response):
         """

@@ -139,6 +139,43 @@ MIGRATIONS = [
         "CREATE INDEX IF NOT EXISTS ix_job_post_fields_field "
         "ON job_post_fields (field)",
     ),
+
+    ###################################################################
+    # COUNTING RUNS INSTEAD OF DAYS - 03.10.2026                      #
+    ###################################################################
+    # One row per crawl per site, saying whether the searches reached their
+    # end. "The posting was not in the results" is only evidence when the
+    # results were read to the end, so the checker asks this table how old
+    # the third most recent COMPLETE scan is (scraper/scans.py).
+    (
+        "site_scans",
+        """
+        CREATE TABLE IF NOT EXISTS site_scans (
+            id SERIAL PRIMARY KEY,
+            site VARCHAR(64) NOT NULL,
+            finished_at TIMESTAMP NOT NULL,
+            complete BOOLEAN NOT NULL,
+            postings INTEGER,
+            note VARCHAR(200)
+        )
+        """,
+    ),
+    # The only question asked of it is "this site's last N complete scans",
+    # which is this index read backwards.
+    (
+        "site_scans.site + finished_at index",
+        "CREATE INDEX IF NOT EXISTS ix_site_scans_site_finished "
+        "ON site_scans (site, finished_at DESC)",
+    ),
+    (
+        "site_scans.site index",
+        "CREATE INDEX IF NOT EXISTS ix_site_scans_site ON site_scans (site)",
+    ),
+    (
+        "site_scans.finished_at index",
+        "CREATE INDEX IF NOT EXISTS ix_site_scans_finished_at "
+        "ON site_scans (finished_at)",
+    ),
 ]
 
 

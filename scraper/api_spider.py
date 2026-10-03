@@ -550,9 +550,36 @@ class BaseApiSpider(scrapy.Spider):
                 ", ".join(sorted(redundant)),
             )
 
+    # A cards spider scans the site, so it is the one that can say whether the
+    # scan was complete. A checker inherits from it and must NOT: it reads a
+    # queue of postings it was handed, it never reads the search results. The
+    # mixin turns this off (scraper/openings.py).
+    RECORDS_A_SCAN = True
+
     def closed(self, reason):
         self._log_discovery_report()
         self._report_item_count(reason)
+        self._record_scan(reason)
+
+    def _record_scan(self, reason):
+        """
+        Tell scraper/scans.py whether this crawl saw the whole site.
+
+        Wrapped because a failure here must not be the thing that breaks a
+        crawl that has already stored its postings: the cost of losing one
+        scan row is that the checker falls back to queueing everything, which
+        is what it did before 03.10.2026.
+        """
+        if not self.RECORDS_A_SCAN or not self.site_name:
+            return
+        try:
+            from . import scans
+
+            scans.record(self.site_name, self.crawler.stats.get_stats(), reason)
+        except Exception as error:
+            self.logger.warning(
+                "could not record the scan for %s: %s", self.site_name, error
+            )
 
     ###################################################
     # TELL THE RUNNER HOW MUCH WE ACTUALLY FOUND      #
