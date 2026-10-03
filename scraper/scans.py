@@ -54,12 +54,24 @@ MISSED_SCANS_BEFORE_CHECK = int(os.getenv("MISSED_SCANS_BEFORE_CHECK", "3"))
 
 # Stats that mean the crawl stopped short of the end. Each is already written
 # by the code that gives up: api_spider logs the ceiling, the pool logs a
-# site it has run out of addresses for.
+# site it has run out of addresses for, Scrapy counts the requests that never
+# came back and the callbacks that raised.
 STOPPED_SHORT = (
     "pagination/hit_ceiling",
     "pool/gave_up",
     "pool/dropped_no_address",
+    # MEASURED THE HARD WAY, 03.10.2026, on the first live run of this file:
+    # Playwright's chromium was missing after an upgrade, every kariyer.net
+    # request failed with a download error, and the scan was recorded as
+    # COMPLETE with 0 postings. A crawl that saw no page is the one thing this
+    # table must never call evidence.
+    "downloader/exception_count",
 )
+
+# Same reading, for a callback that raised: the page arrived and we failed to
+# read it, so its postings are missing from the scan. Scrapy counts these per
+# exception class, so the prefix is what has to be looked for.
+STOPPED_SHORT_PREFIXES = ("spider_exceptions/",)
 
 
 def why_incomplete(stats, finish_reason=None):
@@ -76,9 +88,24 @@ def why_incomplete(stats, finish_reason=None):
         if count:
             return f"{key}={count}"
 
+    for key, count in (stats or {}).items():
+        if count and key.startswith(STOPPED_SHORT_PREFIXES):
+            return f"{key}={count}"
+
     reason = finish_reason or stats.get("finish_reason")
     if reason and reason != "finished":
         return f"finish_reason={reason}"
+
+    # A SCAN THAT BROUGHT NOTHING BACK IS NOT A SCAN. Every one of these sites
+    # has postings on it; a crawl that collected none of them has not told us
+    # that they are gone, it has told us that something went wrong - and three
+    # of those in a row would send every posting we hold to be re-opened.
+    #
+    # A site that genuinely empties out one day is recorded incomplete too,
+    # which costs the next run some requests and nothing else. That is the
+    # cheap direction to be wrong in.
+    if not (stats or {}).get("item_scraped_count"):
+        return "no postings collected"
 
     return None
 

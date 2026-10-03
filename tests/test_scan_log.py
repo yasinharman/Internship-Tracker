@@ -63,6 +63,31 @@ def test_anything_that_stopped_the_crawl_short_makes_it_incomplete(key):
     assert note and key in note
 
 
+def test_a_crawl_whose_requests_failed_is_incomplete():
+    # MEASURED THE HARD WAY on the first live run, 03.10.2026: Playwright's
+    # chromium was missing after an upgrade, every kariyer.net request failed
+    # with a download error, and the scan was recorded COMPLETE with 0
+    # postings - the one thing this table must never call evidence.
+    note = scans.why_incomplete(
+        {"downloader/exception_count": 4, "item_scraped_count": 0}, "finished")
+    assert note == "downloader/exception_count=4"
+
+
+def test_a_scan_that_collected_nothing_is_incomplete():
+    # Every one of these sites has postings on it. Nothing collected means
+    # something broke, not that every posting is gone.
+    assert scans.why_incomplete({"item_scraped_count": 0}, "finished") == \
+        "no postings collected"
+    assert scans.why_incomplete({}, "finished") == "no postings collected"
+
+
+def test_a_callback_that_raised_is_incomplete():
+    # The page arrived and we failed to read it, so its postings are missing.
+    note = scans.why_incomplete(
+        {"spider_exceptions/ValueError": 1, "item_scraped_count": 5}, "finished")
+    assert note == "spider_exceptions/ValueError=1"
+
+
 def test_a_crawl_that_did_not_finish_is_incomplete():
     # main.py kills a spider that overruns its timeout; Scrapy's own shutdown
     # paths look the same from here.
