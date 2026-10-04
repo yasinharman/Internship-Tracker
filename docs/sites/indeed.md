@@ -1294,3 +1294,52 @@ file directly. The request itself carried all eight, so nothing failed loudly;
 the next run would simply have started poorer than this one finished. The jar
 is read from disk per request now and written on change
 (`tests/test_proxy_pool.py`, "what another layer earned").
+
+## IT IS THE WINDOW, AND THE SESSION'S OWN ADDRESS - measured 04.10.2026
+
+Two changes, made in that order, and the second one is what opened Indeed from
+the pool.
+
+**1. The session was signed in THROUGH the pool address.** Harman's reading:
+"Ev ip sinde işlediğimiz yol benim hesabımdan istek atıyormuş gibi yapmaktı,
+bunun için kendi ipimde hesabıma giriş yapmıştım". The session that worked was
+created on the address it was used from; on 03.10 we had taken a session made
+at home and presented it from a US address. `tools/save_session.py
+--proxy-line 13` now opens the login window through that address - it prints
+the browser's own exit address first and refuses to go on if it is not the
+expected one. 38 cookies, SOCK and SHOE both present.
+
+**2. Headless to windowed.** With the address-matched session, headless was
+still refused:
+
+| Client, from a pool address | Indeed's home page |
+|---|---|
+| curl_cffi | 200 - 22.09 (lines 4, 17), 04.10 (line 11) |
+| headless Chromium | **403** - 22.09 (4, 5, 6, 7), 03.10 (9, session), 04.10 (13, its own session) |
+| **windowed Chromium** | **200** - 23.09 (18, anonymous), **04.10 (13, with its session)** |
+
+Six addresses and three dates say the same thing: it is the client, not the
+address and not the session. The same split kariyer.net showed on 10.09.2026,
+where headless gets a 9 kB block page and a windowed browser gets 621 kB of
+job cards.
+
+**The run that worked**, line 13, windowed, its own session, capped at two
+responses on purpose:
+
+| Request | Result |
+|---|---|
+| warm-up, `https://tr.indeed.com/` | 200 |
+| `/jobs?q=stajyer&l=İstanbul&start=0` | 200, 15 postings, 14 kept |
+
+The scan was recorded **incomplete (`finish_reason=closespider_pagecount`)**,
+which is the cap this test asked for and the scan log refusing to count a run
+that stopped short - see docs/pipeline.md.
+
+**Still untested on this path:** page two and beyond (the account is what
+opens it, measured 30.07.2026 - but not yet from a pool address), and the
+posting pages `indeed_check` needs. The anonymous curl path was refused on
+`/viewjob` again the same morning, with and without the address's own cookies.
+
+**Cost of the afternoon:** line 11 rests until 05.10 10:17. Line 13's rest was
+cleared deliberately after the headless refusal, on the reading above that the
+403 is a verdict on the client - the refusal itself is still on its record.
