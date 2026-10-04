@@ -214,6 +214,20 @@ class BaseApiSpider(scrapy.Spider):
         # posting key -> set of routes that found it. See note_discovery().
         self._discovery = defaultdict(set)
 
+        # search -> HOW it ended, or absent while it is still running.
+        # The two below are also declared on the CLASS (see _paging_state), so
+        # a spider built without this constructor - which is how the parsing
+        # unit tests build one - still pages without raising.
+        # DID THE SEARCH SEE ITS OWN END? - Harman's definition of a complete
+        # scan, 04.10.2026: "her arama kendi sonuna ulaştıysa tam sayılır,
+        # aradaki bir sayfanın düşmesi tamlığı bozmaz". scraper/scans.py reads
+        # the two counters this produces, and a scan that cut a search short
+        # does not count towards anybody's three.
+        self._search_end = {}
+        # search -> pages lost IN A ROW to a dropped request. Reset by the next
+        # page that parses; see the spiders that page past a loss.
+        self._lost_pages = defaultdict(int)
+
     def start_requests(self):
         self.logger.info(
             "Browser identity for this run: %s", self.session.profile.name
@@ -449,10 +463,16 @@ class BaseApiSpider(scrapy.Spider):
           3. MAX_PAGES - a circuit breaker. Reaching it means the searches are
              not narrow enough or detection 2 failed, so it logs an ERROR.
         """
+        # A page that parsed is a page that arrived: whatever came before it
+        # was not a run of losses.
+        _, lost = self._paging_state()
+        lost[search_key] = 0
+
         if not records:
             self.logger.info(
                 "[%s] page %s empty - search exhausted", search_key, page
             )
+            self.search_ended(search_key, "exhausted")
             return False
 
         seen = self._seen_keys[search_key]
@@ -468,6 +488,7 @@ class BaseApiSpider(scrapy.Spider):
                 search_key, page, len(records), len(seen),
             )
             self.crawler.stats.inc_value("pagination/repeated_page")
+            self.search_ended(search_key, "repeated")
             return False
 
         if page >= self.MAX_PAGES:
@@ -478,12 +499,67 @@ class BaseApiSpider(scrapy.Spider):
                 search_key, self.MAX_PAGES,
             )
             self.crawler.stats.inc_value("pagination/hit_ceiling")
+            self.search_ended(search_key, "ceiling")
             return False
 
         self.logger.debug(
             "[%s] page %s: %s new of %s", search_key, page, len(fresh), len(records)
         )
         return True
+
+    ###############################################################
+    # DID EACH SEARCH SEE ITS OWN END? - 04.10.2026               #
+    ###############################################################
+    # The reasons a search can stop, split by whether it had seen everything
+    # there was. The distinction is the whole of Harman's completeness rule:
+    # a scan counts only if every search it started reached one of the first
+    # three.
+    SAW_THE_END = ("exhausted", "repeated", "last_page", "reached_total")
+    CUT_SHORT = ("ceiling", "lost_pages", "no_account")
+
+    # Class-level fallbacks. The constructor replaces both with real
+    # containers; these exist because a unit test of a spider's PARSING builds
+    # the instance with object.__new__ and has no business knowing about
+    # paging bookkeeping. _paging_state() fills them in on first use.
+    _search_end = None
+    _lost_pages = None
+
+    def _paging_state(self):
+        if self._search_end is None:
+            self._search_end = {}
+        if self._lost_pages is None:
+            self._lost_pages = defaultdict(int)
+        return self._search_end, self._lost_pages
+
+    def search_ended(self, search_key, reason):
+        """Called once per search, by whatever decided to stop asking."""
+        ends, _ = self._paging_state()
+        ends.setdefault(search_key, reason)
+
+    def _report_search_ends(self):
+        """
+        Write the two counters scraper/scans.py reads.
+
+        A search with no recorded end is counted as cut short: it stopped
+        without anybody deciding it was finished, which is what a killed
+        spider or a parse that never came back looks like from here.
+        """
+        ends, lost = self._paging_state()
+        started = set(ends) | set(self._seen_keys) | set(lost)
+        ended = sum(1 for key in started if ends.get(key) in self.SAW_THE_END)
+        cut = len(started) - ended
+        self.crawler.stats.set_value("searches/started", len(started))
+        self.crawler.stats.set_value("searches/ended", ended)
+        self.crawler.stats.set_value("searches/cut_short", cut)
+        if cut:
+            unfinished = {key: ends.get(key, "never finished")
+                          for key in started
+                          if ends.get(key) not in self.SAW_THE_END}
+            self.logger.warning(
+                "%s of %s search(es) did not reach their own end: %s - this "
+                "scan does not count as a complete one (scraper/scans.py)",
+                cut, len(started), unfinished,
+            )
 
     ###############################################################
     # WHICH ROUTE FOUND WHAT - THE FILTER-LEAK DETECTOR           #
@@ -557,6 +633,7 @@ class BaseApiSpider(scrapy.Spider):
     RECORDS_A_SCAN = True
 
     def closed(self, reason):
+        self._report_search_ends()
         self._log_discovery_report()
         self._report_item_count(reason)
         self._record_scan(reason)

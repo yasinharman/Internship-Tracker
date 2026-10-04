@@ -16,23 +16,22 @@ the next run, while a rule written in runs correctly says nothing happened.
 
 WHAT MAKES A SCAN COMPLETE
 --------------------------
-His definition: the searches collected every posting they yield. So the
-question is not "did the spider exit cleanly" - a blocked spider exits
-cleanly - but "did anything stop it short of the end":
+His definition, 04.10.2026: **every search reached its own end**. "Her arama
+kendi sonuna ulaştıysa tam sayılır, aradaki bir sayfanın düşmesi tamlığı
+bozmaz." A search sees its end when the site runs out of results, starts
+repeating itself, or the page that covers its last result has been read
+(api_spider.SAW_THE_END). It is cut short by the MAX_PAGES breaker, by three
+pages lost in a row, by an anonymous visitor hitting the sign-in wall, or by
+stopping with nobody deciding it was done - a killed spider looks like that.
 
-    MAX_PAGES fired                 a circuit breaker, by its own log an ERROR
-    the pool ran out of addresses   requests were never sent
-    a request was dropped           same
-    the spider did not finish       killed by its timeout, or shut down
+That replaced a stricter reading on the same day. Until then any dropped
+request made the scan incomplete, which would have left Indeed permanently
+"never complete": it answered two of 39 requests with a challenge that
+afternoon and served the rest, so one lost page per run would have meant the
+run-counting rule never applying to the site with the largest queue.
 
-Any of those and the scan is recorded as incomplete, which means it does not
-count towards anybody's three. A page that repeats itself does NOT make a scan
-incomplete: that is the site telling us it has no more to give, which is the
-end of the search (api_spider.next_page_allowed, reason 2).
-
-The strict direction is deliberate. An incomplete scan that we counted would
-push postings towards being opened for no reason, and - worse - make a run
-that never looked at a site look like evidence about that site.
+What still makes a scan incomplete, whatever the searches say: it collected
+no postings at all, a callback raised, or the crawl did not finish.
 """
 
 import logging
@@ -52,24 +51,21 @@ logger = logging.getLogger(__name__)
 # the checkers did before 03.10.2026.
 MISSED_SCANS_BEFORE_CHECK = int(os.getenv("MISSED_SCANS_BEFORE_CHECK", "3"))
 
-# Stats that mean the crawl stopped short of the end. Each is already written
-# by the code that gives up: api_spider logs the ceiling, the pool logs a
-# site it has run out of addresses for, Scrapy counts the requests that never
-# came back and the callbacks that raised.
+# A search that did not reach its own end is the rule itself; the spider
+# counts them (api_spider._report_search_ends) and a killed or crashed run
+# shows up there too, as a search nobody finished.
 STOPPED_SHORT = (
-    "pagination/hit_ceiling",
-    "pool/gave_up",
-    "pool/dropped_no_address",
-    # MEASURED THE HARD WAY, 03.10.2026, on the first live run of this file:
-    # Playwright's chromium was missing after an upgrade, every kariyer.net
-    # request failed with a download error, and the scan was recorded as
-    # COMPLETE with 0 postings. A crawl that saw no page is the one thing this
-    # table must never call evidence.
-    "downloader/exception_count",
+    "searches/cut_short",
 )
 
-# Same reading, for a callback that raised: the page arrived and we failed to
-# read it, so its postings are missing from the scan. Scrapy counts these per
+# These were the whole test until 04.10.2026 and are now covered by the
+# searches above: a dropped request or a pool that ran out of addresses
+# prevents a search from reaching its end, which is what gets counted.
+# Keeping them here would make Indeed's every run incomplete over a single
+# challenge it recovered from - measured 04.10, 2 of 39 requests.
+
+# A callback that raised: the page arrived and we failed to read it, so the
+# search's own bookkeeping cannot be trusted either. Scrapy counts these per
 # exception class, so the prefix is what has to be looked for.
 STOPPED_SHORT_PREFIXES = ("spider_exceptions/",)
 

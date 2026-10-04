@@ -327,6 +327,9 @@ class IndeedCardsSpider(BaseApiSpider):
                     "INDEED_COOKIES is not set.",
                     search_key, page, len(records), page + 1,
                 )
+            # Not the end of the search, just the end of what an anonymous
+            # visitor is shown - so the scan it belongs to is not complete.
+            self.search_ended(search_key, "no_account")
             return False
 
         keys = {self.record_key(record) for record in records}
@@ -352,8 +355,59 @@ class IndeedCardsSpider(BaseApiSpider):
                 search_key, page, self._total_jobs[search_key],
             )
             self.crawler.stats.inc_value("pagination/reached_total")
+            self.search_ended(search_key, "reached_total")
             return False
         return True
+
+    ###################################################################
+    # A LOST PAGE MUST NOT END THE SEARCH - 04.10.2026                #
+    ###################################################################
+    # MEASURED THE SAME DAY. Indeed answered the crawl's 10:49 request with a
+    # Cloudflare challenge, the pool dropped it, and the search it belonged to
+    # stopped there - silently, because the next page is only asked for by the
+    # callback of the page before it. Then 81 further requests from the same
+    # address were served: the challenge is a question asked of one request,
+    # not a state the address is in.
+    #
+    # So a dropped page is skipped rather than retried - Harman, 04.10.2026:
+    # "engel atan bir sayfayı zorlamak çok mantıklı değil gibi" - and the
+    # search carries on at the next page. The postings on that page are missed
+    # for this run; the crawl runs every three days and sees them again.
+    LOST_PAGES_BEFORE_STOP = 3
+
+    def page_lost(self, failure):
+        """
+        Errback for a search page that never arrived: ask for the next one.
+
+        Three in a row and the search stops and is marked cut short. Without
+        that cap, a site refusing everything would have us walk its whole page
+        range - cheaply, since the pool drops the requests before they leave,
+        but pointlessly and in the log.
+        """
+        request = failure.request
+        search_key = request.meta.get("search_key", "default")
+        page = request.meta.get("page", 1)
+
+        _, losses = self._paging_state()
+        losses[search_key] += 1
+        self.crawler.stats.inc_value("pagination/page_lost")
+        lost = losses[search_key]
+        self.logger.warning(
+            "[%s] page %s never arrived (%s) - %s in a row",
+            search_key, page, failure.value.__class__.__name__, lost,
+        )
+
+        if lost >= self.LOST_PAGES_BEFORE_STOP:
+            self.search_ended(search_key, "lost_pages")
+            return
+        if page + 1 > self.MAX_PAGES:
+            self.search_ended(search_key, "ceiling")
+            return
+        last = self._last_page(search_key)
+        if last is not None and page + 1 > last:
+            self.search_ended(search_key, "reached_total")
+            return
+        yield self._search_request(search_key, page + 1)
 
     def _last_page(self, search_key):
         """
@@ -926,6 +980,7 @@ class IndeedCardsSpider(BaseApiSpider):
         return self.document_request(
             url,
             callback=self.parse_search,
+            errback=self.page_lost,
             referer=referer or self.warmup_url,
             meta={"page": page, "search_key": search_key},
             priority=self._search_priority(search_key),

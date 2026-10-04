@@ -53,36 +53,44 @@ def test_a_repeated_page_does_not_make_it_incomplete():
     assert scans.why_incomplete(stats, "finished") is None
 
 
-@pytest.mark.parametrize("key", [
-    "pagination/hit_ceiling",      # MAX_PAGES fired - its own log calls it an ERROR
-    "pool/gave_up",                # the site ran the pool out of addresses
-    "pool/dropped_no_address",     # requests were never sent
-])
-def test_anything_that_stopped_the_crawl_short_makes_it_incomplete(key):
-    note = scans.why_incomplete({key: 1}, "finished")
-    assert note and key in note
-
-
-def test_a_crawl_whose_requests_failed_is_incomplete():
-    # MEASURED THE HARD WAY on the first live run, 03.10.2026: Playwright's
-    # chromium was missing after an upgrade, every kariyer.net request failed
-    # with a download error, and the scan was recorded COMPLETE with 0
-    # postings - the one thing this table must never call evidence.
+def test_a_search_that_did_not_reach_its_end_makes_the_scan_incomplete():
     note = scans.why_incomplete(
-        {"downloader/exception_count": 4, "item_scraped_count": 0}, "finished")
-    assert note == "downloader/exception_count=4"
+        {"item_scraped_count": 300, "searches/started": 3,
+         "searches/ended": 2, "searches/cut_short": 1}, "finished")
+    assert note == "searches/cut_short=1"
+
+
+def test_a_lost_page_alone_does_not_make_it_incomplete():
+    """
+    HIS RULE, 04.10.2026: "her arama kendi sonuna ulastiysa tam sayilir,
+    aradaki bir sayfanin dusmesi tamligi bozmaz."
+
+    The stricter reading it replaced would have left Indeed permanently
+    incomplete: that afternoon it answered 2 of 39 requests with a challenge
+    and served the rest, so one lost page per run would have meant the
+    run-counting rule never applying to the site with the largest queue.
+    """
+    stats = {"item_scraped_count": 434, "searches/started": 3,
+             "searches/ended": 3, "searches/cut_short": 0,
+             "pagination/page_lost": 1, "pool/pinned_refused": 2}
+    assert scans.why_incomplete(stats, "finished") is None
 
 
 def test_a_scan_that_collected_nothing_is_incomplete():
-    # Every one of these sites has postings on it. Nothing collected means
-    # something broke, not that every posting is gone.
-    assert scans.why_incomplete({"item_scraped_count": 0}, "finished") == \
-        "no postings collected"
-    assert scans.why_incomplete({}, "finished") == "no postings collected"
+    # Whatever the searches say: every one of these sites has postings on it,
+    # so nothing collected means something broke. This is what catches the
+    # 03.10 case, where chromium was missing and every request failed.
+    assert scans.why_incomplete(
+        {"searches/cut_short": 0, "item_scraped_count": 0}, "finished",
+    ) == "no postings collected"
+    assert scans.why_incomplete(
+        {"downloader/exception_count": 4, "item_scraped_count": 0}, "finished",
+    ) == "no postings collected"
 
 
 def test_a_callback_that_raised_is_incomplete():
-    # The page arrived and we failed to read it, so its postings are missing.
+    # The page arrived and we failed to read it, so the search's own
+    # bookkeeping cannot be trusted either.
     note = scans.why_incomplete(
         {"spider_exceptions/ValueError": 1, "item_scraped_count": 5}, "finished")
     assert note == "spider_exceptions/ValueError=1"
@@ -109,10 +117,11 @@ def test_a_complete_scan_is_recorded_with_what_it_found(session):
 
 
 def test_an_incomplete_scan_keeps_the_reason(session):
-    scan = scans.record("indeed.com", {"pool/gave_up": 1}, "finished",
+    scan = scans.record("indeed.com", {"item_scraped_count": 40,
+                                       "searches/cut_short": 2}, "finished",
                         session=session)
     assert scan.complete is False
-    assert "pool/gave_up" in scan.note
+    assert "searches/cut_short" in scan.note
 
 
 ####################################################
