@@ -21,6 +21,10 @@ proxies/
 indeed-cookies.txt
 indeed-cookies.b64
 indeed-storage-state.json
+#  ...and one per address since 04.10.2026: a session signed in THROUGH a pool
+#  address belongs to that address (tools/save_session.py --proxy-line).
+indeed-storage-state-*.json
+linkedin-storage-state-*.json
 linkedin-cookies.txt
 linkedin-cookies.b64
 linkedin-storage-state.json

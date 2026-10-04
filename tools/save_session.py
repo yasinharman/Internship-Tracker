@@ -47,6 +47,7 @@ anywhere. Re-run this script whenever a session expires - the spiders say so
 explicitly when that happens (see IndeedCardsSpider.note_sign_in_wall).
 """
 
+import argparse
 import os
 import sys
 import time
@@ -71,6 +72,15 @@ HIDE_WEBDRIVER_SCRIPT = (
 
 TIMEOUT_SECONDS = 300
 POLL_SECONDS = 2
+
+# Signing in from a foreign address usually adds a step - a code by email, a
+# "was this you" page - and that takes longer than typing a password.
+PROXIED_TIMEOUT_SECONDS = 900
+
+# Shown to you before you type anything, read by the browser itself through
+# whatever proxy it was given. The point is to make "I logged in from the
+# wrong address and did not notice" impossible rather than unlikely.
+IP_ECHO = "https://ipinfo.io/ip"
 
 
 ###################################################################
@@ -123,20 +133,61 @@ def _signed_in(cookies, groups):
     return any(all(name in names for name in group) for group in groups)
 
 
-def main():
-    if len(sys.argv) != 2 or sys.argv[1] not in SITES:
-        print(f"kullanim: python -m tools.save_session <{'|'.join(SITES)}>")
-        return 1
+def _pool_address(line):
+    """The pool address on this line, from proxies/webshare.txt."""
+    sys.path.insert(0, REPO_ROOT)
+    from scraper.proxy_pool import PROXY_DIR, load_addresses
 
-    site_key = sys.argv[1]
-    site = SITES[site_key]
-    output_path = os.path.join(REPO_ROOT, site["output"])
+    addresses = load_addresses(PROXY_DIR / "webshare.txt", PROXY_DIR / "meta.json")
+    for address in addresses:
+        if address.line == line:
+            return address
+    raise SystemExit(f"satir {line} listede yok ({len(addresses)} adres var)")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Sign in by hand and save the whole session.",
+    )
+    parser.add_argument("site", choices=sorted(SITES))
+    parser.add_argument(
+        "--proxy-line", type=int, default=None, metavar="N",
+        help="Sign in THROUGH this pool address (a line in proxies/webshare.txt) "
+             "instead of this machine's own address. The session then belongs to "
+             "that address, which is the point: Harman, 04.10.2026 - the session "
+             "that works was created on the address it is used from.",
+    )
+    parser.add_argument(
+        "--timeout", type=int, default=None, metavar="SECONDS",
+        help=f"How long to wait for the login (default {TIMEOUT_SECONDS}, "
+             f"{PROXIED_TIMEOUT_SECONDS} with --proxy-line).",
+    )
+    args = parser.parse_args()
+
+    site = SITES[args.site]
+    output = site["output"]
+    proxy = None
+    if args.proxy_line:
+        address = _pool_address(args.proxy_line)
+        proxy = {"server": f"http://{address.ip}:{address.port}",
+                 "username": address.user, "password": address.password}
+        # A SEPARATE FILE PER ADDRESS. The session that works today was made on
+        # this machine's own address; overwriting it to try another one would
+        # throw away the only path that currently serves Indeed's posting
+        # pages (docs/sites/indeed.md, 04.10.2026).
+        stem, dot, extension = output.rpartition(".")
+        output = f"{stem}-line{args.proxy_line}{dot}{extension}"
+
+    output_path = os.path.join(REPO_ROOT, output)
+    timeout = args.timeout or (PROXIED_TIMEOUT_SECONDS if proxy else TIMEOUT_SECONDS)
 
     with sync_playwright() as p:
         launch_kwargs = {
             "headless": False,
             "args": ["--disable-blink-features=AutomationControlled"],
         }
+        if proxy:
+            launch_kwargs["proxy"] = proxy
         if os.path.isfile(BRAVE_PATH):
             launch_kwargs["executable_path"] = BRAVE_PATH
         else:
@@ -148,15 +199,34 @@ def main():
         )
         context.add_init_script(HIDE_WEBDRIVER_SCRIPT)
         page = context.new_page()
+
+        if proxy:
+            # Before anything is typed: whose address is this browser on?
+            try:
+                page.goto(IP_ECHO, timeout=60000)
+                seen = page.inner_text("body").strip()[:40]
+            except Exception as error:
+                seen = f"okunamadi ({type(error).__name__})"
+            print(f"Tarayicinin cikis adresi: {seen}  "
+                  f"(beklenen: satir {args.proxy_line}, {address.ip})")
+            if seen != address.ip:
+                browser.close()
+                print("Bu adres beklenen degil - hicbir sey kaydedilmedi. "
+                      "Girisi yanlis adresten yapmaktansa durmak iyidir.")
+                return 1
+
         page.goto(site["start_url"])
 
         print(
-            f"Tarayici penceresi acildi ({site_key}). {site['hint']}\n"
-            f"Giris otomatik algilanacak (en fazla {TIMEOUT_SECONDS}s bekleniyor)."
+            f"Tarayici penceresi acildi ({args.site}). {site['hint']}\n"
+            f"Giris otomatik algilanacak (en fazla {timeout}s bekleniyor)."
         )
+        if proxy:
+            print("Yabanci bir adresten giriyorsun: dogrulama kodu isterse "
+                  "pencerede tamamla, script bekliyor.")
 
         waited = 0
-        while waited < TIMEOUT_SECONDS:
+        while waited < timeout:
             if _signed_in(context.cookies(), site["signed_in"]):
                 break
             time.sleep(POLL_SECONDS)
@@ -164,7 +234,7 @@ def main():
         else:
             browser.close()
             print(
-                f"{TIMEOUT_SECONDS}s icinde giris algilanamadi - pencere "
+                f"{timeout}s icinde giris algilanamadi - pencere "
                 f"kapatildi, hicbir sey kaydedilmedi. Tekrar calistir."
             )
             return 1
@@ -174,7 +244,10 @@ def main():
         browser.close()
 
     print(f"Kaydedildi: {output_path} ({cookie_count} cookie dahil)")
-    print(f"Simdi .env icine ekle: {site['env_var']}=" + output_path)
+    print(f"Simdi .env icine: {site['env_var']}=" + output_path)
+    if args.proxy_line:
+        print(f"Ve: PROXY_POOL_PINNED=tr.indeed.com:{args.proxy_line}"
+              if args.site == "indeed" else "")
     return 0
 
 
