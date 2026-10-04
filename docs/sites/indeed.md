@@ -1343,3 +1343,25 @@ posting pages `indeed_check` needs. The anonymous curl path was refused on
 **Cost of the afternoon:** line 11 rests until 05.10 10:17. Line 13's rest was
 cleared deliberately after the headless refusal, on the reading above that the
 403 is a verdict on the client - the refusal itself is still on its record.
+
+### The run that followed - 04.10.2026
+
+The first full Indeed run on the windowed, pinned, signed-in path, on an empty
+Indeed table:
+
+| Step | Time | Result |
+|---|---|---|
+| `indeed_cards` | 13 min | 39 requests, **434 postings** (225 after dedupe), scan COMPLETE |
+| `indeed_check` | 76 min | 225 queued, **210 read, 211 descriptions**, 212 of 226 requests 200 |
+| classify / logos | 7 + 8 min | all described postings labelled, 167 logos |
+
+The 14 refusals cost 14 postings their description for this run; they keep
+their place in the queue (no `checked_at`), undescribed rows go first, and the
+next run starts on them. The run did not stop for them - which is the whole
+argument for the search-based completeness rule written the same day
+(`docs/pipeline.md`).
+
+Note what the pool's own record says afterwards: line 13 carried 300 requests
+and collected 17 refusals, and its 24-hour rest is recorded but not enforced,
+because the pinned path does not consult it. That mismatch is deliberate for
+now and is the one decision left before the next full run.

@@ -940,14 +940,25 @@ of absence and opened about 400 pages on the next run - the exact cost it
 exists to avoid. A rule written in runs says, correctly, that nothing
 happened. `MISSED_SCANS_BEFORE_CHECK=3`.
 
-**What makes a scan complete**, his definition: it collected every posting the
-searches yield. `scraper/scans.py` reads the crawl's own stats for the ways it
-can stop short - the `MAX_PAGES` ceiling, the pool running out of addresses, a
-dropped request, or a finish reason other than `finished` - and records one
-`site_scans` row per crawl per site. An incomplete scan does not count towards
-anybody's three, so a run that never looked at a site can never be read as
-evidence about that site. A repeated page does **not** make a scan incomplete:
-that is the site saying it has nothing more to give.
+**What makes a scan complete** - his definition, sharpened on 04.10.2026:
+**every search reached its own end.** "Her arama kendi sonuna ulaştıysa tam
+sayılır, aradaki bir sayfanın düşmesi tamlığı bozmaz." A search sees its end
+when the site runs out of results, starts repeating itself, or the page
+covering its last result has been read. It is cut short by the `MAX_PAGES`
+breaker, by three pages lost in a row, by an anonymous visitor hitting the
+sign-in wall, or by nobody deciding at all - which is what a killed spider
+looks like. `scraper/scans.py` reads the two counters the paging layer writes
+and records one `site_scans` row per crawl per site.
+
+The first version of this rule, one day old, counted dropped requests instead
+and would have left Indeed permanently incomplete: on 04.10 Indeed answered 2
+of the crawl's 39 requests with a challenge and served the rest, so one lost
+page per run would have meant the run-counting rule never applying to the site
+with the largest queue. A lost page is now skipped rather than retried - "engel
+atan bir sayfayı zorlamak çok mantıklı değil gibi" - and the search carries on
+at the next page (`indeed_cards.page_lost`). Still fatal whatever the searches
+say: a scan that collected nothing, a callback that raised, a run that did not
+finish.
 
 **Where it does nothing.** With fewer than three complete scans on record the
 rule has no opinion and every open posting is queued, exactly as before. That
