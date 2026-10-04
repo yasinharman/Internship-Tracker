@@ -129,3 +129,14 @@ def test_the_checker_probes_from_a_fresh_context():
     # What the parent put there has to survive the override.
     assert request.meta["posting_id"] == 1
     assert request.dont_filter is True
+
+
+def test_indeed_needs_a_window_too():
+    # MEASURED 04.10.2026: from a pool address, Indeed's home page answers a
+    # windowed Chromium with 200 and a headless one with 403 - six addresses,
+    # three dates, with and without the account. Its checker inherits this.
+    from scraper.spiders.indeed_cards import IndeedCardsSpider
+    from scraper.spiders.indeed_check import IndeedCheckSpider
+
+    assert IndeedCardsSpider.NEEDS_A_WINDOW is True
+    assert IndeedCheckSpider.NEEDS_A_WINDOW is True

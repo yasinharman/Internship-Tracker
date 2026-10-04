@@ -60,13 +60,22 @@ NOT_EXPIRED = re.compile(r'"isJobExpired"\s*:\s*false')
 class IndeedCheckSpider(OpeningCheckMixin, IndeedCardsSpider):
     name = "indeed_check"
 
-    # NOT the pinned one, and not signed in. The parent crawls with Harman's
-    # account from a single fixed address; this opens 242 posting pages, which
-    # needs the rotation - and needs no account, since an anonymous /viewjob
-    # was served 171 times from the pool on 23.09.2026. Inheriting the pin
-    # would both rotate the session and spend its address on logged-out
-    # traffic.
-    USES_PINNED_ADDRESS = False
+    # IT TAKES THE PINNED ADDRESS AND THE SESSION, like its parent - changed
+    # 04.10.2026 on measurement. It was anonymous and rotating for one day,
+    # because an anonymous /viewjob over curl_cffi had been served 171 times
+    # from the pool on 22-23.09. That stopped: the same client was refused on
+    # first contact on 03.10 and again on 04.10, with and without the
+    # address's own cookies. What does work is this spider's parent's path -
+    # windowed browser, the pinned address, the session signed in THROUGH that
+    # address - which read a posting page, its verdict and its description on
+    # 04.10 (docs/sites/indeed.md).
+    #
+    # The cost is that one address carries the whole queue, since a pinned
+    # address does not rotate. Indeed's measured wall at home was 145 requests
+    # (16.09), and the first pass over a backlog is larger than that - so the
+    # backlog is expected to take more than one run. The queue resumes where
+    # it was cut off (undescribed rows first), and after the first pass the
+    # run-counting rule leaves only the postings the searches have lost.
 
     custom_settings = {
         **IndeedCardsSpider.custom_settings,

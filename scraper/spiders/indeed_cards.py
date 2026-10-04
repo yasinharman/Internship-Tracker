@@ -467,6 +467,15 @@ class IndeedCardsSpider(BaseApiSpider):
     # 242 anonymous posting pages that need rotation are indeed_check's.
     USES_PINNED_ADDRESS = True
 
+    # AND IT NEEDS A WINDOW - measured 04.10.2026, the same split kariyer.net
+    # showed on 10.09. From a pool address, Indeed's home page answers a
+    # windowed Chromium with 200 and a headless one with 403: six addresses,
+    # three dates, with and without the account (docs/sites/indeed.md, "IT IS
+    # THE WINDOW"). Declared here rather than left to PLAYWRIGHT_HEADLESS so
+    # an unattended run refuses to start and prints the xvfb command instead
+    # of crawling headless and reporting zero postings.
+    NEEDS_A_WINDOW = True
+
     custom_settings = {
         **BaseApiSpider.custom_settings,
         # The most protected of the sites and the only independent source left,
