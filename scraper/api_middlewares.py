@@ -235,10 +235,6 @@ class ProxyPoolMiddleware:
         if not self.spiders:
             raise NotConfigured("PROXY_POOL_SPIDERS is empty")
         self.crawler = crawler
-        # (site, ip) -> the jar as it stands this run, and which of them have
-        # changed since they were read. Written back when the spider closes.
-        self._jars = {}
-        self._dirty = set()
         crawler.signals.connect(self._closed, signal=signals.spider_closed)
 
     @classmethod
@@ -292,11 +288,23 @@ class ProxyPoolMiddleware:
     # THE ADDRESS ARRIVES AS ITSELF, NOT AS A STRANGER                #
     ###################################################################
     def _jar(self, site, ip):
-        """This run's copy of the (site, address) jar, read from disk once."""
-        key = (site, ip)
-        if key not in self._jars:
-            self._jars[key] = cookie_jars.load(site, ip) or {"cookies": []}
-        return self._jars[key]
+        """
+        The (site, address) jar as it is on disk right now.
+
+        READ EVERY TIME, NOT CACHED - 04.10.2026, and the reason is a bug this
+        file had for a day. The jar was read once per run and written back at
+        close, which meant the copy in memory went stale the moment anything
+        else wrote the file: CurlImpersonateMiddleware's first visit saved
+        eight cookies it had just earned, and this middleware then saved its
+        own empty-plus-one version over them. The request itself carried the
+        eight, so nothing failed loudly - the next run just started poorer
+        than the last one finished.
+
+        The file is a few hundred bytes and one request is at least a second
+        apart from the next, so reading it per request costs nothing worth
+        caching for.
+        """
+        return cookie_jars.load(site, ip) or {"cookies": []}
 
     def _carry_the_jar(self, request, site, ip):
         """
@@ -322,13 +330,13 @@ class ProxyPoolMiddleware:
         if handed:
             site, ip = key
             host = urlparse(response.url).netloc
-            self._jars[key] = cookie_jars.remember(self._jar(site, ip), handed, host)
-            self._dirty.add(key)
+            # Merged onto what is on disk and written straight back: see
+            # _jar(). A run killed mid-way then keeps what it had earned.
+            cookie_jars.save(site, ip,
+                             cookie_jars.remember(self._jar(site, ip), handed, host))
         return response
 
     def _closed(self, spider):
-        for (site, ip) in self._dirty:
-            cookie_jars.save(site, ip, self._jars[(site, ip)])
         pool = getattr(self.crawler, "_proxy_pool", None)
         if pool is not None:
             pool.close()

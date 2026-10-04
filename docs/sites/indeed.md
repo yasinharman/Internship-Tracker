@@ -1249,3 +1249,48 @@ run, from the home address with the owner's session through the browser.
 off the posting page, so they cannot be classified and do not reach the board
 (`docs/pipeline.md`). Nothing is lost - they keep their place in the queue,
 undescribed rows go first, and the next run starts on them.
+
+## The posting page is refused even with the address's own cookies - 04.10.2026
+
+Harman's choice of the two untried combinations: the pool, curl_cffi, no
+account, **plus** the per-address first visit added on 03.10. One address,
+line 11 - 21 Indeed requests served in September, never refused - and one
+posting, dry run, no switch allowed.
+
+| Request | Result |
+|---|---|
+| first visit, `https://tr.indeed.com/` | **200**, 8 cookies kept in the jar |
+| `/viewjob?jk=...`, carrying those 8 | **refused**, `cf-mitigated=challenge` |
+
+So the first visit is not the missing piece. The home page is served to a pool
+address over curl; the posting page is refused whether the address arrives
+with cookies or without. Line 11 rests until 05.10 13:17.
+
+**What the record now says, in one place.** Indeed from a pool address:
+
+| Transport | Home page | Posting page |
+|---|---|---|
+| curl_cffi, anonymous, no cookies | 200 (22.09, 04.10) | 171 served on 22-23.09, **refused 03.10 and 04.10** |
+| curl_cffi, anonymous, with the address's own cookies | 200 (04.10) | **refused** (04.10) |
+| browser, anonymous | 200 windowed (23.09), 403 headless (22.09) | **401 bot-detection-anonymous** (23.09) |
+| browser, with the account | **403 on the home page** (03.10, line 9) | not reached |
+
+And from the home address, browser with the account: 363 postings the same
+week (03.10) - still the only path that serves posting pages, with its own
+measured wall at 145 requests (16.09).
+
+**The 11 days between 23.09 and 03.10 are the thing to explain.** Same client,
+same pool, same endpoint: 171 posting pages served, then refused on first
+contact from four different addresses, two of which Indeed had never seen.
+Nothing on our side changed in between - the first visit and the jars were
+added after, and they do not help.
+
+### A bug this measurement found in our own code
+
+The jar held one cookie afterwards where the first visit had saved eight.
+`ProxyPoolMiddleware` read the jar once per run and wrote it back at close, so
+its in-memory copy went stale the moment `CurlImpersonateMiddleware` wrote the
+file directly. The request itself carried all eight, so nothing failed loudly;
+the next run would simply have started poorer than this one finished. The jar
+is read from disk per request now and written on change
+(`tests/test_proxy_pool.py`, "what another layer earned").

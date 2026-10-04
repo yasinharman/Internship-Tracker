@@ -587,3 +587,26 @@ def test_the_jars_are_on_by_default(monkeypatch):
     # contact with Indeed carrying no cookies at all.
     monkeypatch.delenv("COOKIE_JARS", raising=False)
     assert api_middlewares.cookie_jars_on() is True
+
+
+def test_what_another_layer_earned_is_not_clobbered(crawler, monkeypatch, jars):
+    """
+    MEASURED 04.10.2026. The jar was read once per run and written back at
+    close, so the copy in memory went stale as soon as anything else wrote the
+    file: the curl path's first visit saved eight cookies it had just earned
+    and this middleware saved its own version over them. Nothing failed
+    loudly - the next run just started poorer than the last one finished.
+    """
+    middleware, request = _pooled(crawler, monkeypatch)
+    # Stands in for CurlImpersonateMiddleware's first visit, which runs after
+    # this middleware's process_request and writes the file directly.
+    jars.save("kariyer.net", "198.51.100.2",
+              {"cookies": [{"name": "earned", "value": "1", "domain": "kariyer.net"}]})
+
+    response = HtmlResponse(request.url, status=200, body=b"ok", request=request,
+                            headers={"Set-Cookie": ["sid=new; Path=/"]})
+    middleware.process_response(request, response, _spider("kariyernet_check"))
+    middleware._closed(_spider("kariyernet_check"))
+
+    stored = {c["name"] for c in jars.load("kariyer.net", "198.51.100.2")["cookies"]}
+    assert stored == {"earned", "sid"}
