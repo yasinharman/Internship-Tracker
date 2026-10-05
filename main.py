@@ -633,6 +633,25 @@ def run_spiders(spiders=None):
 ############################################
 # CLASSIFY WHAT THE CRAWL JUST BROUGHT IN  #
 ############################################
+def notify_on():
+    """
+    Is the watchlist ping wanted this run?
+
+    Off since 05.10.2026, Harman's call: the Hermes webhook host stopped
+    answering and the step failed in 12 seconds on every run (ConnectTimeout
+    to the address in HERMES_WEBHOOK_URL). His credentials stay where they
+    are; this switch decides whether anything is sent. Set it to 1 when the
+    webhook is back up.
+    """
+    return os.getenv("NOTIFY_WATCHLIST", "1").strip().lower() not in {"0", "false", "no", ""}
+
+
+def skip_step(label, why):
+    """A step that was not run on purpose. Counts as a success, loudly."""
+    print(f"=== {label}: skipped ({why}) ===", flush=True)
+    return True
+
+
 def run_step(label, module, timeout):
     """
     Run one post-crawl step. Returns True when it exited cleanly.
@@ -824,7 +843,8 @@ def run_post_crawl(crawled=None):
     leaving everything the crawl just found untouched.
     """
     deduped = run_step("dedupe", "pipeline.dedupe_jobs", DEDUPE_TIMEOUT)
-    notified = run_step("notify", "pipeline.notify_watchlist", NOTIFY_TIMEOUT)
+    notified = run_step("notify", "pipeline.notify_watchlist", NOTIFY_TIMEOUT) \
+        if notify_on() else skip_step("notify", "NOTIFY_WATCHLIST=0")
     checked = run_checks(crawled)
     classified = run_step("classify", "pipeline.classify_jobs", CLASSIFY_TIMEOUT)
     # LAST, and it is the only step nothing waits on: a posting with no logo
