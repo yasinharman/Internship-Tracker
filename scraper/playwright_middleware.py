@@ -665,7 +665,10 @@ class PlaywrightMiddleware:
         been signed in still wants the exported session on its first run.
         """
         cookies = getattr(self._spider, "session_cookies", None)
-        if not cookies or self.storage_state_path:
+        # A TEMPLATE counts as "there is a storage-state file", which it did
+        # not on 05.10.2026: the live test seeded a stale 10-cookie export
+        # into the run's context and warned about a session nobody uses.
+        if not cookies or self.storage_state_path or self.storage_state_template:
             return
         logger.info(
             "No %s set - loading %s cookie(s) only, no "

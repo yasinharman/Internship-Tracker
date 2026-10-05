@@ -41,6 +41,10 @@ class _Context:
         self.kwargs = kwargs
         self.pages = 0
         self.closed = False
+        self.cookies = []
+
+    def add_cookies(self, cookies):
+        self.cookies.extend(cookies)
 
     def new_page(self):
         self.pages += 1
@@ -193,3 +197,20 @@ def test_without_a_template_the_one_path_is_used(middleware):
     middleware.storage_state_path = "/exported/indeed.json"
     middleware.storage_state_template = None
     assert middleware._session_file(None) == "/exported/indeed.json"
+
+
+def test_a_template_counts_as_having_a_session_file(per_address):
+    """
+    The cookie-only export must not be seeded over a per-address session.
+
+    Measured 05.10.2026, the first live test of the handover: the template
+    left storage_state_path None, so a stale 10-cookie export went into the
+    run's context and the log warned "no SOCK/SHOE" about a session nothing
+    was using. That same warning sent 28.08.2026 looking at the session for a
+    day.
+    """
+    per_address._spider = SimpleNamespace(
+        session_cookies={"CTK": "stale"}, origin="https://tr.indeed.com")
+    context = _Context({})
+    per_address._seed_cookies(context)
+    assert context.cookies == []

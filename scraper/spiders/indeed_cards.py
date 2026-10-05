@@ -47,6 +47,7 @@ list used to do it at this point and could not be made complete - see
 job_filters for the evidence.
 """
 
+import glob
 import json
 import math
 import os
@@ -885,6 +886,16 @@ class IndeedCardsSpider(BaseApiSpider):
         request.
         """
         path = (os.getenv(self.STORAGE_STATE_ENV) or "").strip()
+        # One session per address since 05.10.2026: the variable may be a
+        # "{line}" template, and a template is not a file. Reading the first
+        # export it names keeps this honest - the alternative is what happened
+        # that evening, when it fell back to the cookie-only export and warned
+        # "no SOCK/SHOE" about a session nothing was using. That exact warning
+        # cost a day of suspicion on 28.08.2026; see the note below.
+        if "{line}" in path:
+            found = sorted(glob.glob(path.format(line="*")))
+            if found:
+                path = found[0]
         if path and os.path.isfile(path):
             with open(path, encoding="utf-8") as handle:
                 cookies = json.load(handle).get("cookies") or []
