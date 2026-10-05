@@ -1062,3 +1062,31 @@ written once.
 What was deliberately NOT changed at the same time: the prompt still tells the
 model the title decides and the description breaks ties. One variable at a
 time, so the next measurement means something.
+
+**What raising it actually changed, measured the same evening.** The whole
+board was classified again (`--all`, 556 postings, 34 minutes, no requests to
+any site) and compared against the labels saved first in
+`backups/fields-before-uncut-20261005.csv`:
+
+| | |
+|---|---|
+| compared | 560 labelled postings |
+| identical | 472 (84%) |
+| gained a field | 40 |
+| lost a field | 12 |
+| swapped a field | 36 |
+
+Field rows went 778 -> 815. The biggest gainers were Endüstri/Üretim/Kalite
++16, İşletme/Yönetim +14, Elektrik-Elektronik +11, Veri/Yapay Zekâ +10,
+Yazılım +6.
+
+**Not all 88 changes are improvements, and the honest reading says so.** The
+jitter control measured earlier that evening moved 2 of 36 postings, about 6%,
+so roughly 30 of the 88 could be the model repeating itself differently rather
+than reading more. How many of the remaining ~58 are better and how many worse
+is not known: that needs the hand-labelled sample, which is the next
+measurement and the one thing this taxonomy has never had.
+
+The direction is at least the right one - 40 gained against 12 lost - and a
+missing field is the costly direction, because the student filtering for it
+never sees the posting.
