@@ -256,6 +256,24 @@ class ProxyPoolMiddleware:
         # for this; its own checker must not inherit it (see indeed_check).
         pinned = pool.pinned_for(site) if getattr(spider, "USES_PINNED_ADDRESS", False) else None
         if pinned is not None:
+            # Both checks exist because the rest and the give-up were recorded
+            # and not enforced until 05.10.2026, so the log said one thing and
+            # the run did another.
+            if site in pool.given_up:
+                self.crawler.stats.inc_value("pool/dropped_no_address")
+                raise IgnoreRequest(f"{site}: {pool.given_up[site]}")
+
+            resting = pool.state.resting_until(site, pinned.ip, pool.clock())
+            if resting:
+                pool.give_up(
+                    site,
+                    f"the session's address rests until "
+                    f"{resting.strftime('%d.%m %H:%M')} UTC after refusing "
+                    f"{pool.pinned_refusals_allowed} requests in a row",
+                )
+                self.crawler.stats.inc_value("pool/dropped_no_address")
+                raise IgnoreRequest(f"{site}: {pool.given_up[site]}")
+
             pool.note_request(site, pinned)
             self.crawler.stats.inc_value(f"pool/requests/{site}")
             request.meta["proxy"] = pinned.url
@@ -880,15 +898,33 @@ class BlockDetectionMiddleware:
         # address was refused - that is the thing pinning exists to prevent.
         # Rest it, stop this site for the run, and let the log say why.
         if request.meta.get("pinned_address"):
+            self.crawler.stats.inc_value("pool/pinned_refused")
+            in_a_row = pool.note_pinned_refusal(site)
+            allowed = pool.pinned_refusals_allowed
+
+            if in_a_row < allowed:
+                # MEASURED 04.10.2026: 14 of 226 requests were refused and the
+                # run still read 211 descriptions, because the refusals came
+                # one at a time. So one costs its own page - which the spider
+                # pages past - and nothing else.
+                spider.logger.warning(
+                    "%s: the session's address was refused (%s) - %s in a row "
+                    "of %s allowed. This page is dropped; the run carries on.",
+                    site, reason, in_a_row, allowed,
+                )
+                raise IgnoreRequest(f"{site}: refused ({reason}), page dropped")
+
+            # A RUN of them is the site saying something new. Rest the address
+            # and stop: there is nowhere to move a signed-in session to, and
+            # rotating one is what pinning exists to avoid.
             pool.state.rest(site, pool_ip, pool.clock(), pool.rest_hours, reason)
             pool.state.save()
-            self.crawler.stats.inc_value("pool/pinned_refused")
-            pool.give_up(site, f"the pinned address was refused ({reason})")
-            raise IgnoreRequest(
-                f"{site}: the session's own address was refused ({reason}). "
-                f"It is not swapped for another - rotating a signed-in session "
-                f"is what pinning avoids."
+            pool.give_up(
+                site,
+                f"the session's address was refused {in_a_row} times in a row "
+                f"({reason}) - rested {pool.rest_hours:.0f}h",
             )
+            raise IgnoreRequest(f"{site}: {pool.given_up[site]}")
 
         # A refusal aimed at the client rests nothing: the address is fine and
         # the next one would be told exactly the same thing. The site's run

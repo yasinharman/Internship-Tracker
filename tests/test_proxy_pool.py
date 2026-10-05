@@ -565,21 +565,91 @@ def test_a_spider_that_does_not_ask_rotates_as_usual(crawler, pool, monkeypatch)
     assert "session_ok" not in request.meta
 
 
-def test_the_pinned_address_is_rested_but_never_swapped(blocks, pool, monkeypatch):
-    # There is nowhere to move a session to. Rest it, end the site's run, and
-    # say so - rotating a signed-in session is what pinning avoids.
+#####################################################################
+# A RUN OF REFUSALS RESTS THE PINNED ADDRESS - 05.10.2026           #
+#####################################################################
+# Harman: "sabit adres arka arkaya red yerse dinlenmeye alalım, kaç red
+# mantıklı sence 3 iyi mi?" - and 3 is, at the rate measured the day before:
+# 14 of 226 requests refused, scattered, and the run still read 211
+# descriptions. At 6% chance alone produces a run of two about once per run
+# and a run of three about once every twenty, so two would stop a working run
+# and three only fires when something has actually changed.
+
+def _pinned_refusal(blocks, pool, reason="cloudflare cf-mitigated=challenge"):
     url = "https://tr.indeed.com/jobs?q=staj"
     pinned = pool.pinned(3)
     request = Request(url, meta={"pool_address": pinned.ip, "pinned_address": True,
                                  "_via_proxy": True})
     response = HtmlResponse(url, status=403, body=b"nope", request=request)
-
     with pytest.raises(IgnoreRequest):
         blocks.process_response(request, response, _spider("indeed_cards"))
+    return pinned
+
+
+def test_one_refusal_costs_its_page_and_nothing_else(blocks, pool):
+    pinned = _pinned_refusal(blocks, pool)
+    assert pool.state.refusals("tr.indeed.com", pinned.ip) == 0
+    assert pool.state.resting_until("tr.indeed.com", pinned.ip, pool.clock()) is None
+    assert "tr.indeed.com" not in pool.given_up
+
+
+def test_two_in_a_row_still_only_cost_their_pages(blocks, pool):
+    _pinned_refusal(blocks, pool)
+    pinned = _pinned_refusal(blocks, pool)
+    assert pool.state.resting_until("tr.indeed.com", pinned.ip, pool.clock()) is None
+    assert "tr.indeed.com" not in pool.given_up
+
+
+def test_three_in_a_row_rest_the_address_and_end_the_site_s_run(blocks, pool):
+    for _ in range(3):
+        pinned = _pinned_refusal(blocks, pool)
 
     assert pool.state.refusals("tr.indeed.com", pinned.ip) == 1
     assert pool.state.resting_until("tr.indeed.com", pinned.ip, pool.clock())
-    assert "pinned address" in pool.given_up["tr.indeed.com"]
+    assert "3 times in a row" in pool.given_up["tr.indeed.com"]
+
+
+def test_a_page_that_was_served_ends_the_run_of_refusals(blocks, pool):
+    _pinned_refusal(blocks, pool)
+    _pinned_refusal(blocks, pool)
+
+    url = "https://tr.indeed.com/jobs?q=staj&start=10"
+    ip = pool.pinned(3).ip
+    served = Request(url, meta={"pool_address": ip, "pinned_address": True,
+                                "_via_proxy": True})
+    blocks.process_response(served, HtmlResponse(url, status=200, body=b"<html>ok</html>",
+                                                 request=served), _spider("indeed_cards"))
+
+    _pinned_refusal(blocks, pool)        # the third refusal, but not in a row
+    assert "tr.indeed.com" not in pool.given_up
+
+
+def test_the_session_s_address_is_not_used_while_it_rests(crawler, pool, monkeypatch):
+    # Recorded and not enforced until 05.10.2026: the log said the address was
+    # resting while the run kept sending requests from it.
+    monkeypatch.setenv("PROXY_POOL_SPIDERS", "indeed_cards")
+    pool.pinned_lines = {"tr.indeed.com": 3}
+    pinned = pool.pinned(3)
+    pool.state.rest("tr.indeed.com", pinned.ip, pool.clock(), 24, "403")
+
+    middleware = ProxyPoolMiddleware(crawler)
+    spider = _spider("indeed_cards")
+    spider.USES_PINNED_ADDRESS = True
+    with pytest.raises(IgnoreRequest):
+        middleware.process_request(Request("https://tr.indeed.com/jobs?q=staj"), spider)
+    assert "rests until" in pool.given_up["tr.indeed.com"]
+
+
+def test_nothing_else_leaves_once_the_site_is_given_up(crawler, pool, monkeypatch):
+    monkeypatch.setenv("PROXY_POOL_SPIDERS", "indeed_cards")
+    pool.pinned_lines = {"tr.indeed.com": 3}
+    pool.give_up("tr.indeed.com", "three in a row")
+
+    middleware = ProxyPoolMiddleware(crawler)
+    spider = _spider("indeed_cards")
+    spider.USES_PINNED_ADDRESS = True
+    with pytest.raises(IgnoreRequest):
+        middleware.process_request(Request("https://tr.indeed.com/jobs?q=staj"), spider)
 
 
 def test_the_jars_are_on_by_default(monkeypatch):

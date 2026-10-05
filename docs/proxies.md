@@ -320,3 +320,38 @@ is the reverse of kariyer.net. Two consequences, both in the code now:
   address for 24 hours. It ends that site's run and says the transport is
   what has to change.
 
+
+## What a refusal on the pinned address costs - decided 05.10.2026
+
+The pinned address carries a signed-in session (`PROXY_POOL_PINNED`), so a
+refusal there cannot be answered the way a rotating address's is: there is
+nowhere to move the session to, and moving it is the thing pinning avoids.
+
+Until today the code rested it for 24 hours and ended the site's run - and the
+pinned path consulted neither, so the log said one thing and the run did
+another. That mismatch is why 04.10's Indeed run worked: 14 of its 226 requests
+were refused and it still read 211 descriptions.
+
+**Harman's rule, and the arithmetic behind the number.** A refusal on its own
+costs its own page; **three in a row** rest the address 24 h and end that
+site's run. At the 6% refusal rate measured on 04.10, chance alone produces:
+
+| In a row | Expected times in a 226-request run |
+|---|---|
+| 2 | about 0.9 - once per run |
+| **3** | **about 0.05 - once in twenty runs** |
+| 4 | about 0.003 |
+
+So two would stop a run that was working about once per run, and three only
+fires when something has actually changed - an address flagged for good, an
+expired session, a rule the site changed. A page that is served resets the
+count. Both the rest and the give-up are enforced now, including at the start
+of a run: a pinned address still resting means that site is skipped, loudly,
+rather than crawled from an address we said we would leave alone.
+
+**And it is now measurable.** A refused pinned request never reached Scrapy's
+own "Crawled (403)" line - the middleware intercepts the response first - so
+04.10's 14 refusals had a total in the stats and no timestamps, and the
+question "were they in runs or scattered?" could not be answered from the log
+at all. Each one is logged with its position in the run now ("2 in a row of
+3"), so the next run gives the distribution this threshold was estimated from.

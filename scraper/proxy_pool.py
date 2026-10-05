@@ -224,7 +224,7 @@ class PoolState:
 #####################################################
 class ProxyPool:
     def __init__(self, addresses, state, rest_hours=24, max_switches=6,
-                 pinned_lines=None,
+                 pinned_lines=None, pinned_refusals_allowed=3,
                  rotate_after=30, clock=utcnow):
         self.addresses = addresses
         self.state = state
@@ -244,6 +244,16 @@ class ProxyPool:
         self.answered = defaultdict(int)
         # site -> the line a signed-in session leaves from. See pinned_for().
         self.pinned_lines = dict(pinned_lines or {})
+        # site -> refusals IN A ROW on that pinned address. Harman, 05.10.2026:
+        # "sabit adres arka arkaya red yerse dinlenmeye alalım". Scattered
+        # refusals are what a working run looks like - 14 of 226 requests on
+        # 04.10, and the run read 211 descriptions through them - so a single
+        # one costs that page and nothing else. Three in a row is something
+        # else: at the 6% rate measured that day, chance produces a run of
+        # three about once every twenty runs, and a run of two about once per
+        # run, which is why the threshold is not two.
+        self.pinned_refusals = defaultdict(int)
+        self.pinned_refusals_allowed = pinned_refusals_allowed
 
     @classmethod
     def from_env(cls):
@@ -269,6 +279,8 @@ class ProxyPool:
             max_switches=int(os.getenv("PROXY_POOL_MAX_SWITCHES", "6")),
             rotate_after=int(os.getenv("PROXY_POOL_ROTATE_AFTER", "30")),
             pinned_lines=parse_pinned(os.getenv("PROXY_POOL_PINNED", "")),
+            pinned_refusals_allowed=int(
+                os.getenv("PROXY_POOL_PINNED_REFUSALS", "3")),
         )
         tiers = defaultdict(int)
         for address in pool.addresses:
@@ -390,6 +402,19 @@ class ProxyPool:
     def note_answer(self, site):
         """A response from this site that was not a refusal."""
         self.answered[site] += 1
+        # One page served ends the run of refusals: the pinned address is
+        # answering, whatever it said three requests ago.
+        self.pinned_refusals[site] = 0
+
+    def note_pinned_refusal(self, site):
+        """
+        One refusal on the pinned address. Returns how many in a row.
+
+        The caller rests the address and ends the site's run when this reaches
+        pinned_refusals_allowed, and drops only that page before then.
+        """
+        self.pinned_refusals[site] += 1
+        return self.pinned_refusals[site]
 
     def on_refusal(self, site, ip, reason):
         """
