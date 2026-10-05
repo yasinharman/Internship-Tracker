@@ -305,3 +305,81 @@ def test_a_page_with_nothing_to_say_is_not_sent_to_the_model():
         "Arçelik", "arcelik.com.tr", "<html><body>x</body></html>",
         client=calls.append) is True
     assert calls == []
+
+
+#############################################################
+# THE COMPANY SITES ARE VISITED FROM THE POOL - 05.10.2026  #
+#############################################################
+# Harman: "Şirket sitelerine atılan isteklerde havuzdaki avrupa iplerinden
+# gitsin." This step was the last place that still went out from the home
+# connection, which his rule puts off limits everywhere and not only on the
+# job boards.
+
+@pytest.fixture
+def pooled(monkeypatch):
+    """Seven addresses, three of them European, and no real requests."""
+    from collections import namedtuple
+
+    Address = namedtuple("Address", "line country tier url")
+    monkeypatch.setattr(logos, "_european", [
+        Address(4, "DE", 0, "http://u:p@198.51.100.4:5004"),
+        Address(5, "FR", 0, "http://u:p@198.51.100.5:5005"),
+        Address(6, "GB", 0, "http://u:p@198.51.100.6:5006"),
+    ])
+    monkeypatch.setattr(logos, "_turn", 0)
+    monkeypatch.setattr(logos, "FETCH_VIA_POOL", True)
+
+    sent = []
+
+    class _Reply:
+        headers = {"Content-Type": "text/html"}
+        text = "<html></html>"
+        content = b"<html></html>"
+        url = "https://example.test/"
+        status_code = 200
+
+        def close(self):
+            pass
+
+    def _get(url, **kwargs):
+        sent.append(kwargs.get("proxies"))
+        return _Reply()
+
+    monkeypatch.setattr(logos.requests, "get", _get)
+    return sent
+
+
+def test_a_company_site_is_fetched_through_a_european_address(pooled):
+    logos.fetch("https://example.test/")
+    assert pooled == [{"http": "http://u:p@198.51.100.4:5004",
+                       "https": "http://u:p@198.51.100.4:5004"}]
+
+
+def test_the_addresses_take_turns(pooled):
+    for _ in range(4):
+        logos.fetch("https://example.test/")
+    lines = [proxies["https"].rsplit(":", 1)[0][-1] for proxies in pooled]
+    assert lines == ["4", "5", "6", "4"]
+
+
+def test_a_dead_domain_does_not_rest_an_address(pooled, monkeypatch, caplog):
+    # Half of these domains do not answer from anywhere - 49 ConnectionError
+    # and 9 SSLError on 05.10, and tybb.org.tr failed from a European address
+    # too. A dead company website is not an address being refused, and resting
+    # a good address over one would cost the job boards their rotation.
+    def _boom(url, **kwargs):
+        raise logos.requests.RequestException("no route")
+
+    monkeypatch.setattr(logos.requests, "get", _boom)
+    state_writes = []
+    monkeypatch.setattr(logos, "next_address", lambda: logos._european[0])
+
+    got = logos.fetch("https://dead.test/")
+    assert got.length == 0
+    assert state_writes == []
+
+
+def test_the_switch_sends_it_out_directly(pooled, monkeypatch):
+    monkeypatch.setattr(logos, "FETCH_VIA_POOL", False)
+    logos.fetch("https://example.test/")
+    assert pooled == [None]

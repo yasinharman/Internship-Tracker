@@ -1007,3 +1007,20 @@ single failed request out of several hundred. Strictly correct - one page was
 not read - but if that is how Indeed's runs usually end, Indeed will never
 accumulate three complete scans and the rule will never save it anything.
 Whether a transient single failure deserves a tolerance is open.
+
+### The logo step goes through the pool too (05.10.2026)
+
+`pipeline/company_logos.py` was the last place that still made requests from
+the machine the run is on. Harman: "Şirket sitelerine atılan isteklerde
+havuzdaki avrupa iplerinden gitsin" - the home connection is off limits
+everywhere, not only on the job boards.
+
+European addresses only (tier 0, seven of them), in rotation, one company
+site after another. `LOGO_FETCH_VIA_POOL=0` goes out directly.
+
+**A failure here is never reported to the pool.** Measured 05.10: 49
+ConnectionError and 9 SSLError among the 62 companies that had no logo, and
+two of those domains (tybb.org.tr, celineturizm.com) failed from a European
+address as well while hilton.com returned 122 KB through the same path. So
+those domains are simply dead - and resting a good address over a dead
+company website would cost the job boards their rotation.

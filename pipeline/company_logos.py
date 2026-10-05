@@ -71,6 +71,20 @@ from scraper.classifier import DEFAULT_MODEL, LOCAL_BASE_URL, LOCAL_REQUEST
 PAUSE_BETWEEN_COMPANIES_S = float(os.getenv("LOGO_PAUSE_S", "2"))
 FETCH_TIMEOUT_S = float(os.getenv("LOGO_FETCH_TIMEOUT", "15"))
 
+# THE COMPANY SITES ARE VISITED FROM THE POOL TOO - Harman, 05.10.2026:
+# "Şirket sitelerine atılan isteklerde havuzdaki avrupa iplerinden gitsin."
+# Until then this step was the one place that still went out from the home
+# connection, which his rule puts off limits everywhere, not only on the job
+# boards. European addresses only, in rotation, one after another.
+#
+# What this deliberately does NOT do: report a failure to the pool. Half of
+# these domains do not resolve at all (49 ConnectionError and 9 SSLError on
+# 05.10), and a dead company website is not an address being refused - resting
+# a good address over it would cost the job boards their rotation.
+FETCH_VIA_POOL = (os.getenv("LOGO_FETCH_VIA_POOL", "1").strip().lower()
+                  not in {"0", "false", "no", ""})
+EUROPEAN_TIER = 0
+
 # A browser's own header set, not because anything has challenged us - no
 # company site has - but because a bare python-requests User-Agent is the one
 # thing a WAF reads as automation before it has read anything else.
@@ -422,15 +436,60 @@ class Fetched:
         self.length = length
 
 
+_european = None
+
+
+def european_addresses():
+    """The pool's European addresses, or [] when the pool is not configured."""
+    global _european
+    if _european is None:
+        try:
+            from scraper.proxy_pool import PROXY_DIR, load_addresses
+
+            # Same two files and the same env overrides ProxyPool.from_env
+            # reads, so there is one place the pool is configured.
+            addresses = load_addresses(
+                os.getenv("PROXY_POOL_FILE") or PROXY_DIR / "webshare.txt",
+                os.getenv("PROXY_POOL_META") or PROXY_DIR / "meta.json",
+            )
+            _european = [a for a in addresses if a.tier == EUROPEAN_TIER]
+        except Exception as error:          # no list, no meta, unreadable
+            logger.info("no proxy pool for the company sites: %s", error)
+            _european = []
+        if _european:
+            logger.info(
+                "company sites will be visited from %s European address(es)",
+                len(_european),
+            )
+    return _european
+
+
+_turn = 0
+
+
+def next_address():
+    """The next European address, round robin, or None to go out directly."""
+    global _turn
+    addresses = european_addresses() if FETCH_VIA_POOL else []
+    if not addresses:
+        return None
+    address = addresses[_turn % len(addresses)]
+    _turn += 1
+    return address
+
+
 def fetch(url, want_image=False):
     """One request. Never raises - a company site being down is not an error."""
+    address = next_address()
+    proxies = {"http": address.url, "https": address.url} if address else None
     try:
         reply = requests.get(
             url, headers=BROWSER_HEADERS, timeout=FETCH_TIMEOUT_S,
-            allow_redirects=True, stream=want_image,
+            allow_redirects=True, stream=want_image, proxies=proxies,
         )
     except requests.RequestException as error:
-        logger.info("%s: %s", url, type(error).__name__)
+        logger.info("%s: %s%s", url, type(error).__name__,
+                    f" (via #{address.line})" if address else "")
         return Fetched(url, 0)
 
     content_type = (reply.headers.get("Content-Type") or "").split(";")[0].strip().lower()
