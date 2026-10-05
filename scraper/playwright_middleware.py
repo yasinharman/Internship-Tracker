@@ -92,6 +92,7 @@ carrying an account onto another address is the owner's call, not a side
 effect of turning a proxy on.
 """
 
+import glob
 import logging
 import os
 import queue
@@ -295,6 +296,30 @@ class PlaywrightMiddleware:
             self.storage_state_path = None
             return
         raw_path = (os.getenv(env_var) or "").strip()
+
+        # ONE SESSION PER ADDRESS, since 05.10.2026. A path holding "{line}"
+        # is a template: tools/save_session.py --proxy-line N writes
+        # indeed-storage-state-lineN.json, and the line of the address the
+        # request is leaving from picks the file. A session only works from
+        # the address it was made on (measured 04.10.2026), so the two have
+        # to be chosen together or not at all.
+        if "{line}" in raw_path:
+            self.storage_state_env = env_var
+            self.storage_state_path = None
+            self.storage_state_template = raw_path
+            found = sorted(glob.glob(raw_path.format(line="*")))
+            if not found:
+                raise RuntimeError(
+                    f"{env_var}={raw_path!r} is a per-address template and "
+                    f"nothing matches it (resolved from cwd {os.getcwd()!r}). "
+                    f"Run `python -m tools.save_session <site> --proxy-line N` "
+                    f"for each address that should carry the account."
+                )
+            logger.info(
+                "%s is per-address: %s session file(s) on disk", env_var, len(found),
+            )
+            return
+
         if raw_path and not os.path.isfile(raw_path):
             raise RuntimeError(
                 f"{env_var}={raw_path!r} but nothing is there (resolved from "
@@ -305,6 +330,34 @@ class PlaywrightMiddleware:
             )
         self.storage_state_env = env_var
         self.storage_state_path = raw_path or None
+        self.storage_state_template = None
+
+    def _session_file(self, line):
+        """
+        The session that belongs to the address on this line, or None.
+
+        A missing file is a hard error rather than a context with no session:
+        signing out quietly is how 300 requests get spent on pages that need
+        the account and answer 403.
+        """
+        if not getattr(self, "storage_state_template", None):
+            return self.storage_state_path
+        if line is None:
+            raise RuntimeError(
+                f"{self.storage_state_env} is a per-address template "
+                f"({self.storage_state_template!r}) but this request does not "
+                f"say which address it leaves from. Only the pinned path may "
+                f"carry a session; see api_middlewares.ProxyPoolMiddleware."
+            )
+        path = self.storage_state_template.format(line=line)
+        if not os.path.isfile(path):
+            raise RuntimeError(
+                f"address #{line} is pinned for a signed-in crawl but {path} "
+                f"does not exist. Run `python -m tools.save_session <site> "
+                f"--proxy-line {line}` to sign in through that address, or "
+                f"drop #{line} from PROXY_POOL_PINNED."
+            )
+        return path
 
     def _worker_main(self):
         try:
@@ -412,7 +465,8 @@ class PlaywrightMiddleware:
         self.crawler.stats.inc_value("playwright/fresh_contexts")
         return context
 
-    def _proxied_context(self, proxy, jar_key=None, with_session=False):
+    def _proxied_context(self, proxy, jar_key=None, with_session=False,
+                         session_path=None):
         """
         The context for one proxy address ON ONE SITE, made on first use.
 
@@ -433,17 +487,19 @@ class PlaywrightMiddleware:
         are: one context per address would hand kariyer.net's cookies to
         techcareer on the next request from that address.
         """
-        key = (proxy["server"], proxy.get("username"), jar_key, bool(with_session))
+        session_path = session_path or self.storage_state_path
+        key = (proxy["server"], proxy.get("username"), jar_key,
+               session_path if with_session else None)
         context = self._proxied_contexts.get(key)
         if context is None:
             kwargs = dict(self._context_kwargs)
             state = None
-            if with_session and self.storage_state_path:
+            if with_session and session_path:
                 # The account's own cookies ARE this address's history, and
                 # they are not merged with a jar: one place to look when the
                 # session stops being honoured, and nothing of the account is
                 # copied into proxies/jars/.
-                kwargs["storage_state"] = self.storage_state_path
+                kwargs["storage_state"] = session_path
             else:
                 state = cookie_jars.load(*jar_key) if jar_key else None
                 if state:
@@ -521,8 +577,11 @@ class PlaywrightMiddleware:
             visitor = self._fresh_context(proxy)
             return visitor.new_page(), visitor
         if proxy:
+            session_ok = request.meta.get("session_ok")
             shared = self._proxied_context(
-                proxy, request.meta.get("cookie_jar"), request.meta.get("session_ok"),
+                proxy, request.meta.get("cookie_jar"), session_ok,
+                self._session_file(request.meta.get("session_line")) if session_ok
+                else None,
             )
             return shared.new_page(), None
         return context.new_page(), None

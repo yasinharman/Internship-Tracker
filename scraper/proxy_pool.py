@@ -146,7 +146,13 @@ def load_addresses(list_path, meta_path=None):
 
 def parse_pinned(raw):
     """
-    "tr.indeed.com:9, kariyer.net:4" -> {"tr.indeed.com": 9, "kariyer.net": 4}
+    "tr.indeed.com:13+16+19, kariyer.net:4" ->
+        {"tr.indeed.com": (13, 16, 19), "kariyer.net": (4,)}
+
+    A site may name SEVERAL lines, separated by "+", and each one needs its
+    own signed-in session file - Harman, 05.10.2026: "diğer iplerden de
+    indeed'e giriş yapalım, Indeed'in kendi havuzunu yaratalım". They are
+    tried in the order written, so the order is a preference.
 
     Anything unparseable is dropped with a warning rather than guessed at: the
     wrong line here would send a signed-in session out from an address nobody
@@ -157,9 +163,12 @@ def parse_pinned(raw):
         part = part.strip()
         if not part:
             continue
-        site, _, line = part.rpartition(":")
-        if site and line.strip().isdigit():
-            pinned[site.strip()] = int(line)
+        site, _, lines = part.rpartition(":")
+        wanted = [piece.strip() for piece in lines.split("+") if piece.strip()]
+        if site and wanted and all(piece.isdigit() for piece in wanted):
+            # dict.fromkeys: a line written twice is one address, in the order
+            # it was first named.
+            pinned[site.strip()] = tuple(dict.fromkeys(int(p) for p in wanted))
         else:
             logger.warning("PROXY_POOL_PINNED: cannot read %r - ignored", part)
     return pinned
@@ -252,6 +261,9 @@ class ProxyPool:
         # else: at the 6% rate measured that day, chance produces a run of
         # three about once every twenty runs, and a run of two about once per
         # run, which is why the threshold is not two.
+        # (site, ip) -> refusals in a row on THAT pair. Per pair since
+        # 05.10.2026: with several signed-in addresses, one address's run of
+        # refusals says nothing about the next one's.
         self.pinned_refusals = defaultdict(int)
         self.pinned_refusals_allowed = pinned_refusals_allowed
 
@@ -298,14 +310,14 @@ class ProxyPool:
 
     def _choose(self, site):
         now = self.clock()
-        reserved = self.pinned_lines.get(site)
+        reserved = set(self.pinned_lines.get(site) or ())
         free = [
             a for a in self.addresses
             if not self.state.resting_until(site, a.ip, now)
             and (site, a.ip) not in self.full
             # The address carrying this site's session does that and nothing
             # else - see pinned_for().
-            and a.line != reserved
+            and a.line not in reserved
         ]
         if not free:
             return None
@@ -348,15 +360,36 @@ class ProxyPool:
     ###################################################################
     def pinned_for(self, site):
         """
-        The address this site's SIGNED-IN requests always leave from, or None.
+        The address this site's SIGNED-IN requests leave from now, or None.
 
-        Set as PROXY_POOL_PINNED="tr.indeed.com:9". One address per site, and
-        the anonymous traffic never uses it (see _choose): the address that
-        carries an account does that and nothing else, so the account is not
-        also the source of a few hundred logged-out requests an hour.
+        Set as PROXY_POOL_PINNED="tr.indeed.com:13+16+19": one or more lines,
+        each with its own signed-in session file, tried in the order written.
+        The anonymous traffic never uses any of them (see _choose) - an
+        address that carries an account does that and nothing else, so the
+        account is not also the source of a few hundred logged-out requests
+        an hour.
+
+        The first one that is not resting is the answer, and a pair rests only
+        after refusing pinned_refusals_allowed requests IN A ROW. None means
+        every signed-in address this site has is resting, which ends the
+        site's run: there is no anonymous fallback for a page that needs the
+        account.
+
+        Why several, from 05.10.2026: one address carried both the crawl and
+        the check and Indeed closed the door at about 130 requests, leaving
+        177 of 251 postings without a description. Each address is a whole
+        new allowance - and because each carries a session made on it, no
+        session is ever presented from an address that did not earn it.
         """
-        line = self.pinned_lines.get(site)
-        return self.pinned(line) if line else None
+        for line in self.pinned_lines.get(site) or ():
+            address = self.pinned(line)
+            if not self.state.resting_until(site, address.ip, self.clock()):
+                return address
+        return None
+
+    def pinned_lines_for(self, site):
+        """Every line this site may send its account from, in preference order."""
+        return tuple(self.pinned_lines.get(site) or ())
 
     def pinned(self, line):
         """
@@ -399,22 +432,23 @@ class ProxyPool:
                 site, address.label, self.served[(site, address.ip)],
             )
 
-    def note_answer(self, site):
+    def note_answer(self, site, ip=None):
         """A response from this site that was not a refusal."""
         self.answered[site] += 1
-        # One page served ends the run of refusals: the pinned address is
+        # One page served ends that address's run of refusals: it is
         # answering, whatever it said three requests ago.
-        self.pinned_refusals[site] = 0
+        if ip is not None:
+            self.pinned_refusals[(site, ip)] = 0
 
-    def note_pinned_refusal(self, site):
+    def note_pinned_refusal(self, site, ip):
         """
-        One refusal on the pinned address. Returns how many in a row.
+        One refusal on a signed-in address. Returns how many in a row on it.
 
-        The caller rests the address and ends the site's run when this reaches
-        pinned_refusals_allowed, and drops only that page before then.
+        The caller rests THAT pair when this reaches pinned_refusals_allowed
+        and hands over to the next one; before then only the page is dropped.
         """
-        self.pinned_refusals[site] += 1
-        return self.pinned_refusals[site]
+        self.pinned_refusals[(site, ip)] += 1
+        return self.pinned_refusals[(site, ip)]
 
     def on_refusal(self, site, ip, reason):
         """

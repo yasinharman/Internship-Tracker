@@ -68,6 +68,11 @@ def middleware():
     instance._browser = _Browser()
     instance._context_kwargs = {"locale": "tr-TR", "viewport": {"width": 1280, "height": 800}}
     instance._proxied_contexts = {}
+    # Set by _resolve_storage_state on the first request of a real run; this
+    # instance never gets there, and None means "no session to carry".
+    instance.storage_state_path = None
+    instance.storage_state_template = None
+    instance.storage_state_env = "INDEED_STORAGE_STATE"
     return instance
 
 
@@ -132,3 +137,59 @@ def test_proxied_contexts_are_closed_at_the_end(middleware):
 
     assert proxied.closed
     assert middleware._proxied_contexts == {}
+
+
+##############################################################
+# ONE SESSION PER ADDRESS - 05.10.2026                       #
+##############################################################
+# A session only works from the address it was made on (measured 04.10.2026),
+# so when Indeed gained a pool of signed-in addresses each one had to carry
+# its OWN export. INDEED_STORAGE_STATE holding "{line}" is the template, and
+# tools/save_session.py --proxy-line N writes the file it names.
+
+@pytest.fixture
+def per_address(middleware, tmp_path):
+    for line in (13, 16):
+        (tmp_path / f"indeed-storage-state-line{line}.json").write_text("{}")
+    middleware.storage_state_template = str(
+        tmp_path / "indeed-storage-state-line{line}.json")
+    middleware.storage_state_path = None
+    return middleware
+
+
+def test_the_line_picks_the_session_file(per_address, tmp_path):
+    assert per_address._session_file(16) == str(
+        tmp_path / "indeed-storage-state-line16.json")
+
+
+def test_two_addresses_do_not_share_one_context(per_address):
+    OTHER = "http://user:p%40ss@198.51.100.2:7000"
+    per_address._page_for(_Request(proxy=PROXY, session_ok=True, session_line=13),
+                          _Context({}))
+    per_address._page_for(_Request(proxy=OTHER, session_ok=True, session_line=16),
+                          _Context({}))
+
+    states = [c.kwargs.get("storage_state") for c in per_address._browser.contexts]
+    assert len(states) == 2
+    assert states[0] != states[1]
+    assert states[0].endswith("line13.json") and states[1].endswith("line16.json")
+
+
+def test_a_pinned_address_with_no_session_is_a_loud_error(per_address):
+    # Dropping to a context with no session would spend the whole queue on
+    # pages that answer 403 - quietly.
+    with pytest.raises(RuntimeError) as raised:
+        per_address._session_file(19)
+    assert "--proxy-line 19" in str(raised.value)
+
+
+def test_a_request_that_does_not_name_an_address_is_refused(per_address):
+    with pytest.raises(RuntimeError) as raised:
+        per_address._session_file(None)
+    assert "which address" in str(raised.value)
+
+
+def test_without_a_template_the_one_path_is_used(middleware):
+    middleware.storage_state_path = "/exported/indeed.json"
+    middleware.storage_state_template = None
+    assert middleware._session_file(None) == "/exported/indeed.json"

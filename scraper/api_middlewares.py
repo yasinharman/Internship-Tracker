@@ -254,22 +254,22 @@ class ProxyPoolMiddleware:
         # requests arrive from a different country every thirty requests is
         # the pattern a platform reads as a shared password. The spider asks
         # for this; its own checker must not inherit it (see indeed_check).
-        pinned = pool.pinned_for(site) if getattr(spider, "USES_PINNED_ADDRESS", False) else None
-        if pinned is not None:
-            # Both checks exist because the rest and the give-up were recorded
-            # and not enforced until 05.10.2026, so the log said one thing and
-            # the run did another.
+        signed_in = getattr(spider, "USES_PINNED_ADDRESS", False)
+        if signed_in and pool.pinned_lines_for(site):
             if site in pool.given_up:
                 self.crawler.stats.inc_value("pool/dropped_no_address")
                 raise IgnoreRequest(f"{site}: {pool.given_up[site]}")
 
-            resting = pool.state.resting_until(site, pinned.ip, pool.clock())
-            if resting:
+            # The first signed-in address that is not resting. Enforced since
+            # 05.10.2026: before that the rest was recorded and ignored, so
+            # the log said one thing and the run did another.
+            pinned = pool.pinned_for(site)
+            if pinned is None:
+                lines = pool.pinned_lines_for(site)
                 pool.give_up(
                     site,
-                    f"the session's address rests until "
-                    f"{resting.strftime('%d.%m %H:%M')} UTC after refusing "
-                    f"{pool.pinned_refusals_allowed} requests in a row",
+                    f"every signed-in address is resting "
+                    f"({len(lines)} of them: {', '.join(f'#{n}' for n in lines)})",
                 )
                 self.crawler.stats.inc_value("pool/dropped_no_address")
                 raise IgnoreRequest(f"{site}: {pool.given_up[site]}")
@@ -279,6 +279,10 @@ class ProxyPoolMiddleware:
             request.meta["proxy"] = pinned.url
             request.meta["pool_address"] = pinned.ip
             request.meta["pinned_address"] = True
+            # WHICH session: each signed-in address has its own file, because
+            # a session only works from the address it was made on (measured
+            # 04.10.2026). playwright_middleware resolves the path from this.
+            request.meta["session_line"] = pinned.line
             # The one flag that lets a session into a proxied browser context.
             # Everything else gets a context with no session at all; see
             # playwright_middleware._proxied_context.
@@ -726,7 +730,8 @@ class BlockDetectionMiddleware:
             self.blocks_in_a_row[domain] = 0
             if request.meta.get("pool_address"):
                 original = (request.meta.get("redirect_urls") or [None])[0] or request.url
-                get_proxy_pool(self.crawler).note_answer(site_of(original))
+                get_proxy_pool(self.crawler).note_answer(
+                    site_of(original), request.meta.get("pool_address"))
             return response
 
         self.crawler.stats.inc_value("blocks/detected")
@@ -899,7 +904,7 @@ class BlockDetectionMiddleware:
         # Rest it, stop this site for the run, and let the log say why.
         if request.meta.get("pinned_address"):
             self.crawler.stats.inc_value("pool/pinned_refused")
-            in_a_row = pool.note_pinned_refusal(site)
+            in_a_row = pool.note_pinned_refusal(site, pool_ip)
             allowed = pool.pinned_refusals_allowed
 
             if in_a_row < allowed:
@@ -914,15 +919,29 @@ class BlockDetectionMiddleware:
                 )
                 raise IgnoreRequest(f"{site}: refused ({reason}), page dropped")
 
-            # A RUN of them is the site saying something new. Rest the address
-            # and stop: there is nowhere to move a signed-in session to, and
-            # rotating one is what pinning exists to avoid.
+            # A RUN of them is the site saying something new to THIS address.
+            # Rest it and hand over to the next signed-in address, which has
+            # its own session made on it - no session ever moves.
             pool.state.rest(site, pool_ip, pool.clock(), pool.rest_hours, reason)
             pool.state.save()
+            self.crawler.stats.inc_value("pool/pinned_rested")
+
+            spare = pool.pinned_for(site)
+            if spare is not None:
+                spider.logger.warning(
+                    "%s: the session's address was refused %s times in a row "
+                    "(%s) - rested %.0fh, handing over to #%s. This page is "
+                    "dropped; the run carries on from there.",
+                    site, in_a_row, reason, pool.rest_hours, spare.line,
+                )
+                self.crawler.stats.inc_value("pool/pinned_handovers")
+                raise IgnoreRequest(f"{site}: refused ({reason}), moving to #{spare.line}")
+
             pool.give_up(
                 site,
-                f"the session's address was refused {in_a_row} times in a row "
-                f"({reason}) - rested {pool.rest_hours:.0f}h",
+                f"the last signed-in address was refused {in_a_row} times in "
+                f"a row ({reason}) - rested {pool.rest_hours:.0f}h, and every "
+                f"other one is resting too",
             )
             raise IgnoreRequest(f"{site}: {pool.given_up[site]}")
 

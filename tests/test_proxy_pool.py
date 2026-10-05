@@ -503,8 +503,14 @@ def test_a_clean_reserve_beats_a_flagged_european_address(pool, clock):
 # left to the anonymous traffic.
 
 @pytest.mark.parametrize("raw, expected", [
-    ("tr.indeed.com:9", {"tr.indeed.com": 9}),
-    (" tr.indeed.com : 9 , kariyer.net:4 ", {"tr.indeed.com": 9, "kariyer.net": 4}),
+    ("tr.indeed.com:9", {"tr.indeed.com": (9,)}),
+    (" tr.indeed.com : 9 , kariyer.net:4 ",
+     {"tr.indeed.com": (9,), "kariyer.net": (4,)}),
+    # Several signed-in addresses for one site, in the order written, and a
+    # line written twice is one address (05.10.2026).
+    ("tr.indeed.com:13+16+19", {"tr.indeed.com": (13, 16, 19)}),
+    ("tr.indeed.com:13+13", {"tr.indeed.com": (13,)}),
+    ("tr.indeed.com:13+x", {}),
     ("", {}),
     ("nonsense", {}),
     ("tr.indeed.com:abc", {}),
@@ -517,7 +523,7 @@ def test_parse_pinned(raw, expected):
 def test_the_pinned_address_is_the_one_named(files, clock):
     pool = ProxyPool(load_addresses(files / "list.txt", files / "meta.json"),
                      PoolState(files / "state.json"), clock=clock,
-                     pinned_lines={"tr.indeed.com": 3})
+                     pinned_lines={"tr.indeed.com": (3,)})
     assert pool.pinned_for("tr.indeed.com").line == 3
     assert pool.pinned_for("kariyer.net") is None
 
@@ -531,7 +537,7 @@ def test_the_anonymous_traffic_leaves_the_session_s_address_alone(files, clock):
     # .2 is the first European address and would be chosen; pinned, it is not.
     pool = ProxyPool(load_addresses(files / "list.txt", files / "meta.json"),
                      PoolState(files / "state.json"), clock=clock,
-                     pinned_lines={"kariyer.net": 2})
+                     pinned_lines={"kariyer.net": (2,)})
     assert pool.address_for("kariyer.net").ip != "198.51.100.2"
 
 
@@ -539,7 +545,7 @@ def test_a_spider_that_asks_for_it_gets_it_and_may_carry_the_session(
     crawler, pool, monkeypatch,
 ):
     monkeypatch.setenv("PROXY_POOL_SPIDERS", "indeed_cards")
-    pool.pinned_lines = {"tr.indeed.com": 3}
+    pool.pinned_lines = {"tr.indeed.com": (3,)}
     middleware = ProxyPoolMiddleware(crawler)
     request = Request("https://tr.indeed.com/jobs?q=staj")
     spider = _spider("indeed_cards")
@@ -554,7 +560,7 @@ def test_a_spider_that_asks_for_it_gets_it_and_may_carry_the_session(
 
 def test_a_spider_that_does_not_ask_rotates_as_usual(crawler, pool, monkeypatch):
     monkeypatch.setenv("PROXY_POOL_SPIDERS", "indeed_check")
-    pool.pinned_lines = {"tr.indeed.com": 3}
+    pool.pinned_lines = {"tr.indeed.com": (3,)}
     middleware = ProxyPoolMiddleware(crawler)
     request = Request("https://tr.indeed.com/viewjob?jk=1")
     spider = _spider("indeed_check")
@@ -628,7 +634,7 @@ def test_the_session_s_address_is_not_used_while_it_rests(crawler, pool, monkeyp
     # Recorded and not enforced until 05.10.2026: the log said the address was
     # resting while the run kept sending requests from it.
     monkeypatch.setenv("PROXY_POOL_SPIDERS", "indeed_cards")
-    pool.pinned_lines = {"tr.indeed.com": 3}
+    pool.pinned_lines = {"tr.indeed.com": (3,)}
     pinned = pool.pinned(3)
     pool.state.rest("tr.indeed.com", pinned.ip, pool.clock(), 24, "403")
 
@@ -637,12 +643,12 @@ def test_the_session_s_address_is_not_used_while_it_rests(crawler, pool, monkeyp
     spider.USES_PINNED_ADDRESS = True
     with pytest.raises(IgnoreRequest):
         middleware.process_request(Request("https://tr.indeed.com/jobs?q=staj"), spider)
-    assert "rests until" in pool.given_up["tr.indeed.com"]
+    assert "every signed-in address is resting" in pool.given_up["tr.indeed.com"]
 
 
 def test_nothing_else_leaves_once_the_site_is_given_up(crawler, pool, monkeypatch):
     monkeypatch.setenv("PROXY_POOL_SPIDERS", "indeed_cards")
-    pool.pinned_lines = {"tr.indeed.com": 3}
+    pool.pinned_lines = {"tr.indeed.com": (3,)}
     pool.give_up("tr.indeed.com", "three in a row")
 
     middleware = ProxyPoolMiddleware(crawler)
@@ -680,3 +686,113 @@ def test_what_another_layer_earned_is_not_clobbered(crawler, monkeypatch, jars):
 
     stored = {c["name"] for c in jars.load("kariyer.net", "198.51.100.2")["cookies"]}
     assert stored == {"earned", "sid"}
+
+
+##########################################################
+# INDEED'S OWN POOL: SEVERAL SIGNED-IN ADDRESSES          #
+##########################################################
+# Harman, 05.10.2026: "diğer iplerden de indeed'e giriş yapalım. Indeed in
+# kendi havuzunu yaratalım." One address carried both the crawl and the check
+# that afternoon and Indeed closed the door at about 130 requests, which left
+# 177 of 251 postings without a description.
+#
+# What makes this different from rotating a session: each address has its own
+# session, signed in THROUGH that address, so no session is ever presented
+# from an address that did not earn it (measured 04.10.2026). The handover
+# moves the work, not the cookies.
+
+def _indeed_pool(pool, *lines):
+    pool.pinned_lines = {"tr.indeed.com": tuple(lines)}
+    return [pool.pinned(line) for line in lines]
+
+
+def test_the_first_address_that_is_not_resting_carries_the_account(pool):
+    first, second, _ = _indeed_pool(pool, 2, 3, 4)
+    assert pool.pinned_for("tr.indeed.com").line == first.line
+
+    pool.state.rest("tr.indeed.com", first.ip, pool.clock(), 24, "403")
+    assert pool.pinned_for("tr.indeed.com").line == second.line
+
+
+def test_every_signed_in_address_resting_is_no_address(pool):
+    addresses = _indeed_pool(pool, 2, 3)
+    for address in addresses:
+        pool.state.rest("tr.indeed.com", address.ip, pool.clock(), 24, "403")
+    assert pool.pinned_for("tr.indeed.com") is None
+
+
+def test_a_run_of_refusals_hands_over_to_the_next_address(blocks, pool, crawler):
+    first, second = _indeed_pool(pool, 2, 3)
+
+    for _ in range(3):
+        request = Request("https://tr.indeed.com/viewjob?jk=1",
+                          meta={"pool_address": first.ip, "pinned_address": True,
+                                "_via_proxy": True})
+        with pytest.raises(IgnoreRequest):
+            blocks.process_response(
+                request, HtmlResponse(request.url, status=403, body=b"no", request=request),
+                _spider("indeed_check"))
+
+    # The address that refused rests; the site's run does NOT end.
+    assert pool.state.resting_until("tr.indeed.com", first.ip, pool.clock())
+    assert "tr.indeed.com" not in pool.given_up
+    assert crawler.stats.values["pool/pinned_handovers"] == 1
+    assert pool.pinned_for("tr.indeed.com").line == second.line
+
+
+def test_each_address_keeps_its_own_run_of_refusals(blocks, pool):
+    first, second = _indeed_pool(pool, 2, 3)
+
+    def refuse(address):
+        request = Request("https://tr.indeed.com/viewjob?jk=1",
+                          meta={"pool_address": address.ip, "pinned_address": True,
+                                "_via_proxy": True})
+        with pytest.raises(IgnoreRequest):
+            blocks.process_response(
+                request, HtmlResponse(request.url, status=403, body=b"no", request=request),
+                _spider("indeed_check"))
+
+    refuse(first)
+    refuse(first)
+    refuse(second)          # a different address: its own count starts at 1
+    assert pool.state.resting_until("tr.indeed.com", second.ip, pool.clock()) is None
+    assert pool.state.resting_until("tr.indeed.com", first.ip, pool.clock()) is None
+
+
+def test_the_site_is_done_when_the_last_one_is_refused(blocks, pool):
+    first, second = _indeed_pool(pool, 2, 3)
+    pool.state.rest("tr.indeed.com", first.ip, pool.clock(), 24, "403")
+
+    for _ in range(3):
+        request = Request("https://tr.indeed.com/viewjob?jk=1",
+                          meta={"pool_address": second.ip, "pinned_address": True,
+                                "_via_proxy": True})
+        with pytest.raises(IgnoreRequest):
+            blocks.process_response(
+                request, HtmlResponse(request.url, status=403, body=b"no", request=request),
+                _spider("indeed_check"))
+
+    assert "every other one is resting too" in pool.given_up["tr.indeed.com"]
+
+
+def test_the_request_says_which_session_to_load(crawler, pool, monkeypatch):
+    # The line travels with the request because the session file is chosen
+    # from it - playwright_middleware._session_file.
+    monkeypatch.setenv("PROXY_POOL_SPIDERS", "indeed_cards")
+    first, _ = _indeed_pool(pool, 2, 3)
+
+    middleware = ProxyPoolMiddleware(crawler)
+    spider = _spider("indeed_cards")
+    spider.USES_PINNED_ADDRESS = True
+    request = Request("https://tr.indeed.com/jobs?q=staj")
+    middleware.process_request(request, spider)
+
+    assert request.meta["session_line"] == first.line
+    assert request.meta["session_ok"] is True
+    assert request.meta["pool_address"] == first.ip
+
+
+def test_the_anonymous_traffic_avoids_every_signed_in_address(pool):
+    _indeed_pool(pool, 2, 3)
+    chosen = {pool.address_for("tr.indeed.com").line for _ in range(6)}
+    assert chosen.isdisjoint({2, 3})

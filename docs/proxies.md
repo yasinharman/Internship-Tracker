@@ -355,3 +355,35 @@ own "Crawled (403)" line - the middleware intercepts the response first - so
 question "were they in runs or scattered?" could not be answered from the log
 at all. Each one is logged with its position in the run now ("2 in a row of
 3"), so the next run gives the distribution this threshold was estimated from.
+
+## A site may have several signed-in addresses - 05.10.2026
+
+`PROXY_POOL_PINNED=tr.indeed.com:13+16+19` pins three lines to one site
+instead of one. Harman's call, the afternoon one address ran out: "diğer
+iplerden de indeed'e giriş yapalım. Indeed in kendi havuzunu yaratalım."
+
+**Each address carries its own session, and that is the whole point.** A
+session only works from the address it was made on (measured 04.10.2026), so
+`tools/save_session.py indeed --proxy-line N` is run once per address and
+writes `indeed-storage-state-lineN.json`. `INDEED_STORAGE_STATE` then holds a
+template with `{line}` in it, and the line the request leaves from picks the
+file. Nothing is copied between addresses: the handover moves the work, not
+the cookies.
+
+**How the handover goes.** The first line that is not resting carries the
+account. Three refusals in a row rest that one for 24 h and the next line
+takes over, with its own session and its own clean refusal count - a page
+that is served resets it. When every one of them is resting, the site's run
+ends: there is no anonymous fallback for a page that needs the account.
+
+**Keep them in one country.** The account is his own and there is only one
+(no burner accounts, decided 21.09.2026), so what it looks like from the
+outside matters. Several addresses in one country read as one person on a
+VPN; the same account arriving from Turkey, then the US, then Britain within
+an hour is the impossible-travel pattern. Line 13 is US, so the others should
+be US too - lines 1, 2, 3, 9, 11, 16 and 19 are the US tier-1 addresses.
+
+**Only the pinned path may carry a session**, as before: `session_ok` is set
+in one place, and a proxied context without it gets no account at all. A
+pinned line whose session file is missing is a hard error rather than a
+sign-out, because 300 requests answered 403 is what a quiet sign-out costs.
