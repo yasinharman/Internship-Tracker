@@ -49,6 +49,7 @@ explicitly when that happens (see IndeedCardsSpider.note_sign_in_wall).
 
 import argparse
 import os
+import re
 import sys
 import time
 
@@ -244,10 +245,21 @@ def main():
         browser.close()
 
     print(f"Kaydedildi: {output_path} ({cookie_count} cookie dahil)")
-    print(f"Simdi .env icine: {site['env_var']}=" + output_path)
+
+    # A site may carry its account from SEVERAL addresses since 05.10.2026,
+    # each with the session signed in through it, so the advice is a template
+    # and a list - not this one file and this one line. Telling him to point
+    # the variable at the file he just made would switch the other addresses
+    # off, and they would then fail loudly on their first request.
     if args.proxy_line:
-        print(f"Ve: PROXY_POOL_PINNED=tr.indeed.com:{args.proxy_line}"
-              if args.site == "indeed" else "")
+        template = re.sub(r"-line\d+(\.\w+)$", r"-line{line}\1", output_path)
+        print(f"Simdi .env icine (adres basina bir oturum, {{line}} doldurulur):")
+        print(f"  {site['env_var']}={template}")
+        if args.site == "indeed":
+            print(f"  PROXY_POOL_PINNED=tr.indeed.com:{args.proxy_line}  "
+                  f"<- birden fazlaysa + ile ekle, orn. 13+2+9")
+    else:
+        print(f"Simdi .env icine: {site['env_var']}=" + output_path)
     return 0
 
 
