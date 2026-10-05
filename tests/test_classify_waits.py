@@ -113,3 +113,31 @@ def test_nothing_waiting_prints_nothing(session, capsys):
     _posting(session, "https://x/12", "metin")
     report_waiting(session)
     assert capsys.readouterr().out == ""
+
+
+def test_all_reclassifies_what_already_has_a_category(session):
+    """
+    `--all`, added 05.10.2026 with the description limit.
+
+    job_category is written once, so without this flag a change to the
+    taxonomy, the prompt or how much of the description is read reaches only
+    the rows that happen to be NULL.
+    """
+    _posting(session, "https://x/sorted", "uzun bir açıklama",
+             job_category="yazilim")
+
+    assert load_unclassified(session) == []
+    assert [p.url for p in load_unclassified(session, everything=True)] == [
+        "https://x/sorted"]
+
+
+def test_all_still_leaves_out_what_must_not_be_classified(session):
+    # The other filters are not loosened: a duplicate, a closed posting and a
+    # row with nothing to read stay out whatever the flag says.
+    from datetime import datetime
+
+    _posting(session, "https://x/dup", "metin", duplicate_of=1)
+    _posting(session, "https://x/shut", "metin", closed_at=datetime.utcnow())
+    _posting(session, "https://x/empty", None)
+
+    assert load_unclassified(session, everything=True) == []

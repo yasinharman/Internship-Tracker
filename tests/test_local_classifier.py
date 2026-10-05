@@ -105,3 +105,31 @@ def test_a_model_passed_in_wins_over_the_environment(made, monkeypatch):
     classify(POSTING, model="gemma4:12b")
 
     assert made[0].calls[0]["model"] == "gemma4:12b"
+
+
+##############################################################
+# THE WHOLE DESCRIPTION IS READ - 05.10.2026                 #
+##############################################################
+# Harman: "sınırı kaldır ve panoyu yeniden sınıflandır", once the measurement
+# was in. Of the 36 postings whose only field word fell past 1500 characters,
+# 13 were labelled differently from the whole text; the control - the same
+# truncated text classified a second time - moved only 2, so the text did the
+# work, not the model's jitter. Seven gained a field, and a missing field is
+# the direction that hurts: the student filtering for it never sees the row.
+
+def test_the_description_is_not_cut_at_fifteen_hundred():
+    from scraper import classifier
+
+    posting = {"job_title": "Stajyer", "company": "X", "location": "Istanbul",
+               "job_description": "A" * 4000 + " makine mühendisi aranıyor"}
+    assert "makine mühendisi aranıyor" in classifier.build_user_text(posting)
+
+
+def test_a_pathological_row_is_still_capped():
+    # What is left is a stop against one runaway row, not a filter: the
+    # longest description in the table that day was 10,803 characters.
+    from scraper import classifier
+
+    posting = {"job_description": "B" * (classifier.DESCRIPTION_CHARS + 500)}
+    assert len(classifier.build_user_text(posting)) < (
+        classifier.DESCRIPTION_CHARS + 200)

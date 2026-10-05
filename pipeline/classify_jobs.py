@@ -66,13 +66,12 @@ CATEGORY_ORDER = list(field_order)
 NO_DESCRIPTION = ("N/A", "")
 
 
-def load_unclassified(session, limit=None):
+def load_unclassified(session, limit=None, everything=False):
     # Duplicates are skipped rather than classified: the same job on another
     # board would cost a second call and could come back with a different
     # verdict, which is worse than not knowing - the row is hidden anyway.
     query = (
         session.query(JobPost)
-        .filter(JobPost.job_category.is_(None))
         .filter(JobPost.duplicate_of.is_(None))
         # Closed postings are skipped for the same kind of reason: the checks
         # now run BEFORE this step (see main.py run_post_crawl), so a posting
@@ -121,6 +120,13 @@ def load_unclassified(session, limit=None):
         .filter(JobPost.job_description.notin_(NO_DESCRIPTION))
         .order_by(JobPost.created_at.desc())
     )
+    # --all re-reads postings that already have a category: what a taxonomy
+    # change or a prompt change needs, and what raising DESCRIPTION_CHARS on
+    # 05.10.2026 needed. Without it this step only ever sees NULL rows, and
+    # job_category is written once.
+    if not everything:
+        query = query.filter(JobPost.job_category.is_(None))
+
     if limit:
         query = query.limit(limit)
     return query.all()
@@ -361,6 +367,12 @@ def main():
         "--limit", type=int,
         help="Only classify the first N unclassified postings.",
     )
+    parser.add_argument(
+        "--all", action="store_true", dest="everything",
+        help="Classify every open posting again, not only the unsorted ones - "
+             "for a change to the taxonomy, the prompt or how much of the "
+             "description is read.",
+    )
     args = parser.parse_args()
 
     engine = db_connect()
@@ -372,7 +384,7 @@ def main():
         # is anything to classify.
         report_waiting(session)
 
-        postings = load_unclassified(session, args.limit)
+        postings = load_unclassified(session, args.limit, args.everything)
         if not postings:
             print("0 new rows - everything is already classified, or waiting "
                   "for a description.")

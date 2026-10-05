@@ -52,11 +52,27 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gemma4:12b"
 
-# How much of the description is worth sending. The title decides most cases;
-# the description is there to break ties ("Stajyer" at a software house). Full
-# descriptions run to several thousand characters of boilerplate about company
-# culture, which costs tokens and adds nothing.
-DESCRIPTION_CHARS = 1500
+# A GUARD RAIL, NOT A FILTER - raised from 1500 on 05.10.2026.
+#
+# 1500 was written on 28.07.2026 for a different job: a three-way sort into
+# it / general_program / other, where the title really does decide most cases,
+# and at a time when 32 of 993 rows carried a description at all (see
+# pipeline/classify_jobs.py) - so the cut removed nothing. Since 21.09.2026
+# the job is a 25-field taxonomy and the field is usually named in the
+# requirements, and every non-duplicate posting has a description: median
+# 1618 characters, 55% of them over the old limit.
+#
+# MEASURED the day it was raised, on the 36 postings whose only field word
+# fell past 1500: with the whole description 13 of them were labelled
+# differently, and the control - the same truncated text classified a second
+# time - moved only 2, so about 11 of those changes came from the text and not
+# from the model's jitter. Seven gained a field, which is the direction that
+# matters: a missing field means the student filtering for it never sees the
+# posting.
+#
+# The number left here is only a stop against a pathological row; the longest
+# description in the table is 10,803 characters. Nothing is cut in practice.
+DESCRIPTION_CHARS = int(os.getenv("CLASSIFIER_DESCRIPTION_CHARS", "20000"))
 
 # The local server, and what every request to it carries besides the prompt.
 # Left to itself, the server uses each model's own defaults: Gemma 4 and

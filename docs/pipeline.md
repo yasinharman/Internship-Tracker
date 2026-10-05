@@ -1024,3 +1024,41 @@ two of those domains (tybb.org.tr, celineturizm.com) failed from a European
 address as well while hilton.com returned 122 KB through the same path. So
 those domains are simply dead - and resting a good address over a dead
 company website would cost the job boards their rotation.
+
+### The whole description is read now (05.10.2026)
+
+`DESCRIPTION_CHARS` was 1500 from 28.07.2026 until today, and it was right
+when it was written: the job then was a three-way sort into
+it / general_program / other, where the title does decide most cases, and
+only 32 of 993 rows carried a description at all - so the cut removed nothing.
+
+Both halves of that changed. Since 21.09.2026 the job is a 25-field taxonomy
+and the field is usually named in the requirements, and since the checks moved
+ahead of classify every non-duplicate posting has a description: median 1618
+characters, 55% of them over the old limit.
+
+**What the limit was costing, measured the day it was raised.** 36 of the 545
+postings on the board had their only field word past 1500 characters. Given
+the whole description, 13 of those 36 came back with different fields - 7
+gained a field, 1 lost one, 5 swapped. The control, the same truncated text
+classified a second time, moved only 2, so about 11 of the 13 came from the
+text rather than from the model's own jitter.
+
+Seven gaining a field is the direction that matters: a missing field means the
+student filtering for it never sees the posting. Examples: "Research Engineer
+Intern (Multimodal LLM)" gained Yazılım, FedEx's "Stajyer - Summer Intern"
+gained İşletme/Yönetim, Evyap's supply-chain internship gained Veri/Yapay Zekâ.
+
+That 2% of the board is a floor, not a ceiling: the 36 were found with a
+25-word list, so postings whose field is phrased some other way in the tail
+were never in the sample.
+
+`CLASSIFIER_DESCRIPTION_CHARS` is 20000 now - a stop against one runaway row,
+not a filter; the longest description in the table is 10,803 characters.
+`python -m pipeline.classify_jobs --all` re-reads postings that already have a
+category, which is what a change like this needs, since job_category is
+written once.
+
+What was deliberately NOT changed at the same time: the prompt still tells the
+model the title decides and the description breaks ties. One variable at a
+time, so the next measurement means something.
