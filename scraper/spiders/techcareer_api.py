@@ -217,7 +217,13 @@ class TechCareerApiSpider(BaseApiSpider):
         # The payload states how many pages there are, so trust it rather than
         # walking until something looks empty.
         page_count = dig(payload, "pageProps.initialJobList.pagination.pageCount") or 1
-        if page < page_count and self.next_page_allowed(page, records, search_key):
+        if page >= page_count:
+            # The site said how many pages it has and we have read them all.
+            # Recorded because a scan counts only when every search reached
+            # its own end (scraper/scans.py, 04.10.2026) - and this branch
+            # short-circuits next_page_allowed, so nothing else would say so.
+            self.search_ended(search_key, "last_page")
+        elif self.next_page_allowed(page, records, search_key):
             yield self._list_request(search_key, page + 1)
 
     #########################################################

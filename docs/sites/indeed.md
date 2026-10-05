@@ -1365,3 +1365,28 @@ Note what the pool's own record says afterwards: line 13 carried 300 requests
 and collected 17 refusals, and its 24-hour rest is recorded but not enforced,
 because the pinned path does not consult it. That mismatch is deliberate for
 now and is the one decision left before the next full run.
+
+## 05.10.2026: the three-in-a-row rule fired, and it was right to
+
+The first full run from an empty database, one pinned address (#13) carrying
+all of Indeed's traffic:
+
+| Phase | Requests | Refused | Result |
+|---|---|---|---|
+| crawl | ~251 | 2, scattered (1 in a row, then 1) | 552 items, 251 postings, scan COMPLETE |
+| check | 75 | 3 IN A ROW at 17:00:55-17:01:28 | 74 descriptions, then the run ended |
+
+The refusals were not noise by then. The address had served about 330 requests
+to Indeed that afternoon before the door closed, and it closed the way the
+rule predicts: two scattered refusals early, which cost their own pages and
+nothing else, and a run of three later, which rested the address for 24 h
+(until 06.10 17:01 local) and ended the site's run.
+
+**What it costs:** 177 of 251 Indeed postings have no description yet. They
+self-heal - the next run queues them again - but one pinned address serving
+both the crawl and the check means roughly 75 descriptions per run, so full
+coverage of a 251-posting queue takes several runs.
+
+**What it rules out:** nothing about the session. The address was answering
+normally for 326 requests; it was the volume from one address in one day, not
+the client or the cookies.

@@ -175,3 +175,102 @@ def test_every_search_page_carries_the_errback():
     # page is only ever asked for by the callback of the page before it.
     spider = object.__new__(IndeedCardsSpider)
     assert IndeedCardsSpider.page_lost == type(spider).page_lost
+
+
+#############################################################
+# THE END A SITE REACHES BY ITS OWN CONDITION - 05.10.2026   #
+#############################################################
+# The first full run from an empty database recorded three of five sites
+# "incomplete" over this: they stop paging by their own test and never reach
+# next_page_allowed, so nothing recorded that the search was finished. Their
+# scans would never have counted, and the run-counting rule would never have
+# applied to them - the exact failure it exists to avoid.
+#
+# Each test here calls the real branch, because what broke was the branch and
+# not the counter.
+
+def _bare(spider_class, **attributes):
+    """A spider with paging state and nothing else. Opens no socket."""
+    from collections import defaultdict
+
+    made = object.__new__(spider_class)
+    made.crawler = SimpleNamespace(stats=_Stats())
+    made._search_end = {}
+    made._lost_pages = defaultdict(int)
+    made._seen_keys = defaultdict(set)
+    made._repeated_pages = defaultdict(int)
+    for name, value in attributes.items():
+        setattr(made, name, value)
+    return made
+
+
+def test_techcareer_records_the_site_s_own_last_page():
+    import json
+
+    from scrapy.http import Request, TextResponse
+    from scraper.spiders.techcareer_api import TechCareerApiSpider
+
+    spider = _bare(TechCareerApiSpider, debug_dump=False)
+    payload = {"pageProps": {"initialJobList": {"items": [],
+                                                "pagination": {"pageCount": 7}}}}
+    url = "https://www.techcareer.net/_next/data/x/tr/jobs.json?page=7"
+    request = Request(url, meta={"page": 7, "search_key": "scan"})
+    response = TextResponse(url, body=json.dumps(payload).encode(), request=request,
+                            encoding="utf-8")
+
+    list(spider.parse_list(response) or [])
+    assert spider._search_end["scan"] == "last_page"
+
+
+def test_linkedin_records_the_total_it_was_told():
+    from scraper.spiders.linkedin_cards import LinkedinCardsSpider
+
+    spider = _bare(LinkedinCardsSpider, _totals={"stajyer": 70})
+    # 60 on the search page + one batch of 10 is the whole of it.
+    assert spider.next_page_allowed(2, [_record(1)], "stajyer") is False
+    assert spider._search_end["stajyer"] == "reached_total"
+
+
+def test_youthall_records_a_list_that_is_one_page_long():
+    from scrapy.http import HtmlResponse, Request
+    from scraper.spiders.youthall_cards import YouthallCardsSpider
+
+    spider = _bare(YouthallCardsSpider)
+    # A card that is not an internship: it counts as a record the page
+    # returned, and nothing else in parse_list runs for it.
+    body = (b'<div class="jobs"><a href="/en/jobs/muhendis_12345">'
+            b'<div class="jobs-content-title"><h5>Muhendis</h5></div>'
+            b'<span class="jobs-tag">Full Time</span></a></div>')
+    url = "https://www.youthall.com/en/jobs/istanbul/"
+    response = HtmlResponse(url, body=body, request=Request(url, meta={"page": 1}),
+                            encoding="utf-8")
+
+    asked = list(spider.parse_list(response) or [])
+    assert asked == []                                  # no page 2 to ask for
+    assert spider._search_end["istanbul"] == "exhausted"
+
+
+def test_a_page_that_links_to_the_next_one_keeps_youthall_going():
+    from scrapy.http import HtmlResponse, Request
+    from scraper.spiders.youthall_cards import YouthallCardsSpider
+
+    # Asking for page 2 builds a real request, which is where the browser
+    # headers come from.
+    spider = _bare(
+        YouthallCardsSpider,
+        session=SimpleNamespace(document_headers=lambda referer=None: {"User-Agent": "Firefox"}),
+        impersonate_candidates=["firefox135"],
+        origin="https://www.youthall.com",
+        warmup_url="https://www.youthall.com/",
+    )
+    body = (b'<div class="jobs"><a href="/en/jobs/muhendis_12345">'
+            b'<div class="jobs-content-title"><h5>Muhendis</h5></div>'
+            b'<span class="jobs-tag">Full Time</span></a></div>'
+            b'<a class="next" href="/en/jobs/istanbul/?page=2">next</a>')
+    url = "https://www.youthall.com/en/jobs/istanbul/"
+    response = HtmlResponse(url, body=body, request=Request(url, meta={"page": 1}),
+                            encoding="utf-8")
+
+    asked = list(spider.parse_list(response) or [])
+    assert len(asked) == 1 and "page=2" in asked[0].url
+    assert "istanbul" not in spider._search_end     # still open

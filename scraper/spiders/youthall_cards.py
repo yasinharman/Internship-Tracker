@@ -119,11 +119,17 @@ class YouthallCardsSpider(BaseApiSpider):
         self.logger.info("[istanbul] page %s: %s card(s), %s kept", page, len(records), kept)
         self.crawler.stats.inc_value("jobs/seen", len(records))
 
-        if (
-            self.next_page_allowed(page, records, "istanbul")
-            and f"page={page + 1}" in response.text
-        ):
-            yield self._list_page(page + 1)
+        if not self.next_page_allowed(page, records, "istanbul"):
+            return
+        if f"page={page + 1}" not in response.text:
+            # The Istanbul list is one page and says so by not linking to a
+            # next one. That IS the end of the search, and it has to be
+            # recorded or the scan never counts as complete (scraper/scans.py,
+            # 04.10.2026) - next_page_allowed only ever sees pages that
+            # arrived, and this one was the last.
+            self.search_ended("istanbul", "exhausted")
+            return
+        yield self._list_page(page + 1)
 
     def _item(self, card, url, title, tags):
         loader = JsonJobLoader()

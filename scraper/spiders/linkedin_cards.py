@@ -205,6 +205,7 @@ class LinkedinCardsSpider(BaseApiSpider):
                 "[%s] %s of %s reached - stopping", search_key, min(reached, total), total,
             )
             self.crawler.stats.inc_value("pagination/reached_total")
+            self.search_ended(search_key, "reached_total")
             return False
         return True
 
