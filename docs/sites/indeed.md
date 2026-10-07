@@ -1390,3 +1390,56 @@ coverage of a 251-posting queue takes several runs.
 **What it rules out:** nothing about the session. The address was answering
 normally for 326 requests; it was the volume from one address in one day, not
 the client or the cookies.
+
+## 07.10.2026: the four-address pool did not buy four allowances
+
+The second full run, on a loaded dashboard. Every other site behaved; Indeed
+failed, and in a way the four-address pool was supposed to prevent.
+
+| Phase | Requests | Served | Refused | Result |
+|---|---|---|---|---|
+| crawl, 21:25-21:41 | 49, all from #13 | 44 | **5 × 429** | 538 items, `staj` cut short on 3 lost pages in a row - scan INCOMPLETE |
+| check, 22:46-23:04 | 57 | 45 | **12 × 403** | 44 of 267 postings, 223 unanswered, all four addresses rested |
+
+**What the numbers say, and it is not what the pool was built for.** In the
+check, #13 carried 48 of the 57 requests and the three fresh addresses carried
+three each - and every one of those nine was refused. #2, #9 and #11 never
+served a single page. The handover worked exactly as written (3 in a row ->
+rest, hand over) and it ran out of addresses in four minutes: 23:01 #13,
+23:02 #2, 23:03 #9, 23:04 #11.
+
+Two days earlier #2 alone had carried 249 requests with zero refusals. So
+"one address runs out of allowance" does not explain tonight: three clean
+addresses were refused on their first request each, within three minutes of
+each other.
+
+**The most parsimonious reading: what was refused is the account, not the
+address.** All four carry sessions for the same Indeed account - his own, and
+the only one. A challenge the account picks up would look exactly like this.
+
+**Cheapest test, and it is one request:** open one posting page from a
+NON-pinned address with NO session (the anonymous rotating path). Served means
+the address pool is fine and the account is what Indeed is challenging;
+refused means Indeed is refusing that path from the pool tonight regardless of
+who is asking.
+
+### Two gaps in our own code that the run exposed
+
+1. **The pinned addresses are tried in the order written, and refusal history
+   is ignored.** `#13` has 19 refusals recorded against Indeed; #2, #9 and #11
+   have 2 each. The queue started on #13 because it is first in
+   `PROXY_POOL_PINNED=tr.indeed.com:13+2+9+11`. The rotating path orders by
+   refusals first, and that rule was measured on 23.09.2026 ("a site that
+   refused an address keeps refusing it"); the pinned path never got it.
+
+2. **The pinned path never hands over voluntarily.** The log prints
+   `#13 has carried 30 requests this run - handing over` twenty times and
+   nothing moves: the per-address budget is computed and then discarded for a
+   pinned address. #13 carried 49 requests in the crawl and 48 in the check,
+   and the five refusals in the crawl were **429s** - the signal for too many
+   requests too fast from one address, which a voluntary handover at 30 would
+   have spread across four.
+
+Neither gap explains three fresh addresses being refused outright, so fixing
+them is not the same as fixing tonight. They are worth fixing because both are
+rules we already decided on and did not apply where it mattered.
