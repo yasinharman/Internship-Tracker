@@ -1443,3 +1443,41 @@ who is asking.
 Neither gap explains three fresh addresses being refused outright, so fixing
 them is not the same as fixing tonight. They are worth fixing because both are
 rules we already decided on and did not apply where it mattered.
+
+### 08.10.2026: it was not the account - it was a cold browser on a deep page
+
+Reading the same log again with one question ("did the new addresses warm up?")
+answered it, and the answer overturns last night's hypothesis.
+
+The check phase has **one** warm-up in it, at 22:46:08, for #13's context.
+The three contexts the handover created at 23:01:52, 23:02:45 and 23:03:51
+went straight to a `/viewjob` page as their first navigation and were refused
+within one to three seconds each.
+
+| | 05.10 (worked) | 07.10 (failed) |
+|---|---|---|
+| contexts | one, #2, made at the start of the run | #13 at the start; #2, #9, #11 mid-run |
+| warm-up | 18:34:23, five seconds after the context | #13 only |
+| result | 249 posting pages, 0 refusals | #13 refused after 45 pages; the other three refused on their FIRST request |
+
+So the account is not what Indeed refused: the same account had just read 45
+pages from #13, and 249 from #2 two days earlier. What it refused is a browser
+with no history asking for a page six levels in - the behaviour `_first_visit`
+was written for on 23.09.2026, and which session contexts are explicitly
+excluded from:
+
+```python
+if jar_key and not state and not with_session:
+    self._first_visit(context, jar_key)
+```
+
+That exclusion was correct while there was one pinned context, created before
+the spider's own warm-up request. A handover makes a context in the middle of
+a run, and the warm-up only happens once per run, so every handed-over address
+starts cold. **The planned anonymous test request is not needed; this is ours,
+not theirs.**
+
+#13's own refusals are a second and separate thing: ~45 requests in each
+phase, 429 in the crawl and 403 in the check. That is a volume ceiling on one
+address, and it is what the per-address budget was for - the log printed
+"carried 30 requests - handing over" twenty times without handing over.
