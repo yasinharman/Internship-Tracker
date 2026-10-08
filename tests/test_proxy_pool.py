@@ -796,3 +796,53 @@ def test_the_anonymous_traffic_avoids_every_signed_in_address(pool):
     _indeed_pool(pool, 2, 3)
     chosen = {pool.address_for("tr.indeed.com").line for _ in range(6)}
     assert chosen.isdisjoint({2, 3})
+
+
+##############################################################
+# WHAT 07.10.2026 COST, AND THE THREE RULES IT BOUGHT        #
+##############################################################
+# The second full run lost most of an Indeed check. The log said why once the
+# right question was asked of it: one address carried 49 of the crawl's
+# requests and 48 of the check's (five 429s in the crawl - too many, too
+# fast), the queue had started on the address with 19 refusals against Indeed
+# because it is written first, and each handover opened a browser that went
+# straight to a posting page and was refused inside three seconds.
+
+def test_the_least_refused_address_carries_the_account(pool):
+    first, second, third = _indeed_pool(pool, 2, 3, 4)
+    # #2 is written first but has been refused before; #3 has not. A rest of
+    # zero hours is how a refusal is recorded without the address also being
+    # out of use - what a day-old refusal looks like.
+    pool.state.rest("tr.indeed.com", first.ip, pool.clock(), 0, "403")
+
+    assert pool.pinned_for("tr.indeed.com").line == second.line
+
+
+def test_the_written_order_only_breaks_ties(pool):
+    first, second = _indeed_pool(pool, 2, 3)
+    assert pool.pinned_for("tr.indeed.com").line == first.line
+
+
+def test_its_share_done_the_next_address_takes_over(pool):
+    first, second = _indeed_pool(pool, 2, 3)
+    for _ in range(pool.rotate_after):
+        pool.note_request("tr.indeed.com", first)
+
+    assert pool.pinned_for("tr.indeed.com").line == second.line
+
+
+def test_every_share_spent_the_least_used_carries_on(pool):
+    # A budget running out is not a refusal: it must not end the site's run.
+    first, second = _indeed_pool(pool, 2, 3)
+    for _ in range(pool.rotate_after):
+        pool.note_request("tr.indeed.com", first)
+    for _ in range(pool.rotate_after + 2):
+        pool.note_request("tr.indeed.com", second)
+
+    assert pool.pinned_for("tr.indeed.com").line == first.line
+
+
+def test_a_resting_address_is_still_never_chosen(pool):
+    first, second = _indeed_pool(pool, 2, 3)
+    pool.state.rest("tr.indeed.com", first.ip, pool.clock(), 24, "403")
+    assert pool.pinned_for("tr.indeed.com").line == second.line

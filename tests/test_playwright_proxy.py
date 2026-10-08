@@ -77,6 +77,10 @@ def middleware():
     instance.storage_state_path = None
     instance.storage_state_template = None
     instance.storage_state_env = "INDEED_STORAGE_STATE"
+    instance._session_contexts = 0
+    instance._spider = SimpleNamespace(origin="https://tr.indeed.com",
+                                       session_cookies=None)
+    instance.timeout_ms = 30000
     return instance
 
 
@@ -214,3 +218,83 @@ def test_a_template_counts_as_having_a_session_file(per_address):
     context = _Context({})
     per_address._seed_cookies(context)
     assert context.cookies == []
+
+
+##############################################################
+# A HANDED-OVER ADDRESS KNOCKS FIRST - 07.10.2026            #
+##############################################################
+# What the second full run cost: when the pinned path handed over mid-run,
+# each new address opened a browser that went straight to a /viewjob page and
+# was refused inside three seconds. The same account had just read 45 pages
+# from the address before it, and 249 two days earlier from a context that was
+# warmed - so the cold client was the variable, not the account.
+
+class _Page:
+    def __init__(self):
+        self.visited = []
+
+    def goto(self, url, **kwargs):
+        self.visited.append(url)
+
+    def close(self):
+        pass
+
+
+class _WatchedContext(_Context):
+    def __init__(self, kwargs):
+        super().__init__(kwargs)
+        self.page = _Page()
+
+    def new_page(self):
+        self.pages += 1
+        return self.page
+
+
+def _watched(middleware, monkeypatch):
+    made = []
+
+    def _new_context(**kwargs):
+        context = _WatchedContext(kwargs)
+        made.append(context)
+        return context
+
+    monkeypatch.setattr(middleware._browser, "new_context", _new_context)
+    monkeypatch.setattr(middleware, "_wait_out_challenge", lambda page: None)
+    return made
+
+
+def test_the_first_session_context_is_left_to_the_warm_up(per_address, monkeypatch):
+    # The spider's own warm-up request is the next thing that happens on it.
+    made = _watched(per_address, monkeypatch)
+    per_address._page_for(_Request(proxy=PROXY, session_ok=True, session_line=13),
+                          _Context({}))
+    assert made[0].page.visited == []
+
+
+def test_a_later_session_context_opens_the_front_door_first(per_address, monkeypatch):
+    OTHER = "http://user:p%40ss@198.51.100.2:7000"
+    made = _watched(per_address, monkeypatch)
+    per_address._page_for(_Request(proxy=PROXY, session_ok=True, session_line=13),
+                          _Context({}))
+    per_address._page_for(_Request(proxy=OTHER, session_ok=True, session_line=16),
+                          _Context({}))
+
+    assert made[1].page.visited == ["https://tr.indeed.com/"]
+
+
+def test_the_front_door_keeps_nothing(per_address, monkeypatch):
+    # The account's cookies do not go into proxies/jars - the jar is for the
+    # anonymous history of an address, and mixing the two would put a signed-in
+    # session where any spider could pick it up.
+    from scraper import cookie_jars
+
+    saved = []
+    monkeypatch.setattr(cookie_jars, "save", lambda *a: saved.append(a))
+    made = _watched(per_address, monkeypatch)
+    per_address._page_for(_Request(proxy=PROXY, session_ok=True, session_line=13),
+                          _Context({}))
+    per_address._page_for(_Request(proxy="http://u:p@198.51.100.9:9000",
+                                   session_ok=True, session_line=16), _Context({}))
+
+    assert made[1].page.visited == ["https://tr.indeed.com/"]
+    assert saved == []

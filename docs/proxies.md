@@ -387,3 +387,37 @@ be US too - lines 1, 2, 3, 9, 11, 16 and 19 are the US tier-1 addresses.
 in one place, and a proxied context without it gets no account at all. A
 pinned line whose session file is missing is a hard error rather than a
 sign-out, because 300 requests answered 403 is what a quiet sign-out costs.
+
+## Three rules the 07.10.2026 run paid for
+
+That run lost most of an Indeed check, and the log named all three causes once
+the right question was asked of it. All three are rules we had already decided
+somewhere else and had not applied to the signed-in path.
+
+**1. A handed-over address knocks on the front door first.** Each context the
+handover created went straight to a `/viewjob` page and was refused inside
+three seconds, while the address before it had just read 45 pages and another
+had read 249 two days earlier. The difference was a warm-up: the spider makes
+one per run, so the first pinned context is covered and every later one
+arrives with no history. `_front_door` now opens the home page for a session
+context made mid-run, and saves nothing - the account's cookies stay out of
+`proxies/jars`.
+
+**2. Its share first, then the next address.** One address carried 49 of the
+crawl's requests and 48 of the check's, and the crawl's five refusals were
+**429s** - too many, too fast, from one place. The per-address budget was
+being computed and discarded on the pinned path: the log printed "carried 30
+requests - handing over" twenty times while nothing moved. It is honoured now,
+and it is a preference rather than a wall: when every address has spent its
+share the least-used one carries on, because a budget running out is not a
+refusal and must not end a run.
+
+**3. Refusals come before the written order.** The queue started on #13, which
+holds 19 refusals against Indeed, because it is written first in
+`PROXY_POOL_PINNED`. The rotating path has ordered by refusals since
+23.09.2026 ("a site that refused an address keeps refusing it") and the pinned
+path never got that rule. The order in `PROXY_POOL_PINNED` now only breaks
+ties.
+
+What none of this changes: a session never moves between addresses, and only
+the pinned path may carry one.

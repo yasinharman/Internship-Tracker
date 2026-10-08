@@ -381,11 +381,35 @@ class ProxyPool:
         new allowance - and because each carries a session made on it, no
         session is ever presented from an address that did not earn it.
         """
-        for line in self.pinned_lines.get(site) or ():
-            address = self.pinned(line)
-            if not self.state.resting_until(site, address.ip, self.clock()):
-                return address
-        return None
+        written = self.pinned_lines.get(site) or ()
+        order = {line: place for place, line in enumerate(written)}
+        free = [a for a in (self.pinned(line) for line in written)
+                if not self.state.resting_until(site, a.ip, self.clock())]
+        if not free:
+            return None
+
+        # ITS SHARE FIRST, MEASURED 07.10.2026: one address carried 49 of the
+        # crawl's requests and 48 of the check's, and the five refusals in the
+        # crawl were 429s - too many, too fast, from one address. The budget
+        # was being computed and thrown away here (note_request logs "handing
+        # over" and the pinned path ignored it), so the handover only ever
+        # happened after the site was already annoyed.
+        #
+        # It is a preference and not a wall: once every address has had its
+        # share the least-used one carries on, because a budget running out is
+        # not a refusal and must not end a run.
+        sharing = [a for a in free
+                   if not self.rotate_after
+                   or self.served[(site, a.ip)] < self.rotate_after] or free
+
+        # REFUSALS BEFORE THE WRITTEN ORDER, and the rotating path has done
+        # this since 23.09.2026: a site that refused an address keeps refusing
+        # it. On 07.10 the queue started on #13, which held 19 refusals
+        # against Indeed while the other three held two each - because #13 is
+        # written first. The order in PROXY_POOL_PINNED now only breaks ties.
+        return min(sharing, key=lambda a: (self.state.refusals(site, a.ip),
+                                           self.served[(site, a.ip)],
+                                           order[a.line]))
 
     def pinned_lines_for(self, site):
         """Every line this site may send its account from, in preference order."""

@@ -176,6 +176,9 @@ class PlaywrightMiddleware:
         self._context_kwargs = {}
         # proxy server -> the shared context for it. See _proxied_context.
         self._proxied_contexts = {}
+        # How many session-carrying contexts this run has made. The first one
+        # is followed by the spider's warm-up; the rest are handovers.
+        self._session_contexts = 0
         self._job_queue = queue.Queue()
         self._ready = threading.Event()
         self._startup_error = None
@@ -515,7 +518,61 @@ class PlaywrightMiddleware:
             )
             if jar_key and not state and not with_session:
                 self._first_visit(context, jar_key)
+            elif with_session:
+                # The FIRST session context of a run needs nothing: the
+                # spider's own warm-up request is the next thing that
+                # happens on it. Every later one is a handover, made in the
+                # middle of a run long after the warm-up, and arrives with
+                # no history at all - measured 07.10.2026, three addresses
+                # refused on their first request each.
+                if self._session_contexts:
+                    site = jar_key[0] if jar_key else self._session_site()
+                    if site:
+                        self._front_door(context, site)
+                self._session_contexts += 1
         return context
+
+    def _session_site(self):
+        """
+        The host the signed-in spider belongs to, or None.
+
+        The pinned path sets no cookie jar - the account's cookies are not
+        kept in one - so the host comes from the spider instead.
+        """
+        origin = getattr(getattr(self, "_spider", None), "origin", None) or ""
+        return urlsplit(origin).hostname
+
+    def _front_door(self, context, site):
+        """
+        Knock on the home page, keeping nothing. For a session context.
+
+        MEASURED 07.10.2026 and it cost most of an Indeed check: when the
+        pinned path handed over mid-run, each new address opened a browser
+        that went straight to a /viewjob page and was refused inside three
+        seconds. The same account had just read 45 pages from the address
+        before it, and 249 pages two days earlier from a context that WAS
+        warmed - so what Indeed refused was the cold client, not the account.
+
+        Nothing is saved: the account's cookies stay out of proxies/jars
+        (_proxied_context says why), so this only gives the context a history
+        before its first real request.
+        """
+        page = None
+        try:
+            page = context.new_page()
+            page.goto(f"https://{site}/", wait_until="domcontentloaded",
+                      timeout=self.timeout_ms)
+            self._wait_out_challenge(page)
+            logger.info("%s: front door opened for the session's new address", site)
+        except Exception as error:
+            logger.info("%s: front door did not finish (%s)",
+                        site, type(error).__name__)
+        finally:
+            if page is not None:
+                try:
+                    page.close()
+                except Exception:
+                    pass
 
     def _first_visit(self, context, jar_key):
         """
