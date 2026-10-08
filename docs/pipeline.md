@@ -1090,3 +1090,23 @@ measurement and the one thing this taxonomy has never had.
 The direction is at least the right one - 40 gained against 12 lost - and a
 missing field is the costly direction, because the student filtering for it
 never sees the posting.
+
+### The run-counting rule fired for the first time (08.10.2026)
+
+kariyer.net reached its third complete scan and the checks stopped asking
+about postings the searches had already found:
+
+```
+kariyernet.com: 157 posting(s) skipped - described, and in a search result
+                since the 3 complete scans before
+kariyernet.com: 10 posting(s) to check
+```
+
+165 requests became 10. techcareer's queue went to 0, LinkedIn's to 15,
+Youthall's to 3. Indeed still read its whole queue because it was one complete
+scan behind - the crawl of 07.10 was recorded incomplete - and it reaches the
+third next run.
+
+This is the rule Harman designed on 03.10 ("3 aramada 1 yapalım... 3 bot
+koşusunda da görünmeyen ilanlar açılsın"), and the reason it counts runs
+rather than days is in scraper/scans.py.

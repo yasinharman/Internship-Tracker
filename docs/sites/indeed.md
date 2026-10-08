@@ -1481,3 +1481,44 @@ not theirs.**
 phase, 429 in the crawl and 403 in the check. That is a volume ceiling on one
 address, and it is what the per-address budget was for - the log printed
 "carried 30 requests - handing over" twenty times without handing over.
+
+## 08.10.2026: the three fixes hold, and the wall is a clock
+
+The third full run, with the front door, the honoured budget and the
+refusal-ordering in place. Everything the fixes were meant to do, they did:
+
+| | 07.10 | 08.10 |
+|---|---|---|
+| crawl | 538 items, 5 × 429, scan INCOMPLETE | **577 items, 0 refusals, scan COMPLETE** |
+| check, clean stretch | 45 requests | **212 requests over 67 minutes** |
+| descriptions | 44 of 267 | **205 of 270** |
+| handovers | after refusals | voluntary, at the 30-request budget, #9 and #11 carrying 106 each |
+| order | started on #13 (19 refusals) | #13 left for last |
+
+**And then the same thing happened at the same time.** The first refusal of
+the check landed at 23:01:36; the night before, at 23:00:48. Both runs died
+within four minutes of it. A check that finished before 20:00 UTC - 05.10,
+18:34 to 19:57, 249 requests - took none at all.
+
+| Run | Check started | First refusal | Refusals |
+|---|---|---|---|
+| 05.10 | 18:34 (ended 19:57) | none | 0 of 249 |
+| 07.10 | 21:49 | 23:00:48 | 11 |
+| 08.10 | 21:50 | 23:01:36 | 11 |
+
+Two nights, 48 seconds apart on the wall clock, after 45 requests one night
+and 212 the other. And on 08.10 the two addresses that joined after 23:01 -
+each opening the front door first, neither used at all earlier in that run -
+were refused on their first request. So it is not the address, not the client
+and not the volume: **something in this path is refused from about 23:00 local
+(20:00 UTC)**.
+
+**What follows for the schedule, which is what cron needs:** Indeed's check
+must finish before roughly 22:45 local. It needed 90 minutes for 270 postings
+tonight, and the next run should need far less - Indeed reaches its third
+complete scan then, and the run-counting rule drops a site's queue the way it
+dropped kariyer.net's tonight, from 165 postings to 10.
+
+Cheapest confirmation, when it is worth one address: a single posting page at
+22:00 and another at 23:15 on the same address, the only difference being the
+clock.
